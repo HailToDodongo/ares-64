@@ -13,7 +13,8 @@ auto DrawViewport() -> void {
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
   auto flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-  ImGui::Begin("ares", nullptr, flags);
+  ImGui::SetNextWindowSize({640, 480}, ImGuiCond_FirstUseEver);
+  ImGui::Begin("Output", nullptr, flags);
 
   if(tex) {
     auto avail = ImGui::GetContentRegionAvail();
