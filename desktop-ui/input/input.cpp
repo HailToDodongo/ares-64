@@ -1,4 +1,5 @@
 #include "../desktop-ui.hpp"
+#include "../ui/assign.hpp"
 #include "hotkeys.cpp"
 
 VirtualPort virtualPorts[5];
@@ -563,8 +564,26 @@ auto InputManager::poll(bool force) -> void {
 }
 
 auto InputManager::eventInput(std::shared_ptr<HID::Device> device, u32 groupID, u32 inputID, s16 oldValue, s16 newValue) -> void {
-  if(program._imguiMode) return;  // Input assignment handled by ImGui settings panel
   lock_guard<recursive_mutex> inputLock(program.inputMutex);
+
+  if(program._imguiMode) {
+    auto& assign = ares::ui::inputAssign;
+    if(assign.waiting && assign.activeNode && assign.activeBinding >= 0) {
+      if(device->isKeyboard() && newValue != 0) {
+        assign.activeNode->configuredMapping().bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
+        assign.activeNode = nullptr;
+        assign.waiting = false;
+        assign.activeBinding = -1;
+      } else if(device->isJoypad() && newValue != 0) {
+        assign.activeNode->configuredMapping().bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
+        assign.activeNode = nullptr;
+        assign.waiting = false;
+        assign.activeBinding = -1;
+      }
+    }
+    return;
+  }
+
   inputSettings.eventInput(device, groupID, inputID, oldValue, newValue);
   hotkeySettings.eventInput(device, groupID, inputID, oldValue, newValue);
 }

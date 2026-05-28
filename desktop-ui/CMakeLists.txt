@@ -4,6 +4,7 @@ add_executable(
   ui/menus.cpp
   ui/viewport.cpp
   ui/filedialog.cpp
+  ui/assign.cpp
   ui/settings.cpp
   ui/tools.cpp
   ui/stubs.cpp
@@ -29,6 +30,7 @@ set_source_files_properties(
   ui/menus.cpp
   ui/viewport.cpp
   ui/filedialog.cpp
+  ui/assign.cpp
   ui/settings.cpp
   ui/tools.cpp
   ui/stubs.cpp

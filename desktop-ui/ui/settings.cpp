@@ -361,6 +361,7 @@ static void DrawInputPanel() {
       }
       ImGui::TableHeadersRow();
 
+      bool assigning = inputAssign.waiting;
       for(u32 idx = 0; idx < device.inputs.size(); idx++) {
         auto& input = device.inputs[idx];
         ImGui::TableNextRow();
@@ -371,14 +372,36 @@ static void DrawInputPanel() {
           ImGui::TableNextColumn();
           auto& mapping = input.effectiveMapping();
           auto text = mapping.bindings[b].text();
-          if(text) {
-            if(input.inheritedMapping()) {
-              ImGui::TextDisabled("%s", text.data());
-            } else {
-              ImGui::TextUnformatted(text.data());
+
+          bool isActive = assigning && inputAssign.activeNode == &device.inputs[idx]
+                          && inputAssign.activeBinding == (int)b;
+          char label[64];
+          if(isActive) {
+            snprintf(label, sizeof(label), "(press key...)##%u_%u", idx, b);
+          } else if(text) {
+            snprintf(label, sizeof(label), "%s##%u_%u", text.data(), idx, b);
+          } else {
+            snprintf(label, sizeof(label), "##%u_%u", idx, b);
+          }
+
+          if(ImGui::Selectable(label, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+            if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || !text) {
+              inputAssign.activeNode = &device.inputs[idx];
+              inputAssign.activeBinding = b;
+              inputAssign.waiting = true;
+              inputManager.poll(true);
             }
           }
+          if(ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            // Right-click to clear
+            mapping.unbind(b);
+          }
         }
+      }
+      if(assigning && ImGui::Button("Cancel Assignment")) {
+        inputAssign.activeNode = nullptr;
+        inputAssign.waiting = false;
+        inputAssign.activeBinding = -1;
       }
       ImGui::EndTable();
     }

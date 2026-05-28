@@ -22,7 +22,7 @@ auto Emulator::enumeratePorts(string name) -> std::vector<InputPort>& {
 }
 
 auto Emulator::location() -> string {
-  return {Path::userData(), "ares/Saves/", name, "/"};
+  return {Path::userData(), "ares-imgui/Saves/", name, "/"};
 }
 
 auto Emulator::locate(const string& location, const string& suffix, const string& path, maybe<string> system) -> string {

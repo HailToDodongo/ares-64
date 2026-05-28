@@ -18,7 +18,7 @@ auto locate(const string& name) -> string {
   if(inode::exists(location)) return location;
 
   // 2. The user data directory
-  location = {Path::userData(), "ares/", name};
+  location = {Path::userData(), "ares-imgui/", name};
   if(inode::exists(location)) return location;
 
   // 3. The shared data directory
@@ -49,8 +49,8 @@ auto locate(const string& name) -> string {
   return {Path::program(), name};
 #else
   // On other platforms, this is the "user data" directory
-  directory::create({Path::userData(), "ares/"});
-  return {Path::userData(), "ares/", name};
+  directory::create({Path::userData(), "ares-imgui/"});
+  return {Path::userData(), "ares-imgui/", name};
 #endif
 
 }
