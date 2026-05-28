@@ -102,6 +102,7 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowCheatEditor", general.showCheatEditor);
   bind(boolean, "General/ShowTracerViewer", general.showTracerViewer);
   bind(boolean, "General/ShowRdpViewer", general.showRdpViewer);
+  bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);

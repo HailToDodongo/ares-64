@@ -292,6 +292,7 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("Cheat Editor")) showCheatEditor = true;
   if(ImGui::MenuItem("Trace Logger")) showTracerViewer = true;
   if(ImGui::MenuItem("RDP Commands")) showRdpViewer = true;
+  if(ImGui::MenuItem("Framebuffer")) showFramebufferViewer = true;
   if(ImGui::MenuItem("Audio Viewer")) showAudioViewer = true;
 
   ImGui::EndMenu();

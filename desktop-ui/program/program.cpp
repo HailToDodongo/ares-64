@@ -115,9 +115,15 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
     }
 
     if(emulator && emulator->name == "Nintendo 64") {
-      auto& cap = ares::Nintendo64::rdp.capture;
-      cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
-      cap.writePos.store(0, std::memory_order_release);
+      auto& vi = ares::Nintendo64::vi;
+      static u32 lastViAddr = 0;
+      u32 viAddr = vi.io.dramAddress;
+      if(viAddr != 0 && viAddr != lastViAddr) {
+        lastViAddr = viAddr;
+        auto& cap = ares::Nintendo64::rdp.capture;
+        cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
+        cap.writePos.store(0, std::memory_order_release);
+      }
     }
 
     nall::GDB::server.updateLoop();

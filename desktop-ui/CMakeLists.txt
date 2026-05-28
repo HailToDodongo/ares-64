@@ -9,6 +9,7 @@ add_executable(
   ui/tools.cpp
   ui/audio-viewer.cpp
   ui/rdp-viewer.cpp
+  ui/framebuffer-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   resource/resource.cpp
@@ -37,6 +38,7 @@ set_source_files_properties(
   ui/tools.cpp
   ui/audio-viewer.cpp
   ui/rdp-viewer.cpp
+  ui/framebuffer-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   resource/resource.cpp
