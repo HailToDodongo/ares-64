@@ -428,7 +428,7 @@ ares_add_sources(
 
 target_include_directories(
   ares
-  PRIVATE
+  PUBLIC
     vulkan/parallel-rdp/parallel-rdp
     vulkan/parallel-rdp/volk
     vulkan/parallel-rdp/vulkan

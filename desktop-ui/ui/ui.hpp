@@ -12,6 +12,7 @@ auto DrawSettingsWindow() -> void;
 auto DrawManifestViewer() -> void;
 auto DrawCheatEditor() -> void;
 auto DrawTracerViewer() -> void;
+auto DrawRdpViewer() -> void;
 auto DrawAudioViewer() -> void;
 auto DrawStatusBar() -> void;
 
@@ -22,6 +23,7 @@ extern bool showSettingsWindow;
 extern bool showManifestViewer;
 extern bool showCheatEditor;
 extern bool showTracerViewer;
+extern bool showRdpViewer;
 extern bool showAudioViewer;
 extern bool showAboutDialog;
 

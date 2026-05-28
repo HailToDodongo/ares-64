@@ -98,6 +98,7 @@ auto VI::main() -> void {
         #endif
         refreshed = true;
         screen->frame();
+        rdp.capture.frameCounter.fetch_add(1, std::memory_order_release);
       }
 
       if(io.halfLinesPerField.bit(0)) { // progressive

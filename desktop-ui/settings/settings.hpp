@@ -85,6 +85,7 @@ struct Settings : Markup::Node {
     bool showManifestViewer = false;
     bool showCheatEditor = false;
     bool showTracerViewer = false;
+    bool showRdpViewer = false;
   } general;
 
   struct Rewind {

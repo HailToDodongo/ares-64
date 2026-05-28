@@ -1,47 +1,64 @@
-static const std::vector<string> commandNames = {
-  "No_Operation", "Invalid_01", "Invalid_02", "Invalid_03",
-  "Invalid_04",   "Invalid_05", "Invalid_06", "Invalid_07",
-  "Unshaded_Triangle",
-  "Unshaded_Zbuffer_Triangle",
-  "Texture_Triangle",
-  "Texture_Zbuffer_Triangle",
-  "Shaded_Triangle",
-  "Shaded_Zbuffer_Triangle",
-  "Shaded_Texture_Triangle",
-  "Shaded_Texture_Zbuffer_Triangle",
-  "Invalid_10", "Invalid_11", "Invalid_12", "Invalid_13",
-  "Invalid_14", "Invalid_15", "Invalid_16", "Invalid_17",
-  "Invalid_18", "Invalid_19", "Invalid_1a", "Invalid_1b",
-  "Invalid_1c", "Invalid_1d", "Invalid_1e", "Invalid_1f",
-  "Invalid_20", "Invalid_21", "Invalid_22", "Invalid_23",
-  "Texture_Rectangle",
-  "Texture_Rectangle_Flip",
-  "Sync_Load",
-  "Sync_Pipe",
-  "Sync_Tile",
-  "Sync_Full",
-  "Set_Key_GB",
-  "Set_Key_R",
-  "Set_Convert",
-  "Set_Scissor",
-  "Set_Primitive_Depth",
-  "Set_Other_Modes",
-  "Load_Texture_LUT",
-  "Invalid_31",
-  "Set_Tile_Size",
-  "Load_Block",
-  "Load_Tile",
-  "Set_Tile",
-  "Fill_Rectangle",
-  "Set_Fill_Color",
-  "Set_Fog_Color",
-  "Set_Blend_Color",
-  "Set_Primitive_Color",
-  "Set_Environment_Color",
-  "Set_Combine_Mode",
-  "Set_Texture_Image",
-  "Set_Mask_Image",
-  "Set_Color_Image",
+static const char* commandNames[] = {
+  "NOP", "Invalid (01)", "Invalid (02)", "Invalid (03)",
+  "Invalid (04)",   "Invalid (05)", "Invalid (06)", "Invalid (07)",
+  "Triangle (Fill)",
+  "Triangle (Z)",
+  "Triangle (Tex)",
+  "Triangle (Tex Z)",
+  "Triangle (Shade)",
+  "Triangle (Shade Z)",
+  "Triangle (Shade Tex)",
+  "Triangle (Shade Tex Z)",
+  "Invalid (10)", "Invalid (11)", "Invalid (12)", "Invalid (13)",
+  "Invalid (14)", "Invalid (15)", "Invalid (16)", "Invalid (17)",
+  "Invalid (18)", "Invalid (19)", "Invalid (1a)", "Invalid (1b)",
+  "Invalid (1c)", "Invalid (1d)", "Invalid (1e)", "Invalid (1f)",
+  "Invalid (20)", "Invalid (21)", "Invalid (22)", "Invalid (23)",
+  "Tex-Rect",
+  "Tex-Rect (Flip)",
+  "Sync Load",
+  "Sync Pipe",
+  "Sync Tile",
+  "Sync Full",
+  "Key GB",
+  "Key R",
+  "Convert",
+  "Scissor",
+  "Prim Depth",
+  "Other Modes",
+  "Load Tex LUT",
+  "Invalid (31)",
+  "Tile Size",
+  "Load Block",
+  "Load Tile",
+  "Set Tile",
+  "Fill-Rect",
+  "Fill Color",
+  "Fog Color",
+  "Blend Color",
+  "Prim Color",
+  "Env Color",
+  "Color Combiner",
+  "Tex Image",
+  "Depth Image",
+  "Color Image",
+};
+
+auto rdpCommandName(u8 opcode) -> const char* {
+  if(opcode >= 64) return "Invalid";
+  return commandNames[opcode];
+}
+
+// Command word counts (number of u64 words), indexed by opcode
+static const u8 rdpCommandWordCounts[64] = {
+  1,1,1,1,1,1,1,1,     // 0x00-0x07
+  4, 9, 6,11, 8,13,10,15, // 0x08-0x0f (triangles: base + edge(2) + shade(4) + texture(4) + zbuffer(2))
+  1,1,1,1,1,1,1,1,     // 0x10-0x1f
+  1,1,1,1,2,2,           // 0x20-0x25
+  1,1,1,1,1,1,1,1,       // 0x26-0x2d
+  1,1,1,1,1,1,1,1,       // 0x2e-0x35
+  1,1,1,1,1,1,1,1,       // 0x36-0x3d
+  1,1,                   // 0x3e-0x3f
 };
 
 auto RDP::render() -> void {
@@ -194,9 +211,16 @@ auto RDP::render() -> void {
     auto opCode = op >> 56 & 0x3f;
 
     if(debugger.tracer.command->enabled()) {
-      auto commandName = opCode < commandNames.size() ? commandNames[opCode] : string("Invalid");
+      auto commandName = opCode < 64 ? commandNames[opCode] : "Invalid";
       auto message = string{ hex(op, 16L), "  ", commandName };
       debugger.command(message);
+    }
+
+    if(capture.enabled.load(std::memory_order_relaxed)) {
+      u32 frame = capture.frameCounter.load(std::memory_order_acquire);
+      u32 idx = command.current - command.start;  // approximate index
+      u8 wc = rdpCommandWordCounts[opCode];
+      capture.push(frame, idx, (u8)opCode, op, 0, wc);
     }
 
     switch(opCode) {

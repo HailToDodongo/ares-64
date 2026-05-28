@@ -121,6 +121,12 @@ auto Vulkan::render() -> bool {
       return true;
     }
 
+    if(rdp.capture.enabled.load(std::memory_order_relaxed)) {
+      u64 word0 = (u64)buffer[queueOffset * 2] << 32 | buffer[queueOffset * 2 + 1];
+      u32 frame = rdp.capture.frameCounter.load(std::memory_order_acquire);
+      rdp.capture.push(frame, (u32)queueOffset, (u8)code, word0, 0, (u8)length);
+    }
+
     if(code >= 8) {
       implementation->processor->enqueue_command(length * 2, buffer + queueOffset * 2);
     }
