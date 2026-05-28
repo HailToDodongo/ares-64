@@ -1,3 +1,5 @@
+#pragma once
+
 #if defined(DISPLAY_XORG)
   #include <GL/gl.h>
   #include <GL/glx.h>
@@ -38,7 +40,7 @@ struct OpenGLTexture {
 struct OpenGLSurface : OpenGLTexture {
   auto size(u32 width, u32 height) -> void;
   auto release() -> void;
-  auto render(u32 sourceWidth, u32 sourceHeight, u32 targetX, u32 targetY, u32 targetWidth, u32 targetHeight) -> void;
+  auto render(u32 sourceWidth, u32 sourceHeight, u32 targetX, u32 targetY, u32 targetWidth, u32 targetHeight, GLuint targetFramebuffer = 0) -> void;
 
   GLuint framebuffer = 0;
   GLuint framebufferTexture = 0;
@@ -55,7 +57,7 @@ struct OpenGLSurface : OpenGLTexture {
 
 struct OpenGL : OpenGLSurface {
   auto setShader(const string& pathname) -> void;
-  auto clear() -> void;
+  auto clear(GLuint targetFramebuffer = 0) -> void;
   auto lock(u32*& data, u32& pitch) -> bool;
   auto output() -> void;
   auto initialize(const string& shader) -> bool;

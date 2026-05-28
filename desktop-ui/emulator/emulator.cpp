@@ -1,5 +1,6 @@
 #include "../desktop-ui.hpp"
 #include "emulators.cpp"
+using namespace hiro;
 
 std::vector<std::shared_ptr<Emulator>> emulators;
 std::shared_ptr<Emulator> emulator;

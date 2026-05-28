@@ -2,21 +2,25 @@ auto Program::pause(bool state) -> void {
   Program::Guard guard;
   if(paused == state) return;
   paused = state;
-  presentation.pauseEmulation.setChecked(paused);
+  if(!_imguiMode) presentation.pauseEmulation.setChecked(paused);
 
   if(paused) {
     ruby::audio.clear();
-    presentation.statusRight.setText("Paused");
+    if(!_imguiMode) presentation.statusRight.setText("Paused");
   }
 }
 
 auto Program::mute() -> void {
   Program::Guard guard;
   settings.audio.mute = !settings.audio.mute;
-  presentation.muteAudioSetting.setChecked(settings.audio.mute);
+  if(!_imguiMode) presentation.muteAudioSetting.setChecked(settings.audio.mute);
 }
 
 auto Program::paletteUpdate() -> void {
+  // N64 screen has 16.8M colors; each set* call triggers refreshPalette()
+  // which regenerates the entire lookup table. Skip when defaults (1.0) are used.
+  if(settings.video.luminance == 1.0 && settings.video.saturation == 1.0 && settings.video.gamma == 1.0) return;
+
   Program::Guard guard;
   if(!emulator) return;
   if(!emulator->root) return;
@@ -55,6 +59,9 @@ auto Program::captureScreenshot(const u32* data, u32 pitch, u32 width, u32 heigh
 
 auto Program::openFile(BrowserDialog& dialog) -> string {
   Program::Guard guard;
+  if(_imguiMode) {
+    return ares::ui::openFileDialog(dialog.title().data(), dialog.path().data());
+  }
   BrowserWindow window;
   window.setTitle(dialog.title());
   window.setPath(dialog.path());
@@ -67,6 +74,9 @@ auto Program::openFile(BrowserDialog& dialog) -> string {
 
 auto Program::selectFolder(BrowserDialog& dialog) -> string {
   Program::Guard guard;
+  if(_imguiMode) {
+    return ares::ui::selectFolderDialog(dialog.title().data(), dialog.path().data());
+  }
   BrowserWindow window;
   window.setTitle(dialog.title());
   window.setPath(dialog.path());
@@ -76,6 +86,9 @@ auto Program::selectFolder(BrowserDialog& dialog) -> string {
 
 auto Program::saveFile(BrowserDialog& dialog) -> string {
   Program::Guard guard;
+  if(_imguiMode) {
+    return ares::ui::saveFileDialog(dialog.title().data(), dialog.path().data());
+  }
   BrowserWindow window;
   window.setTitle(dialog.title());
   window.setPath(dialog.path());

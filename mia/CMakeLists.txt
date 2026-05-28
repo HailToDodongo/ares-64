@@ -119,7 +119,7 @@ target_sources(
     system/zx-spectrum.cpp
 )
 
-target_compile_definitions(mia PRIVATE MIA_LIBRARY)
+target_compile_definitions(mia PUBLIC MIA_LIBRARY)
 
 target_include_directories(mia PRIVATE ${CMAKE_SOURCE_DIR})
 target_include_directories(mia PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty)

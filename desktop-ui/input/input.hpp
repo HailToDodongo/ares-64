@@ -18,7 +18,7 @@ struct InputMapping {
   string assignments[BindingLimit];
 
   struct Binding {
-    auto icon() -> multiFactorImage;
+    auto icon() -> hiro::multiFactorImage;
     auto text() -> string;
 
     std::shared_ptr<HID::Device> device;

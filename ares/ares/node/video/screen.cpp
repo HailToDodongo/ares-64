@@ -232,6 +232,10 @@ auto Screen::refresh() -> void {
   auto input  = _inputB.get();
   auto output = _output.get();
 
+  // When a screen provides pre-converted RGBA data (e.g. N64 Vulkan RDP),
+  // no color table was set and we copy pixel data through directly.
+  bool directColor = (_colors == 0);
+
   for(u32 y : range(height)) {
     auto source = input  + y * pitch;
     auto target = output + y * width;
@@ -242,6 +246,8 @@ auto Screen::refresh() -> void {
         auto color = *source++;
         *target++ = color;
       }
+    } else if(directColor) {
+      memory::copy<u32>(target, source, width);
     } else if(_interlace) {
       if((_interlaceField & 1) == (y & 1)) {
         for(u32 x : range(width)) {

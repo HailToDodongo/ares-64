@@ -30,8 +30,7 @@ WonderSwan::WonderSwan() {
   }
 }
 
-auto WonderSwan::load(Menu menu) -> void {
-  Menu orientationMenu{&menu};
+auto WonderSwan::load(Menu menu) -> void {}
   orientationMenu.setText("Orientation").setIcon(Icon::Device::Display);
   if(auto orientations = root->find<ares::Node::Setting::String>("PPU/Screen/Orientation")) {
     Group group;

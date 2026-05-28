@@ -112,8 +112,7 @@ auto MegaCD32X::load() -> LoadResult {
 }
 
 
-auto MegaCD32X::load(Menu menu) -> void {
-  MenuItem changeDisc{&menu};
+auto MegaCD32X::load(Menu menu) -> void {}
   changeDisc.setIcon(Icon::Device::Optical);
   changeDisc.setText("Change Disc").onActivate([&] {
     Program::Guard guard;

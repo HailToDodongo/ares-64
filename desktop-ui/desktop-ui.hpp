@@ -1,9 +1,7 @@
 #include <ruby/ruby.hpp>
 //using namespace ruby;
 
-#include <hiro/hiro.hpp>
-using namespace hiro;
-
+#include "compat/compat.hpp"
 #include <ares/ares.hpp>
 #include <ares/resource/resource.hpp>
 #include <nall/gdb/server.hpp>
@@ -21,6 +19,8 @@ namespace ruby {
 }
 
 #include "resource/resource.hpp"
+#include "application/application.hpp"
+#include "ui/filedialog.hpp"
 #include "input/input.hpp"
 #include "emulator/emulator.hpp"
 #include "game-browser/game-browser.hpp"

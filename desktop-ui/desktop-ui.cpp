@@ -1,4 +1,7 @@
 #include "desktop-ui.hpp"
+#include "application/application.hpp"
+#include "ui/ui.hpp"
+
 
 namespace ruby {
   Video video;
@@ -62,8 +65,8 @@ auto nall::main(Arguments arguments) -> void {
   terminal::redirectStdioToTerminal(createTerminal);
 #endif
 
-  Application::setName("ares");
-  Application::setScreenSaver(false);
+  // Application::setName handled by SDL3 window title
+  // Application::setScreenSaver handled by SDL3
 
   mia::setHomeLocation([]() -> string {
     if(auto location = settings.paths.home) return location;
@@ -234,36 +237,47 @@ auto nall::main(Arguments arguments) -> void {
     }
   }
 
-  Instances::presentation.construct();
-  if(!program.kiosk) {
-    Instances::settingsWindow.construct();
-    program.settingsWindowConstructed = true;
-    Instances::gameBrowserWindow.construct();
-    program.gameBrowserWindowConstructed = true;
-    Instances::toolsWindow.construct();
-    program.toolsWindowConstructed = true;
+  if(!AresApp::initialize()) {
+    print("Failed to initialize SDL3+ImGui\n");
+    return;
   }
 
+  AresApp::videoContext = {AresApp::window, AresApp::glContext};
+
+  program._videoContext = (uintptr)&AresApp::videoContext;
   program.create();
-  Application::onMain(std::bind_front(&Program::main, &program));
-  Application::run();
 
-  bool restoredCliOverrides = false;
-  for(auto& override : cliSettingOverrides) {
-    auto node = settings[override.path];
-    if(!node) continue;
-    if(node.value() != override.overriddenValue) continue;
-    node.setValue(override.originalValue);
-    restoredCliOverrides = true;
-  }
-  if(restoredCliOverrides) settings.process(true);
+  AresApp::onMain = [=] {
+    ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
+    program.main();
+
+    ares::ui::DrawViewport();
+    ares::ui::DrawSettingsWindow();
+    ares::ui::DrawToolsWindow();
+    ares::ui::DrawMainMenuBar();
+
+    if(ares::ui::showAboutDialog) {
+      ImGui::OpenPopup("About ares");
+      ares::ui::showAboutDialog = false;
+    }
+    if(ImGui::BeginPopupModal("About ares", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextUnformatted(ares::Name);
+      ImGui::Separator();
+      ImGui::TextUnformatted(string{"Version: ", ares::Version}.data());
+      ImGui::TextUnformatted(ares::Copyright);
+      ImGui::Spacing();
+      if(ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+      ImGui::EndPopup();
+    }
+  };
+
+  AresApp::run();
+
+  program.quit();
   settings.save();
-
-  Instances::presentation.destruct();
-  if(program.settingsWindowConstructed) Instances::settingsWindow.destruct();
-  if(program.toolsWindowConstructed) Instances::toolsWindow.destruct();
-  if(program.gameBrowserWindowConstructed) Instances::gameBrowserWindow.destruct();
+  AresApp::shutdown();
 }
+
 
 #if defined(PLATFORM_WINDOWS) && defined(ARCHITECTURE_AMD64) && !defined(BUILD_LOCAL)
 

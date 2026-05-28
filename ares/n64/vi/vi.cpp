@@ -27,22 +27,29 @@ auto VI::load(Node::Object parent) -> void {
   #endif
   screen = node->append<Node::Video::Screen>("Screen", width, height);
   screen->setRefresh(std::bind_front(&VI::refresh, this));
-  screen->refreshRateHint(Region::PAL() ? 50 : 60); // TODO: More accurate refresh rate hint
-  screen->colors((1 << 24) + (1 << 15), [&](n32 color) -> n64 {
-    if(color < (1 << 24)) {
-      u64 a = 65535;
-      u64 r = image::normalize(color >> 16 & 255, 8, 16);
-      u64 g = image::normalize(color >>  8 & 255, 8, 16);
-      u64 b = image::normalize(color >>  0 & 255, 8, 16);
-      return a << 48 | r << 32 | g << 16 | b << 0;
-    } else {
-      u64 a = 65535;
-      u64 r = image::normalize(color >> 10 & 31, 5, 16);
-      u64 g = image::normalize(color >>  5 & 31, 5, 16);
-      u64 b = image::normalize(color >>  0 & 31, 5, 16);
-      return a << 48 | r << 32 | g << 16 | b << 0;
-    }
-  });
+  screen->refreshRateHint(Region::PAL() ? 50 : 60);
+  // With Vulkan, parallel-RDP outputs RGBA directly; no palette conversion needed.
+  // Without Vulkan, the software RDP needs a color lookup table.
+  #if defined(VULKAN)
+  if(!vulkan.enable)
+  #endif
+  {
+    screen->colors((1 << 24) + (1 << 15), [&](n32 color) -> n64 {
+      if(color < (1 << 24)) {
+        u64 a = 65535;
+        u64 r = image::normalize(color >> 16 & 255, 8, 16);
+        u64 g = image::normalize(color >>  8 & 255, 8, 16);
+        u64 b = image::normalize(color >>  0 & 255, 8, 16);
+        return a << 48 | r << 32 | g << 16 | b << 0;
+      } else {
+        u64 a = 65535;
+        u64 r = image::normalize(color >> 10 & 31, 5, 16);
+        u64 g = image::normalize(color >>  5 & 31, 5, 16);
+        u64 b = image::normalize(color >>  0 & 31, 5, 16);
+        return a << 48 | r << 32 | g << 16 | b << 0;
+      }
+    });
+  }
   
   int videoHeight = Region::PAL() ? 576 : 480;
 

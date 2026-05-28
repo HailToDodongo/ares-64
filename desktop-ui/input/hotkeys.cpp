@@ -35,8 +35,8 @@ auto InputManager::createHotkeys() -> void {
     if(!toggleFastForwardState) {
       program.fastForwarding = true;
       fastForwardVideoBlocking = ruby::video.blocking();
-      fastForwardAudioBlocking = ruby::audio.blocking();
-      fastForwardAudioDynamic  = ruby::audio.dynamic();
+      fastForwardAudioBlocking = ruby::audio.blocking;
+      fastForwardAudioDynamic  = ruby::audio.dynamic;
       ruby::video.setBlocking(false);
       ruby::audio.setBlocking(false);
       ruby::audio.setDynamic(false);
@@ -60,8 +60,8 @@ auto InputManager::createHotkeys() -> void {
     if (program.fastForwarding) {
       toggleFastForwardState = true;
       fastForwardVideoBlocking = ruby::video.blocking();
-      fastForwardAudioBlocking = ruby::audio.blocking();
-      fastForwardAudioDynamic  = ruby::audio.dynamic();
+      fastForwardAudioBlocking = ruby::audio.blocking;
+      fastForwardAudioDynamic  = ruby::audio.dynamic;
       ruby::video.setBlocking(false);
       ruby::audio.setBlocking(false);
       ruby::audio.setDynamic(false);
@@ -177,20 +177,24 @@ auto InputManager::createHotkeys() -> void {
   }));
 }
 
-auto InputManager::pollHotkeys() -> void {
-  if(Application::modal()) return;
-  if(
-    program.settingsWindowConstructed && settingsWindow.focused() ||
-    program.toolsWindowConstructed && toolsWindow.focused()
-  ) return;
-  if(settings.input.defocus != "Allow") {
-    if (!presentation.focused() && !ruby::video.fullScreen()) return;
-  }
+	auto InputManager::pollHotkeys() -> void {
+	  if(program._imguiMode) {
+	    if(ImGui::GetIO().WantCaptureKeyboard) return;
+	  } else {
+	    if(false && ::Application::modal() /* hiro removed */) return; // hiro removed
+	    if(
+	      program.settingsWindowConstructed && settingsWindow.focused() ||
+	      program.toolsWindowConstructed && toolsWindow.focused()
+	    ) return;
+	    if(settings.input.defocus != "Allow") {
+	      if (!presentation.focused() && !ruby::video.fullScreen()) return;
+	    }
+	  }
 
-  for(auto& hotkey : hotkeys) {
-    auto state = hotkey.value();
-    if(hotkey.state == 0 && state == 1 && hotkey.press) hotkey.press();
-    if(hotkey.state == 1 && state == 0 && hotkey.release) hotkey.release();
-    hotkey.state = state;
-  }
-}
+	  for(auto& hotkey : hotkeys) {
+	    auto state = hotkey.value();
+	    if(hotkey.state == 0 && state == 1 && hotkey.press) hotkey.press();
+	    if(hotkey.state == 1 && state == 0 && hotkey.release) hotkey.release();
+	    hotkey.state = state;
+	  }
+	}

@@ -53,8 +53,7 @@ auto GameBoy::load() -> LoadResult {
   return successful;
 }
 
-auto GameBoy::load(Menu menu) -> void {
-    Menu colorEmulationMenu{&menu};
+auto GameBoy::load(Menu menu) -> void {}
     colorEmulationMenu.setText("Color Emulation").setIcon(Icon::Device::Display);
     if(auto options = root->find<ares::Node::Setting::String>("PPU/Screen/Color Emulation")) {
       Group group;

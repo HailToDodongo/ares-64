@@ -105,6 +105,37 @@ target_compile_options(ymfm PRIVATE $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-u
 
 add_library(qon STATIC qon/qon.cpp)
 
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+set(SDL_DISABLE_UNINSTALL ON CACHE BOOL "" FORCE)
+set(SDL_AUDIO ON CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK ON CACHE BOOL "" FORCE)
+set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
+set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
+set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
+add_subdirectory(SDL)
+
+find_package(OpenGL REQUIRED)
+
+add_library(
+  imgui
+  STATIC
+  imgui/imgui.cpp
+  imgui/imgui_draw.cpp
+  imgui/imgui_tables.cpp
+  imgui/imgui_widgets.cpp
+  imgui/backends/imgui_impl_sdl3.cpp
+  imgui/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(imgui PUBLIC imgui imgui/backends)
+target_link_libraries(imgui PUBLIC SDL3::SDL3 OpenGL::OpenGL)
+
+add_library(ares::imgui ALIAS imgui)
+set_target_properties(imgui PROPERTIES FOLDER thirdparty PREFIX "")
+
 set_target_properties(ymfm PROPERTIES FOLDER thirdparty PREFIX "")
 set_target_properties(tzxfile PROPERTIES FOLDER thirdparty PREFIX "")
 set_target_properties(sljit PROPERTIES FOLDER thirdparty PREFIX "")

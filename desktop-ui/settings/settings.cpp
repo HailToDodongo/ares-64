@@ -1,21 +1,8 @@
 #include "../desktop-ui.hpp"
 #include <nall/vector-helpers.hpp>
-#include "video.cpp"
-#include "audio.cpp"
-#include "input.cpp"
-#include "hotkeys.cpp"
-#include "emulators.cpp"
-#include "options.cpp"
-#include "firmware.cpp"
-#include "paths.cpp"
-#include "drivers.cpp"
-#include "debug.cpp"
-#include "importexport.cpp"
-#include "home.cpp"
 
 Settings settings;
-namespace Instances { Instance<SettingsWindow> settingsWindow; }
-SettingsWindow& settingsWindow = Instances::settingsWindow();
+SettingsWindow settingsWindow;
 VideoSettings& videoSettings = settingsWindow.videoSettings;
 AudioSettings& audioSettings = settingsWindow.audioSettings;
 InputSettings& inputSettings = settingsWindow.inputSettings;
@@ -43,8 +30,8 @@ auto Settings::process(bool load) -> void {
   if(load) {
     //initialize non-static default settings
     video.driver = ruby::Video::optimalDriver();
-    audio.driver = ruby::Audio::optimalDriver();
-    input.driver = ruby::Input::optimalDriver();
+    audio.driver = "SDL";
+    input.driver = "SDL3";
   }
 
   #define bind(type, path, name) \
@@ -104,7 +91,6 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "Boot/AwaitGDBClient", boot.awaitGDBClient);
   bind(string,  "Boot/Prefer", boot.prefer);
 
-  bind(boolean, "General/ShowStatusBar", general.showStatusBar);
   bind(boolean, "General/Rewind", general.rewind);
   bind(boolean, "General/RunAhead", general.runAhead);
   bind(boolean, "General/AutoSaveMemory", general.autoSaveMemory);
@@ -237,114 +223,3 @@ auto Settings::process(bool load) -> void {
   #undef bind
 }
 
-//
-
-auto SettingsWindow::initialize() -> void {
-  onClose([&] {
-    settings.save();
-    setVisible(false);
-    //cancel any pending input assignment requests, if any
-    inputSettings.setVisible(false);
-    hotkeySettings.setVisible(false);
-  });
-
-  panelContainer.setPadding(5_sx, 5_sy);
-
-  panelList.append(ListViewItem().setText("Video").setIcon(Icon::Device::Display));
-  panelList.append(ListViewItem().setText("Audio").setIcon(Icon::Device::Speaker));
-  panelList.append(ListViewItem().setText("Input").setIcon(Icon::Device::Joypad));
-  panelList.append(ListViewItem().setText("Hotkeys").setIcon(Icon::Device::Keyboard));
-  panelList.append(ListViewItem().setText("Emulators").setIcon(Icon::Place::Server));
-  panelList.append(ListViewItem().setText("Options").setIcon(Icon::Action::Settings));
-  panelList.append(ListViewItem().setText("Firmware").setIcon(Icon::Emblem::Binary));
-  panelList.append(ListViewItem().setText("Paths").setIcon(Icon::Emblem::Folder));
-  panelList.append(ListViewItem().setText("Drivers").setIcon(Icon::Place::Settings));
-  panelList.append(ListViewItem().setText("Debug").setIcon(Icon::Device::Network));
-  panelList.append(ListViewItem().setText("Settings File").setIcon(Icon::Action::Save));
-  panelList->setUsesSidebarStyle();
-  panelList.onChange([&] { eventChange(); });
-
-  panelContainer.append(videoSettings, Size{~0, ~0});
-  panelContainer.append(audioSettings, Size{~0, ~0});
-  panelContainer.append(inputSettings, Size{~0, ~0});
-  panelContainer.append(hotkeySettings, Size{~0, ~0});
-  panelContainer.append(emulatorSettings, Size{~0, ~0});
-  panelContainer.append(optionSettings, Size{~0, ~0});
-  panelContainer.append(firmwareSettings, Size{~0, ~0});
-  panelContainer.append(pathSettings, Size{~0, ~0});
-  panelContainer.append(driverSettings, Size{~0, ~0});
-  panelContainer.append(debugSettings, Size{~0, ~0});
-  panelContainer.append(importExportSettings, Size{~0, ~0});
-  panelContainer.append(homePanel, Size{~0, ~0});
-
-  videoSettings.construct();
-  audioSettings.construct();
-  inputSettings.construct();
-  hotkeySettings.construct();
-  emulatorSettings.construct();
-  optionSettings.construct();
-  firmwareSettings.construct();
-  pathSettings.construct();
-  driverSettings.construct();
-  debugSettings.construct();
-  importExportSettings.construct();
-  homePanel.construct();
-
-  setDismissable();
-  setTitle("Configuration");
-  setSize({700_sx, 425_sy});
-  setAlignment({0.0, 1.0});
-  setResizable(false);
-  
-  driverSettings.videoRefresh();
-  driverSettings.audioRefresh();
-  driverSettings.inputRefresh();
-  initialized = true;
-}
-
-auto SettingsWindow::show(const string& panel) -> void {
-  if(!initialized) initialize();
-  for(auto item : panelList.items()) {
-    if(item.text() == panel) {
-      item.setSelected();
-      eventChange();
-      break;
-    }
-  }
-  setVisible();
-  setFocused();
-  panelList.setFocused();
-}
-
-auto SettingsWindow::eventChange() -> void {
-  videoSettings.setVisible(false);
-  audioSettings.setVisible(false);
-  inputSettings.setVisible(false);
-  hotkeySettings.setVisible(false);
-  emulatorSettings.setVisible(false);
-  optionSettings.setVisible(false);
-  firmwareSettings.setVisible(false);
-  pathSettings.setVisible(false);
-  driverSettings.setVisible(false);
-  debugSettings.setVisible(false);
-  importExportSettings.setVisible(false);
-  homePanel.setVisible(false);
-
-  bool found = false;
-  if(auto item = panelList.selected()) {
-    if(item.text() == "Video"    ) found = true, videoSettings.setVisible();
-    if(item.text() == "Audio"    ) found = true, audioSettings.setVisible();
-    if(item.text() == "Input"    ) found = true, inputSettings.setVisible();
-    if(item.text() == "Hotkeys"  ) found = true, hotkeySettings.setVisible();
-    if(item.text() == "Emulators") found = true, emulatorSettings.setVisible();
-    if(item.text() == "Options"  ) found = true, optionSettings.setVisible();
-    if(item.text() == "Firmware" ) found = true, firmwareSettings.setVisible();
-    if(item.text() == "Paths"    ) found = true, pathSettings.setVisible();
-    if(item.text() == "Drivers"  ) found = true, driverSettings.setVisible();
-    if(item.text() == "Debug"    ) found = true, debugSettings.setVisible();
-    if(item.text() == "Settings File") found = true, importExportSettings.setVisible(); 
-  }
-  if(!found) homePanel.setVisible();
-
-  panelContainer.resize();
-}

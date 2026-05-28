@@ -28,12 +28,7 @@ PocketChallengeV2::PocketChallengeV2() {
   }
 }
 
-auto PocketChallengeV2::load(Menu menu) -> void {
-  //the Pocket Challenge V2 game library is very small.
-  //no titles for the system use portrait (vertical) orientation.
-  //as such, neither the ares::WonderSwan core nor desktop-ui provide an orientation setting.
-}
-
+auto PocketChallengeV2::load(Menu menu) -> void {}
 auto PocketChallengeV2::load() -> LoadResult {
   game = mia::Medium::create("Pocket Challenge V2");
   string location = Emulator::load(game, configuration.game);

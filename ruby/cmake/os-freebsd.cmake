@@ -1,7 +1,7 @@
 target_sources(
   ruby
   PRIVATE #
-    video/glx.cpp
+    video/sdl3.cpp
 )
 
 target_sources(
@@ -21,6 +21,7 @@ target_sources(
   PRIVATE #
     input/xlib.cpp
     input/sdl.cpp
+    input/sdl3.cpp
     input/mouse/xlib.cpp
     input/keyboard/xlib.cpp
     input/joypad/sdl.cpp
@@ -34,7 +35,8 @@ find_package(OpenGL REQUIRED)
 
 target_link_libraries(ruby PRIVATE X11::Xrandr OpenGL::GLX)
 
-target_enable_feature(ruby "GLX OpenGL video driver" VIDEO_GLX)
+target_enable_feature(ruby "SDL3 OpenGL video driver" VIDEO_SDL3)
+target_enable_feature(ruby "SDL3 input driver" INPUT_SDL3)
 target_enable_feature(ruby "Xlib input driver" INPUT_XLIB)
 
 find_package(librashader)

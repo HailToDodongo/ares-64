@@ -1,7 +1,7 @@
 #if defined(PLATFORM_MACOS)
 #import <mach-o/dyld.h>
 #endif
-auto OpenGL::setShader(const string& pathname) -> void {
+inline auto OpenGL::setShader(const string& pathname) -> void {
   settings.reset();
 
   format = inputFormat;
@@ -33,18 +33,18 @@ auto OpenGL::setShader(const string& pathname) -> void {
   }
 }
 
-auto OpenGL::clear() -> void {
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+inline auto OpenGL::clear(GLuint targetFramebuffer) -> void {
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFramebuffer);
   glClearColor(0, 0, 0, 1);
   glClear(GL_COLOR_BUFFER_BIT);
 }
 
-auto OpenGL::lock(u32*& data, u32& pitch) -> bool {
+inline auto OpenGL::lock(u32*& data, u32& pitch) -> bool {
   pitch = width * sizeof(u32);
   return data = buffer;
 }
 
-auto OpenGL::output() -> void {
+inline auto OpenGL::output() -> void {
   clear();
 
   glActiveTexture(GL_TEXTURE0);
@@ -113,7 +113,7 @@ auto OpenGL::output() -> void {
   render(sources[0].width, sources[0].height, outputX + x, outputY + y, targetWidth, targetHeight);
 }
 
-auto OpenGL::initialize(const string& shader) -> bool {
+inline auto OpenGL::initialize(const string& shader) -> bool {
   if(!OpenGLBind()) return false;
 
   glDisable(GL_BLEND);
@@ -131,7 +131,7 @@ auto OpenGL::initialize(const string& shader) -> bool {
   return initialized = true;
 }
 
-auto OpenGL::resolveSymbol(const char* name) -> const void * {
+inline auto OpenGL::resolveSymbol(const char* name) -> const void * {
 #if defined(PLATFORM_MACOS)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -160,7 +160,7 @@ auto OpenGL::resolveSymbol(const char* name) -> const void * {
   return symbol;
 }
 
-auto OpenGL::terminate() -> void {
+inline auto OpenGL::terminate() -> void {
   if(!initialized) return;
   setShader("");
   OpenGLSurface::release();

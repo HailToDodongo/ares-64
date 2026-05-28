@@ -40,9 +40,9 @@ struct Program : ares::Platform {
   auto paletteUpdate() -> void;
   auto runAheadUpdate() -> void;
   auto captureScreenshot(const u32* data, u32 pitch, u32 width, u32 height) -> void;
-  auto openFile(BrowserDialog&) -> string;
-  auto selectFolder(BrowserDialog&) -> string;
-  auto saveFile(BrowserDialog& dialog) -> string;
+  auto openFile(hiro::BrowserDialog&) -> string;
+  auto selectFolder(hiro::BrowserDialog&) -> string;
+  auto saveFile(hiro::BrowserDialog& dialog) -> string;
 
   //drivers.cpp
   auto videoDriverUpdate() -> void;
@@ -114,6 +114,8 @@ struct Program : ares::Platform {
   atomic<u64> vblanksPerSecond = 0;
 
   bool _isRunning = false;
+  bool _imguiMode = true;  // ImGui is now the only UI path
+  uintptr _videoContext = 0;
 
   /// Mutex used to manage access to the input system. Polling occurs on the main thread while the results are read by the emulation thread.
   std::recursive_mutex inputMutex;

@@ -117,8 +117,7 @@ auto MegaCD::load() -> LoadResult {
   return successful;
 }
 
-auto MegaCD::load(Menu menu) -> void {
-  MenuItem changeDisc{&menu};
+auto MegaCD::load(Menu menu) -> void {}
   changeDisc.setIcon(Icon::Device::Optical);
   changeDisc.setText("Change Disc").onActivate([&] {
     Program::Guard guard;

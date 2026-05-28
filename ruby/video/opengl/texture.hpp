@@ -1,10 +1,10 @@
-auto OpenGLTexture::getFormat() const -> GLuint {
+inline auto OpenGLTexture::getFormat() const -> GLuint {
   if(format == GL_R32I) return GL_RED_INTEGER;
   if(format == GL_R32UI) return GL_RED_INTEGER;
   return GL_BGRA;
 }
 
-auto OpenGLTexture::getType() const -> GLuint {
+inline auto OpenGLTexture::getType() const -> GLuint {
   if(format == GL_R32I) return GL_UNSIGNED_INT;
   if(format == GL_R32UI) return GL_UNSIGNED_INT;
   if(format == GL_RGB10_A2) return GL_UNSIGNED_INT_2_10_10_10_REV;

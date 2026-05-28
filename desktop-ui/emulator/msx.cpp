@@ -96,9 +96,7 @@ auto MSX::load() -> LoadResult {
   return successful;
 }
 
-auto MSX::load(Menu menu) -> void {
-  if(auto tape = root->find<ares::Node::Tape>("MSX Tape")) {
-    MenuCheckItem playingItem{&menu};
+auto MSX::load(Menu menu) -> void {}
     playingItem.setText("Play Tape").setChecked(tape->playing()).onToggle([=, this] {
       if(auto tape = root->find<ares::Node::Tape>("MSX Tape")) {
         if(playingItem.checked()) tape->play();

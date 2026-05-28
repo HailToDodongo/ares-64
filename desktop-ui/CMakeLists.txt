@@ -1,17 +1,21 @@
 add_executable(
   desktop-ui
+  application/application.cpp
+  ui/menus.cpp
+  ui/viewport.cpp
+  ui/filedialog.cpp
+  ui/settings.cpp
+  ui/tools.cpp
+  ui/stubs.cpp
   desktop-ui.cpp
   resource/resource.cpp
   input/input.cpp
   emulator/emulator.cpp
-  game-browser/game-browser.cpp
   program/program.cpp
-  presentation/presentation.cpp
   settings/settings.cpp
-  tools/tools.cpp
 )
 
-target_sources(desktop-ui PRIVATE cmake/sources.cmake cmake/os-macos.cmake cmake/os-linux.cmake cmake/os-windows.cmake)
+target_sources(desktop-ui PRIVATE application/application.hpp cmake/sources.cmake cmake/os-macos.cmake cmake/os-linux.cmake cmake/os-windows.cmake)
 
 include(cmake/sources.cmake)
 
@@ -21,15 +25,19 @@ set_source_files_properties(desktop-ui ${desktop-ui_SOURCES} PROPERTIES HEADER_F
 
 set_source_files_properties(
   desktop-ui
+  application/application.cpp
+  ui/menus.cpp
+  ui/viewport.cpp
+  ui/filedialog.cpp
+  ui/settings.cpp
+  ui/tools.cpp
+  ui/stubs.cpp
   desktop-ui.cpp
   resource/resource.cpp
   input/input.cpp
   emulator/emulator.cpp
-  game-browser/game-browser.cpp
   program/program.cpp
-  presentation/presentation.cpp
   settings/settings.cpp
-  tools/tools.cpp
   PROPERTIES HEADER_FILE_ONLY FALSE
 )
 
@@ -48,7 +56,7 @@ endif()
 target_include_directories(desktop-ui PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(
   desktop-ui
-  PRIVATE ares::ruby ares::hiro ares::ares ares::mia ares::nall
+  PRIVATE ares::ruby ares::ares ares::mia ares::nall ares::imgui
 )
 
 if(ARES_ENABLE_CHD)
@@ -62,3 +70,10 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${desktop-ui_SOURCES})
 add_sourcery_command(desktop-ui resource)
 
 ares_configure_executable(desktop-ui)
+
+# Copy font to build output
+add_custom_command(TARGET desktop-ui POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/resource/Altinn-DINExp.ttf"
+    "$<TARGET_FILE_DIR:desktop-ui>/Altinn-DINExp.ttf"
+)

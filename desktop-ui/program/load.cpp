@@ -1,5 +1,6 @@
 auto Program::identify(const string& filename) -> std::shared_ptr<Emulator> {
   Program::Guard guard;
+using namespace hiro;
 
   std::vector<std::shared_ptr<Emulator>> matches;
 
@@ -26,11 +27,17 @@ auto Program::identify(const string& filename) -> std::shared_ptr<Emulator> {
     for(auto& emulator : matches) buttons.push_back(emulator->name);
     buttons.push_back("Cancel");
 
-    auto choice = MessageDialog().setTitle(ares::Name).setText({
-      "Filename: ", Location::file(filename), "\n\n",
-      "Multiple possible systems were detected.\n",
-      "Please choose which system to launch this file with."
-    }).setAlignment(presentation).question(buttons);
+    string choice;
+    if(_imguiMode) {
+      // In ImGui mode, just pick the first match
+      return matches.front();
+    } else {
+      choice = MessageDialog().setTitle(ares::Name).setText({
+        "Filename: ", Location::file(filename), "\n\n",
+        "Multiple possible systems were detected.\n",
+        "Please choose which system to launch this file with."
+      }).setAlignment(presentation).question(buttons);
+    }
 
     for(auto& emulator : matches) {
       if(emulator->name == choice) return emulator;
@@ -40,7 +47,7 @@ auto Program::identify(const string& filename) -> std::shared_ptr<Emulator> {
   }
 
   // No matches → existing error path
-  if(kiosk) {
+  if(kiosk || _imguiMode) {
     error({"unable to determine game type for: ", Location::file(filename)});
   } else {
     MessageDialog().setTitle(ares::Name).setText({
@@ -57,20 +64,16 @@ auto Program::identify(const string& filename) -> std::shared_ptr<Emulator> {
 auto Program::load(std::shared_ptr<Emulator> emulator, string location) -> bool {
   Program::Guard guard;
   unload();
-
   ::emulator = emulator;
 
-  // For arcade systems, show the game browser dialog as we're using MAME-compatible roms
   if(emulator->arcade() && !location) {
     gameBrowserWindow.show(emulator);
-    
-    // Temporarily pretend that the load failed to prevent crash
-    // The browser dialog will call load() again when necessary
     ::emulator.reset();
     return false;
   }
 
-  return load(location);
+  auto r = load(location);
+  return r;
 }
 
 /// Loads a ROM for an already-loaded emulator.
@@ -82,17 +85,16 @@ auto Program::load(string location) -> bool {
 
   if(!emulator->load(location)) {
     emulator.reset();
-    if(settings.video.adaptiveSizing) presentation.resizeWindow();
-    presentation.showIcon(true);
+    if(!_imguiMode && settings.video.adaptiveSizing) presentation.resizeWindow();
+    if(!_imguiMode) presentation.showIcon(true);
     return false;
   }
   location = emulator->game->location;
 
-  //this is a safeguard warning in case the user loads their games from a read-only location:
   string savesPath = settings.paths.saves;
   if(!savesPath) savesPath = Location::path(location);
   if(!directory::writable(savesPath)) {
-    if(kiosk) {
+    if(kiosk || _imguiMode) {
       showMessage({
         "Current save path is read-only; progress may be lost. Save location: ", savesPath
       });
@@ -107,10 +109,12 @@ auto Program::load(string location) -> bool {
 
   paletteUpdate();
   runAheadUpdate();
-  presentation.loadEmulator();
-  presentation.showIcon(false);
-  if(settings.video.adaptiveSizing  && !startPseudoFullScreen) presentation.resizeWindow();
-  if(toolsWindowConstructed) {
+  if(!_imguiMode) {
+    presentation.loadEmulator();
+    presentation.showIcon(false);
+    if(settings.video.adaptiveSizing && !startPseudoFullScreen) presentation.resizeWindow();
+  }
+  if(!_imguiMode && toolsWindowConstructed) {
     manifestViewer.reload();
     cheatEditor.reload();
     memoryEditor.reload();
@@ -120,11 +124,11 @@ auto Program::load(string location) -> bool {
     traceLogger.reload();
     tapeViewer.reload();
   }
-  state = {};  //reset hotkey state slot to 1
+  state = {};
   if(settings.boot.debugger) {
     pause(true);
-    if(toolsWindowConstructed) toolsWindow.show("Tracer");
-    presentation.setFocused();
+    if(!_imguiMode && toolsWindowConstructed) toolsWindow.show("Tracer");
+    if(!_imguiMode) presentation.setFocused();
   } else if (settings.boot.awaitGDBClient) {
     pause(true);
   } else {
@@ -141,12 +145,11 @@ auto Program::load(string location) -> bool {
     };
   }
 
-  //update recent games list
   for(s32 index = 7; index >= 0; index--) {
     settings.recent.game[index + 1] = settings.recent.game[index];
   }
   settings.recent.game[0] = {emulator->name, ";", location};
-  presentation.loadEmulators();
+  if(!_imguiMode) presentation.loadEmulators();
 
   configuration = emulator->root->attribute("configuration");
 
@@ -174,8 +177,8 @@ auto Program::unload() -> void {
   streams.clear();
   emulator.reset();
   rewindReset();
-  presentation.unloadEmulator();
-  if(toolsWindowConstructed) {
+  if(!_imguiMode) presentation.unloadEmulator();
+  if(!_imguiMode && toolsWindowConstructed) {
     toolsWindow.setVisible(false);
     manifestViewer.unload();
     cheatEditor.unload();

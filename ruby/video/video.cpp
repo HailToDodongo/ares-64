@@ -6,6 +6,10 @@
   #include <ruby/video/glx.cpp>
 #endif
 
+#if defined(VIDEO_SDL3)
+  #include <ruby/video/sdl3.cpp>
+#endif
+
 #if defined(VIDEO_WGL)
   #include <ruby/video/wgl.cpp>
 #endif
@@ -188,6 +192,10 @@ auto Video::create(string driver) -> bool {
   if(driver == "Metal") self.instance = std::make_unique<VideoMetal>(*this);
   #endif
 
+  #if defined(VIDEO_SDL3)
+  if(driver == "OpenGL 3.3 (SDL3)") self.instance = std::make_unique<VideoSDL3>(*this);
+  #endif
+
   if(!self.instance) self.instance = std::make_unique<VideoDriver>(*this);
 
   return self.instance->create();
@@ -207,7 +215,11 @@ auto Video::hasDrivers() -> std::vector<string> {
   #if defined(VIDEO_GLX)
   "OpenGL 3.2",
   #endif
-    
+
+  #if defined(VIDEO_SDL3)
+  "OpenGL 3.3 (SDL3)",
+  #endif
+
   #if defined(VIDEO_METAL)
     "Metal",
   #endif
@@ -216,7 +228,9 @@ auto Video::hasDrivers() -> std::vector<string> {
 }
 
 auto Video::optimalDriver() -> string {
-  #if defined(VIDEO_METAL)
+  #if defined(VIDEO_SDL3)
+  return "OpenGL 3.3 (SDL3)";
+  #elif defined(VIDEO_METAL)
   return "Metal";
   #elif defined(VIDEO_WGL)
   return "OpenGL 3.2";
@@ -230,7 +244,9 @@ auto Video::optimalDriver() -> string {
 }
 
 auto Video::safestDriver() -> string {
-  #if defined(VIDEO_METAL)
+  #if defined(VIDEO_SDL3)
+  return "OpenGL 3.3 (SDL3)";
+  #elif defined(VIDEO_METAL)
   return "Metal";
   #elif defined(VIDEO_DIRECT3D9)
   return "Direct3D 9.0";

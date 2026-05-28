@@ -37,9 +37,7 @@ FamicomDiskSystem::FamicomDiskSystem() {
   }
 }
 
-auto FamicomDiskSystem::load(Menu menu) -> void {
-  Group group;
-  Menu diskMenu{&menu};
+auto FamicomDiskSystem::load(Menu menu) -> void {}
   diskMenu.setText("Disk Drive").setIcon(Icon::Media::Floppy);
 
   MenuRadioItem ejected{&diskMenu};

@@ -135,8 +135,7 @@ auto PlayStation::load() -> LoadResult {
   return successful;
 }
 
-auto PlayStation::load(Menu menu) -> void {
-  MenuItem changeDisc{&menu};
+auto PlayStation::load(Menu menu) -> void {}
   changeDisc.setIcon(Icon::Device::Optical);
   changeDisc.setText("Change Disc").onActivate([&] {
     Program::Guard guard;

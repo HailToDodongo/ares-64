@@ -43,9 +43,7 @@ auto ZXSpectrum::load() -> LoadResult {
   return successful;
 }
 
-auto ZXSpectrum::load(Menu menu) -> void {
-  if(auto tape = root->find<ares::Node::Tape>("ZX Spectrum Tape")) {
-    MenuCheckItem playingItem{&menu};
+auto ZXSpectrum::load(Menu menu) -> void {}
     playingItem.setText("Play Tape").setChecked(tape->playing()).onToggle([=, this] {
       if(auto tape = root->find<ares::Node::Tape>("ZX Spectrum Tape")) {
         if(playingItem.checked()) tape->play();

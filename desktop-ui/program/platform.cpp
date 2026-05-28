@@ -5,7 +5,7 @@ auto Program::attach(ares::Node::Object node) -> void {
 
   if(auto stream = node->cast<ares::Node::Audio::Stream>()) {
     streams = emulator->root->find<ares::Node::Audio::Stream>();
-    stream->setResamplerFrequency(ruby::audio.frequency());
+    stream->setResamplerFrequency(ruby::audio.frequency);
   }
 }
 
@@ -18,7 +18,7 @@ auto Program::detach(ares::Node::Object node) -> void {
   if(auto stream = node->cast<ares::Node::Audio::Stream>()) {
     streams = emulator->root->find<ares::Node::Audio::Stream>();
     std::erase(streams, stream);
-    stream->setResamplerFrequency(ruby::audio.frequency());
+    stream->setResamplerFrequency(ruby::audio.frequency);
   }
 }
 
@@ -116,7 +116,7 @@ auto Program::video(ares::Node::Video::Screen node, const u32* data, u32 pitch, 
     scaleWarningActive = true;
     if(lastScaleWarning == message) return;
     lastScaleWarning = message;
-    presentation.statusLeft.setText(message);
+    if(!program._imguiMode) presentation.statusLeft.setText(message);
   };
 
   u32 outputWidth = videoWidth * multiplier;
@@ -235,7 +235,8 @@ auto Program::audio(ares::Node::Audio::Stream node) -> void {
 
 auto Program::input(ares::Node::Input::Input node) -> void {
   if(settings.input.defocus != "Allow") {
-    if(!ruby::video.fullScreen() && !presentation.focused()) {
+    bool focused = _imguiMode ? AresApp::focused() : presentation.focused();
+    if(!ruby::video.fullScreen() && !focused) {
       //treat the input as not being active
       if(auto button = node->cast<ares::Node::Input::Button>()) button->setValue(0);
       if(auto axis = node->cast<ares::Node::Input::Axis>()) axis->setValue(0);
@@ -248,5 +249,6 @@ auto Program::input(ares::Node::Input::Input node) -> void {
 }
 
 auto Program::cheat(u32 address) -> maybe<u32> {
+  if(_imguiMode) return {};
   return cheatEditor.find(address);
 }

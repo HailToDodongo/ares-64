@@ -1,7 +1,11 @@
 auto Program::videoDriverUpdate() -> void {
   Program::Guard guard;
   ruby::video.create(settings.video.driver);
-  ruby::video.setContext(presentation.viewport.handle());
+  if(_imguiMode) {
+    ruby::video.setContext(_videoContext);
+  } else {
+    ruby::video.setContext(presentation.viewport.handle());
+  }
   videoMonitorUpdate();
   videoFormatUpdate();
   ruby::video.setExclusive(settings.video.exclusive);
@@ -37,7 +41,7 @@ auto Program::videoDriverUpdate() -> void {
     } else if(settings.video.shader.imatch("None")) {
       ruby::video.setShader("None");
     } else {
-      if(kiosk) {
+      if(kiosk || _imguiMode) {
         showMessage({"Requested shader not found: ", location, settings.video.shader, ". Using existing shader."});
       } else {
         hiro::MessageDialog()
@@ -51,7 +55,7 @@ auto Program::videoDriverUpdate() -> void {
     }
   }
 
-  if(!kiosk) presentation.loadShaders();
+  if(!kiosk && !_imguiMode) presentation.loadShaders();
 }
 
 auto Program::videoMonitorUpdate() -> void {
@@ -72,7 +76,7 @@ auto Program::videoFormatUpdate() -> void {
 
 auto Program::videoFullScreenToggle() -> void {
   Program::Guard guard;
-  if(!ruby::video.hasFullScreen()) return;
+  if(_imguiMode || !ruby::video.hasFullScreen()) return;
 
   ruby::video.clear();
   if(!ruby::video.fullScreen()) {
@@ -93,7 +97,7 @@ auto Program::videoFullScreenToggle() -> void {
 
 auto Program::videoPseudoFullScreenToggle() -> void {
   Program::Guard guard;
-  if(ruby::video.fullScreen()) return;
+  if(_imguiMode || ruby::video.fullScreen()) return;
 
   ruby::video.clear();
   if(!presentation.fullScreen()) {
@@ -116,60 +120,33 @@ auto Program::videoPseudoFullScreenToggle() -> void {
 
 auto Program::audioDriverUpdate() -> void {
   Program::Guard guard;
-  ruby::audio.create(settings.audio.driver);
-  ruby::audio.setContext(presentation.viewport.handle());
-  audioDeviceUpdate();
+  ruby::audio.create();
   audioFrequencyUpdate();
   audioLatencyUpdate();
-  ruby::audio.setExclusive(settings.audio.exclusive);
   ruby::audio.setBlocking(settings.audio.blocking);
   ruby::audio.setDynamic(settings.audio.dynamic);
-
-  if(!ruby::audio.ready()) {
-    driverInitFailed(settings.audio.driver, "audio", [&] { driverSettings.audioDriverUpdate(); });
-    return;
-  }
 }
 
-auto Program::audioDeviceUpdate() -> void {
-  Program::Guard guard;
-  if(!ruby::audio.hasDevice(settings.audio.device)) {
-    settings.audio.device = ruby::audio.device();
-  }
-  ruby::audio.setDevice(settings.audio.device);
-}
+auto Program::audioDeviceUpdate() -> void {}
 
 auto Program::audioFrequencyUpdate() -> void {
   Program::Guard guard;
-  if(!ruby::audio.hasFrequency(settings.audio.frequency)) {
-    settings.audio.frequency = ruby::audio.frequency();
-  }
   ruby::audio.setFrequency(settings.audio.frequency);
-
   for(auto& stream : streams) {
-    stream->setResamplerFrequency(ruby::audio.frequency());
+    stream->setResamplerFrequency(ruby::audio.frequency);
   }
 }
 
 auto Program::audioLatencyUpdate() -> void {
   Program::Guard guard;
-  if(!ruby::audio.hasLatency(settings.audio.latency)) {
-    settings.audio.latency = ruby::audio.latency();
-  }
   ruby::audio.setLatency(settings.audio.latency);
 }
 
 auto Program::inputDriverUpdate() -> void {
   Program::Guard guard;
-  ruby::input.create(settings.input.driver);
-  ruby::input.setContext(presentation.viewport.handle());
+  ruby::input.create();
+  ruby::input.setContext((uintptr)AresApp::window);
   ruby::input.onChange(std::bind_front(&InputManager::eventInput, &inputManager));
-
-  if(!ruby::input.ready()) {
-    driverInitFailed(settings.input.driver, "input", [&] { driverSettings.inputDriverUpdate(); });
-    return;
-  }
-
   inputManager.poll(true);
 }
 

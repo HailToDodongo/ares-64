@@ -83,9 +83,7 @@ auto MegaLD::load() -> LoadResult {
   return successful;
 }
 
-auto MegaLD::load(Menu menu) -> void {
-  Group group;
-  Menu changeSideMenu{&menu};
+auto MegaLD::load(Menu menu) -> void {}
   changeSideMenu.setIcon(Icon::Device::Optical);
   changeSideMenu.setText("Change Side");
   auto medium = game->pak->attribute("medium");

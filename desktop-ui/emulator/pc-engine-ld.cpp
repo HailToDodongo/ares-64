@@ -98,9 +98,7 @@ auto PCEngineLD::load() -> LoadResult {
   return successful;
 }
 
-auto PCEngineLD::load(Menu menu) -> void {
-  Group group;
-  Menu changeSideMenu{&menu};
+auto PCEngineLD::load(Menu menu) -> void {}
   changeSideMenu.setIcon(Icon::Device::Optical);
   changeSideMenu.setText("Change Side");
   auto medium = game->pak->attribute("medium");

@@ -75,7 +75,6 @@ struct Settings : Markup::Node {
   } boot;
 
   struct General {
-    bool showStatusBar = true;
     bool rewind = false;
     bool runAhead = false;
     bool autoSaveMemory = true;
@@ -109,8 +108,8 @@ struct Settings : Markup::Node {
 
   struct DebugServer {
     u32 port = 9123;
-    bool enabled = false; // if enabled, server starts with ares
-    bool useIPv4 = false; // forces IPv4 over IPv6
+    bool enabled = false;
+    bool useIPv4 = false;
   } debugServer;
 
   struct Nintendo64 {
@@ -128,369 +127,100 @@ struct Settings : Markup::Node {
   } megadrive;
 };
 
-struct VideoSettings : VerticalLayout {
-  auto construct() -> void;
+// Panel types (hiro widget members removed; ImGui handles all UI)
 
-  Label colorAdjustmentLabel{this, Size{~0, 0}, 5};
-  TableLayout colorAdjustmentLayout{this, Size{~0, 0}};
-    Label luminanceLabel{&colorAdjustmentLayout, Size{0, 0}};
-    Label luminanceValue{&colorAdjustmentLayout, Size{50_sx, 0}};
-    HorizontalSlider luminanceSlider{&colorAdjustmentLayout, Size{~0, 0}};
-  //
-    Label saturationLabel{&colorAdjustmentLayout, Size{0, 0}};
-    Label saturationValue{&colorAdjustmentLayout, Size{50_sx, 0}};
-    HorizontalSlider saturationSlider{&colorAdjustmentLayout, Size{~0, 0}};
-  //
-    Label gammaLabel{&colorAdjustmentLayout, Size{0, 0}};
-    Label gammaValue{&colorAdjustmentLayout, Size{50_sx, 0}};
-    HorizontalSlider gammaSlider{&colorAdjustmentLayout, Size{~0, 0}};
-  Label emulatorSettingsLabel{this, Size{~0, 0}, 5};
-    HorizontalLayout colorBleedLayout{this, Size{~0, 0}, 5};
-      CheckLabel colorBleedOption{&colorBleedLayout, Size{0, 0}, 5};
-      Label colorBleedHint{&colorBleedLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout colorEmulationLayout{this, Size{~0, 0}, 5};
-      CheckLabel colorEmulationOption{&colorEmulationLayout, Size{0, 0}, 5};
-      Label colorEmulationHint{&colorEmulationLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout deepBlackBoostLayout{this, Size{~0, 0}, 5};
-      CheckLabel deepBlackBoostOption{&deepBlackBoostLayout, Size{0, 0}, 5};
-      Label deepBlackBoostHint{&deepBlackBoostLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout interframeBlendingLayout{this, Size{~0, 0}, 5};
-      CheckLabel interframeBlendingOption{&interframeBlendingLayout, Size{0, 0}, 5};
-      Label interframeBlendingHint{&interframeBlendingLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout overscanLayout{this, Size{~0, 0}};
-      CheckLabel overscanOption{&overscanLayout, Size{0, 0}, 5};
-      Label overscanHint{&overscanLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout pixelAccuracyLayout{this, Size{~0, 0}};
-      CheckLabel pixelAccuracyOption{&pixelAccuracyLayout, Size{0, 0}, 5};
-      Label pixelAccuracyHint{&pixelAccuracyLayout, Size{~0, layoutVertSize}};
-  //
-  Label renderSettingsLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout disableVideoInterfaceProcessingLayout{this, Size{~0, 0}, 5};
-    CheckLabel disableVideoInterfaceProcessingOption{&disableVideoInterfaceProcessingLayout, Size{0, 0}, 5};
-    Label disableVideoInterfaceProcessingHint{&disableVideoInterfaceProcessingLayout, Size{0, layoutVertSize}};
-  HorizontalLayout weaveDeinterlacingLayout{this, Size{~0, 0}, 5};
-    CheckLabel weaveDeinterlacingOption{&weaveDeinterlacingLayout, Size{0, 0}, 5};
-    Label weaveDeinterlacingHint{&weaveDeinterlacingLayout, Size{0, layoutVertSize}};
-  HorizontalLayout renderQualityLayout{this, Size{~0, 0}, 5};
-    RadioLabel renderQuality1x{&renderQualityLayout, Size{0, 0}};
-    RadioLabel renderQuality2x{&renderQualityLayout, Size{0, 0}};
-    RadioLabel renderQuality4x{&renderQualityLayout, Size{0, 0}};
-    Group renderQualityGroup{&renderQuality1x, &renderQuality2x, &renderQuality4x};
-  HorizontalLayout renderSupersamplingLayout{this, Size{~0, 0}, 5};
-    CheckLabel renderSupersamplingOption{&renderSupersamplingLayout, Size{0, 0}, 5};
-    Label renderSupersamplingHint{&renderSupersamplingLayout, Size{0, layoutVertSize}};
-  HorizontalLayout renderSettingsLayout{this, Size{~0, 0}};
-      Label renderSettingsHint{&renderSettingsLayout, Size{0, layoutVertSize}};
+struct VideoSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> VideoSettings& { return *this; }
 };
 
-struct AudioSettings : VerticalLayout {
-  auto construct() -> void;
-
-  Label effectsLabel{this, Size{~0, 0}, 5};
-  TableLayout effectsLayout{this, Size{~0, 0}};
-    Label volumeLabel{&effectsLayout, Size{0, 0}};
-    Label volumeValue{&effectsLayout, Size{50_sx, 0}};
-    HorizontalSlider volumeSlider{&effectsLayout, Size{~0, 0}};
-  //
-    Label balanceLabel{&effectsLayout, Size{0, 0}};
-    Label balanceValue{&effectsLayout, Size{50_sx, 0}};
-    HorizontalSlider balanceSlider{&effectsLayout, Size{~0, 0}};
+struct AudioSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> AudioSettings& { return *this; }
 };
 
-struct InputSettings : VerticalLayout {
-  auto construct() -> void;
-  auto systemChange() -> void;
-  auto portChange() -> void;
-  auto deviceChange() -> void;
-  auto refresh() -> void;
-  auto eventContext(TableViewCell) -> void;
-  auto eventChange() -> void;
-  auto eventClear() -> void;
-  auto eventAssign(TableViewCell, string binding) -> void;
-  auto eventAssign(TableViewCell) -> void;
-  auto eventInput(std::shared_ptr<HID::Device>, u32 groupID, u32 inputID, s16 oldValue, s16 newValue) -> void;
-  auto setVisible(bool visible = true) -> InputSettings&;
-
-  HorizontalLayout indexLayout{this, Size{~0, 0}};
-    ComboButton systemList{&indexLayout, Size{~0, 0}};
-    ComboButton portList{&indexLayout, Size{~0, 0}};
-    ComboButton deviceList{&indexLayout, Size{~0, 0}};
-  Label inputHint{this, Size{~0, 0}, 5};
-  TableView inputList{this, Size{~0, ~0}};
-  HorizontalLayout controlLayout{this, Size{~0, 0}};
-    Label assignLabel{&controlLayout, Size{~0, 0}};
-    Canvas spacer{&controlLayout, Size{1, 0}};
-    Button assignButton{&controlLayout, Size{80, 0}};
-    Button clearButton{&controlLayout, Size{80, 0}};
-
-  maybe<InputNode&> activeMapping;
-  u32 activeBinding = 0;
-  Timer timer;
-  PopupMenu menu;
+struct InputSettings {
+  auto construct() -> void {}
+  auto eventInput(std::shared_ptr<nall::HID::Device>, u32, u32, s16, s16) -> void {}
+  auto refresh() -> void {}
+  auto setVisible(bool=true) -> InputSettings& { return *this; }
 };
 
-struct HotkeySettings : VerticalLayout {
-  auto construct() -> void;
-  auto reload() -> void;
-  auto refresh() -> void;
-  auto eventChange() -> void;
-  auto eventClear() -> void;
-  auto eventAssign(TableViewCell) -> void;
-  auto eventInput(std::shared_ptr<HID::Device>, u32 groupID, u32 inputID, s16 oldValue, s16 newValue) -> void;
-  auto setVisible(bool visible = true) -> HotkeySettings&;
-
-  TableView inputList{this, Size{~0, ~0}};
-  HorizontalLayout controlLayout{this, Size{~0, 0}};
-    Label assignLabel{&controlLayout, Size{~0, 0}};
-    Canvas spacer{&controlLayout, Size{1, 0}};
-    Button assignButton{&controlLayout, Size{80, 0}};
-    Button clearButton{&controlLayout, Size{80, 0}};
-
-  maybe<InputHotkey&> activeMapping;
-  u32 activeBinding = 0;
-  Timer timer;
+struct HotkeySettings {
+  auto construct() -> void {}
+  auto eventInput(std::shared_ptr<nall::HID::Device>, u32, u32, s16, s16) -> void {}
+  auto refresh() -> void {}
+  auto setVisible(bool=true) -> HotkeySettings& { return *this; }
 };
 
-struct EmulatorSettings : VerticalLayout {
-  auto construct() -> void;
-  auto eventToggle(TableViewCell cell) -> void;
-
-  Label emulatorLabel{this, Size{~0, 0}, 5};
-  TableView emulatorList{this, Size{~0, ~0}};
+struct EmulatorSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> EmulatorSettings& { return *this; }
 };
 
-struct OptionSettings : VerticalLayout {
-  auto construct() -> void;
-  Label commonSettingsLabel{this, Size{~0, 0}, 5};
-    HorizontalLayout rewindLayout{this, Size{~0, 0}, 5};
-      CheckLabel rewind{&rewindLayout, Size{0, 0}, 5};
-      Label rewindHint{&rewindLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout runAheadLayout{this, Size{~0, 0}, 5};
-      CheckLabel runAhead{&runAheadLayout, Size{0, 0}, 5};
-      Label runAheadHint{&runAheadLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout autoSaveMemoryLayout{this, Size{~0, 0}, 5};
-      CheckLabel autoSaveMemory{&autoSaveMemoryLayout, Size{0, 0}, 5};
-      Label autoSaveMemoryHint{&autoSaveMemoryLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout homebrewModeLayout{this, Size{~0, 0}, 5};
-      CheckLabel homebrewMode{&homebrewModeLayout, Size{0, 0}, 5};
-      Label homebrewModeHint{&homebrewModeLayout, Size{~0, layoutVertSize}};
-    HorizontalLayout forceInterpreterLayout{this, Size{~0, 0}, 5};
-      CheckLabel forceInterpreter{&forceInterpreterLayout, Size{0, 0}, 5};
-      Label forceInterpreterHint{&forceInterpreterLayout, Size{0, layoutVertSize}};
-    HorizontalLayout noFilePromptLayout{this, Size{~0, 0}, 5};
-      CheckLabel noFilePromptOption{&noFilePromptLayout, Size{0, 0}, 5};
-      Label noFilePromptHint{&noFilePromptLayout, Size{0, layoutVertSize}};
-  Label nintendo64SettingsLabel{this, Size{~0, 0}, 5};
-    HorizontalLayout nintendo64ExpansionPakLayout{this, Size{~0, 0}, 5};
-      CheckLabel nintendo64ExpansionPakOption{&nintendo64ExpansionPakLayout, Size{0, 0}, 5};
-      Label nintendo64ExpansionPakHint{&nintendo64ExpansionPakLayout, Size{0, layoutVertSize}};
-    HorizontalLayout nintendo64ControllerPakBankLayout{this, Size{~0, 0}, 5};
-      Label nintendo64ControllerPakBankLabel{&nintendo64ControllerPakBankLayout, Size{0, layoutVertSize}};
-      ComboButton nintendo64ControllerPakBankOption{&nintendo64ControllerPakBankLayout, Size{0, 0}};
-      Label nintendo64ControllerPakBankHint{&nintendo64ControllerPakBankLayout, Size{0, layoutVertSize}};
-
-  Label gameBoyAdvanceSettingsLabel{this, Size{~0, 0}, 5};
-    HorizontalLayout gameBoyPlayerLayout{this, Size{~0, 0}, 5};
-      CheckLabel gameBoyPlayerOption{&gameBoyPlayerLayout, Size{0, 0}, 5};
-      Label gameBoyPlayerHint{&gameBoyPlayerLayout, Size{0, layoutVertSize}};
-
-  Label megaDriveSettingsLabel{this, Size{~0, 0}, 5};
-    HorizontalLayout megaDriveTmssLayout{this, Size{~0, 0}, 5};
-      CheckLabel megaDriveTmssOption{&megaDriveTmssLayout, Size{0, 0}, 5};
-      Label megaDriveTmssHint{&megaDriveTmssLayout, Size{0, layoutVertSize}};
+struct OptionSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> OptionSettings& { return *this; }
 };
 
-struct FirmwareSettings : VerticalLayout {
-  auto construct() -> void;
-  auto refresh() -> void;
-  auto select(const string& emulator, const string& type, const string& region) -> bool;
-  auto eventChange() -> void;
-  auto eventAssign() -> void;
-  auto eventClear() -> void;
-  auto eventScan() -> void;
-  auto findFirmware(string sha256) -> string;
-
-  Label firmwareLabel{this, Size{~0, 0}, 5};
-  TableView firmwareList{this, Size{~0, ~0}};
-  HorizontalLayout controlLayout{this, Size{~0, 0}};
-    Button scanButton{&controlLayout, Size{80, 0}};
-    Canvas spacer{&controlLayout, Size{~0, 0}};
-    Button assignButton{&controlLayout, Size{80, 0}};
-    Button clearButton{&controlLayout, Size{80, 0}};
-
-  map<string, string> fileHashes;
+struct FirmwareSettings {
+  auto construct() -> void {}
+  auto select(const nall::string&, const nall::string&, const nall::string&) -> bool { return false; }
+  auto setVisible(bool=true) -> FirmwareSettings& { return *this; }
 };
 
-struct PathSettings : VerticalLayout {
-  auto construct() -> void;
-  auto refresh() -> void;
-
-  Label homeLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout homeLayout{this, Size{~0, 0}};
-    LineEdit homePath{&homeLayout, Size{~0, 0}};
-    Button homeAssign{&homeLayout, Size{80, 0}};
-    Button homeReset{&homeLayout, Size{80, 0}};
-  Label firmwareLabel{this, Size{~0, 0}, 5};
-    HorizontalLayout firmwareLayout{this, Size{~0, 0}};
-    LineEdit firmwarePath{&firmwareLayout, Size{~0, 0}};
-    Button firmwareAssign{&firmwareLayout, Size{80, 0}};
-    Button firmwareReset{&firmwareLayout, Size{80, 0}};
-  Label savesLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout savesLayout{this, Size{~0, 0}};
-    LineEdit savesPath{&savesLayout, Size{~0, 0}};
-    Button savesAssign{&savesLayout, Size{80, 0}};
-    Button savesReset{&savesLayout, Size{80, 0}};
-  Label screenshotsLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout screenshotsLayout{this, Size{~0, 0}};
-    LineEdit screenshotsPath{&screenshotsLayout, Size{~0, 0}};
-    Button screenshotsAssign{&screenshotsLayout, Size{80, 0}};
-    Button screenshotsReset{&screenshotsLayout, Size{80, 0}};
-  Label debuggingLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout debuggingLayout{this, Size{~0, 0}};
-    LineEdit debuggingPath{&debuggingLayout, Size{~0, 0}};
-    Button debuggingAssign{&debuggingLayout, Size{80, 0}};
-    Button debuggingReset{&debuggingLayout, Size{80, 0}};
-  Label arcadeRomsLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout arcadeRomsLayout{this, Size{~0, 0}};
-    LineEdit arcadeRomsPath{&arcadeRomsLayout, Size{~0, 0}};
-    Button arcadeRomsAssign{&arcadeRomsLayout, Size{80, 0}};
-    Button arcadeRomsReset{&arcadeRomsLayout, Size{80, 0}};
+struct PathSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> PathSettings& { return *this; }
 };
 
-struct DriverSettings : VerticalLayout {
-  auto construct() -> void;
-  auto videoRefresh() -> void;
-  auto videoDriverUpdate() -> bool;
-  auto audioRefresh() -> void;
-  auto audioDriverUpdate() -> bool;
-  auto inputRefresh() -> void;
-  auto inputDriverUpdate() -> bool;
-
-  Label videoLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout videoDriverLayout{this, Size{~0, 0}};
-    Label videoDriverLabel{&videoDriverLayout, Size{0, 0}};
-    ComboButton videoDriverList{&videoDriverLayout, Size{0, 0}};
-    Label videoDriverActive{&videoDriverLayout, Size{0, 0}};
-  HorizontalLayout videoPropertyLayout{this, Size{~0, 0}};
-    Label videoMonitorLabel{&videoPropertyLayout, Size{0, 0}};
-    ComboButton videoMonitorList{&videoPropertyLayout, Size{0, 0}};
-    Label videoFormatLabel{&videoPropertyLayout, Size{0, 0}};
-    ComboButton videoFormatList{&videoPropertyLayout, Size{0, 0}};
-  HorizontalLayout videoToggleLayout{this, Size{~0, 0}};
-#if !defined(PLATFORM_MACOS)
-    CheckLabel videoExclusiveToggle{&videoToggleLayout, Size{0, 0}};
-#endif
-    CheckLabel videoBlockingToggle{&videoToggleLayout, Size{0, 0}};
-    CheckLabel videoFlushToggle{&videoToggleLayout, Size{0, 0}};
-#if defined(PLATFORM_MACOS)
-    CheckLabel videoColorSpaceToggle{&videoToggleLayout, Size{0, 0}};
-    CheckLabel videoThreadedRendererToggle{&videoToggleLayout, Size{0, 0}};
-    CheckLabel videoNativeFullScreenToggle{&videoToggleLayout, Size{0, 0}};
-#endif
-  //
-  Label audioLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout audioDriverLayout{this, Size{~0, 0}};
-    Label audioDriverLabel{&audioDriverLayout, Size{0, 0}};
-    ComboButton audioDriverList{&audioDriverLayout, Size{0, 0}};
-    Label audioDriverActive{&audioDriverLayout, Size{0, 0}};
-  HorizontalLayout audioDeviceLayout{this, Size{~0, 0}};
-    Label audioDeviceLabel{&audioDeviceLayout, Size{0, 0}};
-    ComboButton audioDeviceList{&audioDeviceLayout, Size{0, 0}};
-  HorizontalLayout audioPropertyLayout{this, Size{~0, 0}};
-    Label audioFrequencyLabel{&audioPropertyLayout, Size{0, 0}};
-    ComboButton audioFrequencyList{&audioPropertyLayout, Size{0, 0}};
-    Label audioLatencyLabel{&audioPropertyLayout, Size{0, 0}};
-    ComboButton audioLatencyList{&audioPropertyLayout, Size{0, 0}};
-  HorizontalLayout audioToggleLayout{this, Size{~0, 0}};
-    CheckLabel audioExclusiveToggle{&audioToggleLayout, Size{0, 0}};
-    CheckLabel audioBlockingToggle{&audioToggleLayout, Size{0, 0}};
-    CheckLabel audioDynamicToggle{&audioToggleLayout, Size{0, 0}};
-  //
-  Label inputLabel{this, Size{~0, 0}, 5};
-  HorizontalLayout inputDriverLayout{this, Size{~0, 0}};
-    Label inputDriverLabel{&inputDriverLayout, Size{0, 0}};
-    ComboButton inputDriverList{&inputDriverLayout, Size{0, 0}};
-    Label inputDriverActive{&inputDriverLayout, Size{0, 0}};
-  HorizontalLayout inputDefocusLayout{this, Size{~0, 0}};
-    Label inputDefocusLabel{&inputDefocusLayout, Size{0, 0}};
-    RadioLabel inputDefocusPause{&inputDefocusLayout, Size{0, 0}};
-    RadioLabel inputDefocusBlock{&inputDefocusLayout, Size{0, 0}};
-    RadioLabel inputDefocusAllow{&inputDefocusLayout, Size{0, 0}};
-    Group inputDefocusGroup{&inputDefocusPause, &inputDefocusBlock, &inputDefocusAllow};
+struct DriverSettings {
+  auto construct() -> void {}
+  auto videoRefresh() -> void {}
+  auto videoDriverUpdate() -> bool { return false; }
+  auto audioRefresh() -> void {}
+  auto audioDriverUpdate() -> bool { return false; }
+  auto inputRefresh() -> void {}
+  auto inputDriverUpdate() -> bool { return false; }
+  auto setVisible(bool=true) -> DriverSettings& { return *this; }
 };
 
-struct DebugSettings : VerticalLayout {
-  auto construct() -> void;
-  auto infoRefresh() -> void;
-  auto serverRefresh() -> void;
-
-  Label debugLabel{this, Size{~0, 0}, 5};
-
-  HorizontalLayout portLayout{this, Size{~0, 0}};
-    Label portLabel{&portLayout, Size{48, 20}};
-    LineEdit port{&portLayout, Size{~0, 0}};
-    Label portHint{&portLayout, Size{~0, layoutVertSize}};
-
-  HorizontalLayout ipv4Layout{this, Size{~0, 0}};
-    CheckLabel ipv4{&ipv4Layout, Size{~0, 0}};
-
-  HorizontalLayout enabledLayout{this, Size{~0, 0}};
-    CheckLabel enabled{&enabledLayout, Size{~0, 0}};
-
-  Label connectInfo{this, Size{~0, 30}, 5};
+struct DebugSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> DebugSettings& { return *this; }
 };
 
-struct ImportExportSettings : VerticalLayout {
-  auto construct() -> void;
-  auto refresh() -> void;
-  auto setVisible(bool visible = true) -> ImportExportSettings&;
-
-  Label settingsFileLabel{this, Size{~0, 0}, 5};
-  TextEdit settingsView{this, Size{~0, ~0}};
-  HorizontalLayout controlsLayout{this, Size{~0, 0}};
-    CheckLabel useImported{&controlsLayout, Size{~0, 0}, 5};
-    Canvas spacer{&controlsLayout, Size{1, 0}};
-    Button importButton{&controlsLayout, Size{80, 0}};
-    Button exportButton{&controlsLayout, Size{80, 0}};
-  
-  bool imported = false;
+struct ImportExportSettings {
+  auto construct() -> void {}
+  auto setVisible(bool=true) -> ImportExportSettings& { return *this; }
 };
 
-struct HomePanel : VerticalLayout {
-  auto construct() -> void;
-
-  Canvas canvas{this, Size{~0, ~0}};
+struct HomePanel {
+  auto construct() -> void {}
 };
 
-struct SettingsWindow : Window {
-  auto show(const string& panel) -> void;
-  auto eventChange() -> void;
-
-  HorizontalLayout layout{this};
-    ListView panelList{&layout, Size{125_sx, ~0}};
-    VerticalLayout panelContainer{&layout, Size{~0, ~0}};
-      VideoSettings videoSettings;
-      AudioSettings audioSettings;
-      InputSettings inputSettings;
-      HotkeySettings hotkeySettings;
-      EmulatorSettings emulatorSettings;
-      OptionSettings optionSettings;
-      FirmwareSettings firmwareSettings;
-      PathSettings pathSettings;
-      DriverSettings driverSettings;
-      DebugSettings debugSettings;
-      ImportExportSettings importExportSettings;
-      HomePanel homePanel;
-  
+struct SettingsWindow {
+  auto show(const nall::string&) -> void {}
+  auto focused() -> bool { return false; }
+  auto setDismissable(bool=true) -> SettingsWindow& { return *this; }
   bool initialized = false;
-  
-private:
-  auto initialize() -> void;
+
+  VideoSettings videoSettings;
+  AudioSettings audioSettings;
+  InputSettings inputSettings;
+  HotkeySettings hotkeySettings;
+  EmulatorSettings emulatorSettings;
+  OptionSettings optionSettings;
+  FirmwareSettings firmwareSettings;
+  PathSettings pathSettings;
+  DriverSettings driverSettings;
+  DebugSettings debugSettings;
+  ImportExportSettings importExportSettings;
+  HomePanel homePanel;
 };
 
 extern Settings settings;
-namespace Instances { extern Instance<SettingsWindow> settingsWindow; }
-extern SettingsWindow& settingsWindow;
+extern SettingsWindow settingsWindow;
 extern VideoSettings& videoSettings;
 extern AudioSettings& audioSettings;
 extern InputSettings& inputSettings;

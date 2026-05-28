@@ -1,4 +1,6 @@
 auto Program::updateMessage() -> void {
+  if(_imguiMode) return;  // Status bar is rendered via ImGui in this mode
+
   // This function is called every iteration of the GUI run loop. Acquiring the emulator mutex would incur a severe
   // responsiveness penalty, so use a dedicated mutex for message passing.
   lock_guard<recursive_mutex> messageLock(_messageMutex);
@@ -43,7 +45,7 @@ auto Program::showMessage(const string& text) -> void {
 }
 
 auto Program::error(const string& text) -> void {
-  if(kiosk) {
+  if(kiosk || _imguiMode) {
     fprintf(stderr, "error: %s\n", text.data());
     pendingKioskExit = true;
   } else {

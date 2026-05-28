@@ -13,7 +13,6 @@ add_subdirectory(thirdparty)
 add_subdirectory(nall/nall)
 add_subdirectory(libco)
 add_subdirectory(ruby)
-add_subdirectory(hiro)
 
 # gersemi: off
 set(
@@ -51,6 +50,8 @@ add_subdirectory(tools/sourcery)
 
 message_configuration()
 
-add_subdirectory(.github)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.github/CMakeLists.txt")
+  add_subdirectory(.github)
+endif()
 add_subdirectory(cmake)
 return()

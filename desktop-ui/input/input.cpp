@@ -78,7 +78,7 @@ auto InputMapping::assigned() -> bool {
   return false;
 }
 
-auto InputMapping::Binding::icon() -> multiFactorImage {
+auto InputMapping::Binding::icon() -> hiro::multiFactorImage {
   lock_guard<recursive_mutex> inputLock(program.inputMutex);
   if(!device && (deviceID || deviceIdentifier)) return Icon::Device::Joypad;
   if(!device) return {};
@@ -555,7 +555,7 @@ auto InputManager::poll(bool force) -> void {
   if(changed) {
     this->devices = devices;
     bind();
-    if(settingsWindow.initialized) {
+    if(!program._imguiMode && settingsWindow.initialized) {
       inputSettings.refresh();
       hotkeySettings.refresh();
     }
@@ -563,6 +563,7 @@ auto InputManager::poll(bool force) -> void {
 }
 
 auto InputManager::eventInput(std::shared_ptr<HID::Device> device, u32 groupID, u32 inputID, s16 oldValue, s16 newValue) -> void {
+  if(program._imguiMode) return;  // Input assignment handled by ImGui settings panel
   lock_guard<recursive_mutex> inputLock(program.inputMutex);
   inputSettings.eventInput(device, groupID, inputID, oldValue, newValue);
   hotkeySettings.eventInput(device, groupID, inputID, oldValue, newValue);

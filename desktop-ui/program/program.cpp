@@ -1,4 +1,5 @@
 #include "../desktop-ui.hpp"
+#include "../ui/ui.hpp"
 #include "platform.cpp"
 #include "load.cpp"
 #include "states.cpp"
@@ -30,6 +31,7 @@ auto Program::create() -> void {
     Program::Guard guard;
     auto gameToLoad = startGameLoad.front();
     startGameLoad.erase(startGameLoad.begin());
+    auto emu = program.identify(gameToLoad);
     if(startSystem) {
       for(auto &emulator: emulators) {
         if(emulator->name == startSystem) {
@@ -45,15 +47,17 @@ auto Program::create() -> void {
       return;
     }
 
-    if(auto emulator = identify(gameToLoad)) {
-      if(load(emulator, gameToLoad)) {
+    if(auto emu2 = identify(gameToLoad)) {
+      if(load(emu2, gameToLoad)) {
         if(!kiosk) {
           if(startFullScreen) videoFullScreenToggle();
           if(startPseudoFullScreen) videoPseudoFullScreenToggle();
         }
+      } else {
       }
+    } else {
     }
-  }
+  }  // Guard destructor runs here
 }
 
 auto Program::waitForInterrupts() -> void {
@@ -83,7 +87,7 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
       continue;
     }
 
-    bool defocused = settings.input.defocus == "Pause" && !ruby::video.fullScreen() && !presentation.focused();
+    bool defocused = settings.input.defocus == "Pause" && !ruby::video.fullScreen() && !program._imguiMode && !presentation.focused();
 
     if(!emulator || (paused && !program.requestFrameAdvance) || defocused) {
       ruby::audio.clear();
@@ -128,31 +132,35 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
 }
 
 auto Program::main() -> void {
-  if(Application::modal()) {
-    ruby::audio.clear();
-    return;
+  if(!_imguiMode) {
+    if(false && Application::state().initialized /* hiro removed */ && false && Application::modal() /* hiro removed */) {
+      ruby::audio.clear();
+      return;
+    }
   }
+
+  inputManager.poll();
+  inputManager.pollHotkeys();
 
   if(pendingKioskExit) {
     pendingKioskExit = false;
     quit();
     return;
   }
-  
-  inputManager.poll();
-  inputManager.pollHotkeys();
 
   updateMessage();
 
   //If Platform::video() changed the screen resolution, resize the presentation window here.
   //Window operations must be performed from the main thread.
-  
+
   if(_needsResize) {
-    if(settings.video.adaptiveSizing && !startPseudoFullScreen) presentation.resizeWindow();
+    if(!_imguiMode && settings.video.adaptiveSizing && !startPseudoFullScreen) presentation.resizeWindow();
     _needsResize = false;
   }
 
-  if(toolsWindowConstructed) {
+  if(_imguiMode) {
+    ares::ui::RefreshTools();
+  } else if(toolsWindowConstructed) {
     memoryEditor.liveRefresh();
     graphicsViewer.liveRefresh();
     propertiesViewer.liveRefresh();
@@ -178,10 +186,10 @@ auto Program::quit() -> void {
   worker.join();
   program._isRunning = false;
   unload();
-  Application::processEvents();
-  Application::quit();
+  if(false && Application::state().initialized /* hiro removed */) {
+    /* Application::processEvents removed */;
+    /* Application::quit removed */;
+  }
 
   ruby::video.reset();
-  ruby::audio.reset();
-  ruby::input.reset();
 }
