@@ -247,6 +247,8 @@ auto nall::main(Arguments arguments) -> void {
   program._videoContext = (uintptr)&AresApp::videoContext;
   program.create();
 
+  ares::ui::showAudioViewer = settings.general.showAudioViewer;
+
   AresApp::onMain = [=] {
     ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
     program.main();

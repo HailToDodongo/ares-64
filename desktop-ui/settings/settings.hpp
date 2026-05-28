@@ -81,6 +81,7 @@ struct Settings : Markup::Node {
     bool homebrewMode = false;
     bool forceInterpreter = false;
     bool noFilePrompt = false;
+    bool showAudioViewer = false;
   } general;
 
   struct Rewind {

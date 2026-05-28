@@ -61,6 +61,7 @@ auto DrawAudioViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Audio Viewer", &showAudioViewer)) {
     ImGui::End();
+    settings.general.showAudioViewer = false;
     return;
   }
 
@@ -90,6 +91,8 @@ auto DrawAudioViewer() -> void {
   ImGui::Dummy(ImVec2(avail.x, channelHeight));
 
   ImGui::End();
+
+  settings.general.showAudioViewer = true;
 }
 
 }  // namespace ares::ui
