@@ -568,15 +568,15 @@ auto InputManager::eventInput(std::shared_ptr<HID::Device> device, u32 groupID, 
 
   if(program._imguiMode) {
     auto& assign = ares::ui::inputAssign;
-    if(assign.waiting && assign.activeNode && assign.activeBinding >= 0) {
-      if(device->isKeyboard() && newValue != 0) {
+    if(assign.waiting && assign.activeBinding >= 0 && newValue != 0) {
+      if(assign.activeNode && (device->isKeyboard() || device->isJoypad())) {
         assign.activeNode->configuredMapping().bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
         assign.activeNode = nullptr;
         assign.waiting = false;
         assign.activeBinding = -1;
-      } else if(device->isJoypad() && newValue != 0) {
-        assign.activeNode->configuredMapping().bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
-        assign.activeNode = nullptr;
+      } else if(assign.activeMapping && (device->isKeyboard() || device->isJoypad())) {
+        assign.activeMapping->bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
+        assign.activeMapping = nullptr;
         assign.waiting = false;
         assign.activeBinding = -1;
       }

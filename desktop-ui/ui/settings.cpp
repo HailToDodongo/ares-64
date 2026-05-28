@@ -419,6 +419,8 @@ static void DrawHotkeysPanel() {
   }
   ImGui::TableHeadersRow();
 
+  bool assigning = inputAssign.waiting;
+
   for(auto& mapping : inputManager.hotkeys) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
@@ -427,10 +429,36 @@ static void DrawHotkeysPanel() {
     for(u32 b = 0; b < BindingLimit; b++) {
       ImGui::TableNextColumn();
       auto text = mapping.bindings[b].text();
-      if(text) {
-        ImGui::TextUnformatted(text.data());
+
+      bool isActive = assigning && inputAssign.activeMapping == &mapping
+                      && inputAssign.activeBinding == (int)b;
+      char label[64];
+      if(isActive) {
+        snprintf(label, sizeof(label), "(press key...)##hk_%p_%u", (void*)&mapping, b);
+      } else if(text) {
+        snprintf(label, sizeof(label), "%s##hk_%p_%u", text.data(), (void*)&mapping, b);
+      } else {
+        snprintf(label, sizeof(label), "##hk_%p_%u", (void*)&mapping, b);
+      }
+
+      if(ImGui::Selectable(label, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+        if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || !text) {
+          inputAssign.activeMapping = &mapping;
+          inputAssign.activeBinding = b;
+          inputAssign.activeNode = nullptr;
+          inputAssign.waiting = true;
+          inputManager.poll(true);
+        }
+      }
+      if(ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        mapping.unbind(b);
       }
     }
+  }
+  if(assigning && inputAssign.activeMapping && ImGui::Button("Cancel Assignment")) {
+    inputAssign.activeMapping = nullptr;
+    inputAssign.waiting = false;
+    inputAssign.activeBinding = -1;
   }
   ImGui::EndTable();
 }
