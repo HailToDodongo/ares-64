@@ -1,5 +1,6 @@
 #include "../desktop-ui.hpp"
 #include "../ui/ui.hpp"
+#include <n64/n64.hpp>
 #include "platform.cpp"
 #include "load.cpp"
 #include "states.cpp"
@@ -111,6 +112,12 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
       emulator->root->run();
       state.setReading();
       emulator->root->unserialize(state);
+    }
+
+    if(emulator && emulator->name == "Nintendo 64") {
+      auto& cap = ares::Nintendo64::rdp.capture;
+      cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
+      cap.writePos.store(0, std::memory_order_release);
     }
 
     nall::GDB::server.updateLoop();

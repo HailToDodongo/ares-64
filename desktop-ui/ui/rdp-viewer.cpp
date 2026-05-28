@@ -8,12 +8,12 @@ namespace ares::ui {
 bool showRdpViewer = false;
 
 static auto cmdColor(u8 opcode) -> ImU32 {
-  if(opcode >= 0x08 && opcode <= 0x0f) return IM_COL32(100, 200, 255, 255); // triangles
-  if(opcode >= 0x24 && opcode <= 0x25) return IM_COL32(100, 255, 150, 255); // rects
-  if(opcode >= 0x26 && opcode <= 0x29) return IM_COL32(255, 255, 100, 255); // sync
-  if(opcode >= 0x2a && opcode <= 0x3f) return IM_COL32(255, 180, 100, 255); // set/load
-  if(opcode == 0x36)                   return IM_COL32(255, 150, 200, 255); // fill rect
-  return IM_COL32(128, 128, 128, 255); // invalid/nop
+  if(opcode >= 0x08 && opcode <= 0x0f) return IM_COL32(100, 200, 255, 255);
+  if(opcode >= 0x24 && opcode <= 0x25) return IM_COL32(100, 255, 150, 255);
+  if(opcode >= 0x26 && opcode <= 0x29) return IM_COL32(255, 255, 100, 255);
+  if(opcode >= 0x2a && opcode <= 0x3f) return IM_COL32(255, 180, 100, 255);
+  if(opcode == 0x36)                   return IM_COL32(255, 150, 200, 255);
+  return IM_COL32(128, 128, 128, 255);
 }
 
 auto DrawRdpViewer() -> void {
@@ -40,43 +40,20 @@ auto DrawRdpViewer() -> void {
   }
 
   ImGui::SameLine();
-  u32 frameCounter = cap.frameCounter.load(std::memory_order_acquire);
-  u32 totalWritten = cap.writePos.load(std::memory_order_acquire);
-  u32 slotCount = std::min(totalWritten, cap.maxCommands);
-
-  // Build list of commands from the latest frame
-  static std::vector<u32> latestCmds;  // indices into cap.commands for the latest frame
-  latestCmds.clear();
-
-  u32 latestFrame = 0;
-  u32 startPos = totalWritten > cap.maxCommands ? (totalWritten - cap.maxCommands) % cap.maxCommands : 0;
-
-  // First pass: find the latest frame number
-  for(u32 i = 0; i < slotCount; i++) {
-    u32 pos = (startPos + i) % cap.maxCommands;
-    auto& cmd = cap.commands[pos];
-    if(cmd.frame > latestFrame) latestFrame = cmd.frame;
-  }
-
-  // Second pass: collect commands from the latest frame
-  for(u32 i = 0; i < slotCount; i++) {
-    u32 pos = (startPos + i) % cap.maxCommands;
-    auto& cmd = cap.commands[pos];
-    if(cmd.frame == latestFrame) latestCmds.push_back(pos);
-  }
-
-  ImGui::Text("Frame: %u | Commands: %zu", latestFrame, latestCmds.size());
+  u32 count = cap.committedCount.load(std::memory_order_acquire);
+  if(count > cap.maxCommands) count = cap.maxCommands;
+  ImGui::Text("Commands: %u", count);
 
   ImGui::Separator();
 
-  if(latestCmds.empty()) {
-    ImGui::TextUnformatted("No commands captured. Enable capture above.");
+  if(count == 0) {
+    ImGui::TextUnformatted("No commands captured.");
     ImGui::End();
     settings.general.showRdpViewer = true;
     return;
   }
 
-  if(!ImGui::BeginTable("rdp_cmds", 3,
+  if(!ImGui::BeginTable("rdp_cmds", 4,
        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
        ImVec2(0, 0))) {
@@ -84,29 +61,59 @@ auto DrawRdpViewer() -> void {
     settings.general.showRdpViewer = true;
     return;
   }
-  ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 50);
-  ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthStretch);
+  ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40);
+  ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthFixed, 180);
+  ImGui::TableSetupColumn("Details", ImGuiTableColumnFlags_WidthStretch);
   ImGui::TableSetupColumn("Hex", ImGuiTableColumnFlags_WidthFixed, 150);
   ImGui::TableSetupScrollFreeze(0, 1);
   ImGui::TableHeadersRow();
 
-  ImGuiListClipper clipper;
-  clipper.Begin(latestCmds.size());
-  while(clipper.Step()) {
-    for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
-      auto& cmd = cap.commands[latestCmds[row]];
-      ImGui::TableNextRow();
+  for(u32 row = 0; row < count; row++) {
+    auto& cmd = cap.commands[row];
+    auto name = ares::Nintendo64::rdpCommandName(cmd.opcode);
+    auto desc = ares::Nintendo64::rdpCommandDescription(cmd.opcode, cmd.word0);
 
-      ImGui::TableNextColumn();
-      ImGui::Text("%u", cmd.index);
+    int lines = 1;
+    for(char c : desc) if(c == '\n') lines++;
 
-      ImGui::TableNextColumn();
-      auto name = ares::Nintendo64::rdpCommandName(cmd.opcode);
-      ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(cmdColor(cmd.opcode)), "%s", name);
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() * lines);
 
-      ImGui::TableNextColumn();
-      ImGui::Text("%016llX", (unsigned long long)cmd.word0);
+    ImGui::TableNextColumn();
+    ImGui::Text("%u", row);
+
+    ImGui::TableNextColumn();
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(cmdColor(cmd.opcode)), "%s", name);
+
+    ImGui::TableNextColumn();
+    // Color swatches for color-setting commands
+    if(cmd.opcode >= 0x37 && cmd.opcode <= 0x3b) {
+      u32 c = (u32)cmd.word0;
+      u8 r = (c >> 24) & 0xff, g = (c >> 16) & 0xff, b = (c >> 8) & 0xff, a = c & 0xff;
+      ImVec2 pos = ImGui::GetCursorScreenPos();
+      float h  = ImGui::GetTextLineHeight();
+      float sz = h - 2;
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      dl->AddRectFilled(pos, ImVec2(pos.x+sz, pos.y+sz), IM_COL32(r, g, b, 255));
+      dl->AddRect(pos, ImVec2(pos.x+sz, pos.y+sz), IM_COL32(255,255,255,60));
+      dl->AddRectFilled(ImVec2(pos.x+sz+3, pos.y), ImVec2(pos.x+sz*2+3, pos.y+sz), IM_COL32(a, a, a, 255));
+      dl->AddRect(ImVec2(pos.x+sz+3, pos.y), ImVec2(pos.x+sz*2+3, pos.y+sz), IM_COL32(255,255,255,60));
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + sz * 2 + 6);
     }
+
+    if(lines == 1) {
+      ImGui::TextUnformatted(desc.data());
+    } else {
+      u32 lstart = 0;
+      for(u32 i = 0; i <= desc.length(); i++) {
+        if(i == desc.length() || desc[i] == '\n') {
+          ImGui::TextUnformatted(desc.data() + lstart, desc.data() + i);
+          lstart = i + 1;
+        }
+      }
+    }
+
+    ImGui::TableNextColumn();
+    ImGui::Text("%016llX", (unsigned long long)cmd.word0);
   }
   ImGui::EndTable();
 

@@ -4,6 +4,7 @@ namespace ares::Nintendo64 {
 
 RDP rdp;
 #include "render.cpp"
+#include "decode.cpp"
 #include "io.cpp"
 #include "debugger.cpp"
 #include "serialization.cpp"

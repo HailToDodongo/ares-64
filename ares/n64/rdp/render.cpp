@@ -217,10 +217,8 @@ auto RDP::render() -> void {
     }
 
     if(capture.enabled.load(std::memory_order_relaxed)) {
-      u32 frame = capture.frameCounter.load(std::memory_order_acquire);
-      u32 idx = command.current - command.start;  // approximate index
       u8 wc = rdpCommandWordCounts[opCode];
-      capture.push(frame, idx, (u8)opCode, op, 0, wc);
+      capture.push(0, 0, (u8)opCode, op, 0, wc);
     }
 
     switch(opCode) {

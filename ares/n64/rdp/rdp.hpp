@@ -1,9 +1,10 @@
 //Reality Display Processor
 
 auto rdpCommandName(u8 opcode) -> const char*;
+auto rdpCommandDescription(u8 opcode, u64 word0) -> string;
 
 struct RDPCapture {
-  static constexpr u32 maxCommands = 65536;  // ~64K commands stored
+  static constexpr u32 maxCommands = 65536;
   struct Command {
     u32 frame = 0;
     u32 index = 0;
@@ -14,8 +15,8 @@ struct RDPCapture {
   };
   Command commands[maxCommands];
   std::atomic<u32> writePos{0};
-  std::atomic<u32> frameCounter{0};
-  std::atomic<bool> enabled{false};
+  std::atomic<u32> committedCount{0};
+  std::atomic<bool> enabled{true};
 
   auto push(u32 frame, u32 index, u8 opcode, u64 word0, u64 word1 = 0, u8 wordCount = 1) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
