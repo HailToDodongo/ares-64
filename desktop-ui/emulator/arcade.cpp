@@ -97,10 +97,7 @@ Arcade::Arcade() {
 }
 
 auto Arcade::available() -> bool {
-#if defined(CORE_SG) || defined(CORE_N64)
   return true;
-#endif
-  return false;
 }
 
 auto Arcade::load() -> LoadResult {
@@ -116,21 +113,6 @@ auto Arcade::load() -> LoadResult {
   if(result != successful) return result;
 
   //Determine from the game manifest which core to use for the given arcade rom
-#ifdef CORE_SG
-  if(game->pak->attribute("board") == "sega/sg1000a") {
-    if(!ares::SG1000::load(root, {"[Sega] SG-1000A"})) return otherError;
-    systemPakName = "SG-1000A";
-    gamePakName = "Arcade Cartridge";
-
-    if(auto port = root->find<ares::Node::Port>("Cartridge Slot")) {
-      port->allocate();
-      port->connect();
-    }
-    return successful;
-  }
-#endif
-
-#ifdef CORE_N64
   if(game->pak->attribute("board") == "nintendo/aleck64") {
     if(!ares::Nintendo64::load(root, {"[SETA] Aleck 64"})) {
       return otherError;
@@ -167,7 +149,6 @@ auto Arcade::load() -> LoadResult {
 
     return successful;
   }
-#endif
 
   return otherError;
 }

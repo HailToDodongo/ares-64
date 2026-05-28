@@ -248,6 +248,9 @@ auto nall::main(Arguments arguments) -> void {
   program.create();
 
   ares::ui::showAudioViewer = settings.general.showAudioViewer;
+  ares::ui::showManifestViewer = settings.general.showManifestViewer;
+  ares::ui::showCheatEditor = settings.general.showCheatEditor;
+  ares::ui::showTracerViewer = settings.general.showTracerViewer;
 
   AresApp::onMain = [=] {
     ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
@@ -256,7 +259,9 @@ auto nall::main(Arguments arguments) -> void {
     ares::ui::DrawMenuBar();
     ares::ui::DrawViewport();
     ares::ui::DrawSettingsWindow();
-    ares::ui::DrawToolsWindow();
+    ares::ui::DrawManifestViewer();
+    ares::ui::DrawCheatEditor();
+    ares::ui::DrawTracerViewer();
     ares::ui::DrawAudioViewer();
 
     if(ares::ui::showAboutDialog) {

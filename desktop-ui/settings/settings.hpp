@@ -82,6 +82,9 @@ struct Settings : Markup::Node {
     bool forceInterpreter = false;
     bool noFilePrompt = false;
     bool showAudioViewer = false;
+    bool showManifestViewer = false;
+    bool showCheatEditor = false;
+    bool showTracerViewer = false;
   } general;
 
   struct Rewind {

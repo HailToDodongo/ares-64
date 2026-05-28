@@ -98,6 +98,9 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ForceInterpreter", general.forceInterpreter);
   bind(boolean, "General/NoFilePrompt", general.noFilePrompt);
   bind(boolean, "General/ShowAudioViewer", general.showAudioViewer);
+  bind(boolean, "General/ShowManifestViewer", general.showManifestViewer);
+  bind(boolean, "General/ShowCheatEditor", general.showCheatEditor);
+  bind(boolean, "General/ShowTracerViewer", general.showTracerViewer);
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);

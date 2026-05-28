@@ -9,7 +9,9 @@ auto DrawMainMenuBar() -> void;
 auto DrawMenuBar() -> void;
 auto DrawViewport() -> void;
 auto DrawSettingsWindow() -> void;
-auto DrawToolsWindow() -> void;
+auto DrawManifestViewer() -> void;
+auto DrawCheatEditor() -> void;
+auto DrawTracerViewer() -> void;
 auto DrawAudioViewer() -> void;
 auto DrawStatusBar() -> void;
 
@@ -17,7 +19,9 @@ auto DrawStatusBar() -> void;
 auto RefreshTools() -> void;
 
 extern bool showSettingsWindow;
-extern bool showToolsWindow;
+extern bool showManifestViewer;
+extern bool showCheatEditor;
+extern bool showTracerViewer;
 extern bool showAudioViewer;
 extern bool showAboutDialog;
 

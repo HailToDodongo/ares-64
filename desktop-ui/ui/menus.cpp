@@ -8,7 +8,6 @@
 namespace ares::ui {
 
 bool showSettingsWindow = false;
-bool showToolsWindow = false;
 bool showAboutDialog = false;
 
 static void DrawFileMenu() {
@@ -289,15 +288,9 @@ static void DrawToolsMenu() {
   ImGui::Separator();
 
   // Tool panel openers
-  if(ImGui::MenuItem("Manifest")) showToolsWindow = true;
-  if(ImGui::MenuItem("Cheats")) showToolsWindow = true;
-  if(ImGui::MenuItem("Memory")) showToolsWindow = true;
-  if(ImGui::MenuItem("Graphics")) showToolsWindow = true;
-  if(ImGui::MenuItem("Streams")) showToolsWindow = true;
-  if(ImGui::MenuItem("Properties")) showToolsWindow = true;
-  if(ImGui::MenuItem("Tracer")) showToolsWindow = true;
-  if(ImGui::MenuItem("Tape")) showToolsWindow = true;
-  ImGui::Separator();
+  if(ImGui::MenuItem("Manifest Viewer")) showManifestViewer = true;
+  if(ImGui::MenuItem("Cheat Editor")) showCheatEditor = true;
+  if(ImGui::MenuItem("Trace Logger")) showTracerViewer = true;
   if(ImGui::MenuItem("Audio Viewer")) showAudioViewer = true;
 
   ImGui::EndMenu();
