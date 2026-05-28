@@ -318,6 +318,28 @@ auto DrawMainMenuBar() -> void {
   if(emulator) DrawToolsMenu();
   DrawHelpMenu();
 
+  if(emulator) {
+    auto vps = program.vblanksPerSecond.load();
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%u VPS", (u32)vps);
+    auto textSize = ImGui::CalcTextSize(buf);
+    ImGui::SameLine(ImGui::GetWindowWidth() - textSize.x - 16);
+    ImGui::TextUnformatted(buf);
+  }
+
+  ImGui::EndMainMenuBar();
+}
+
+// Menu bar for use inside a dockable window (BeginMenuBar vs BeginMainMenuBar)
+auto DrawMenuBar() -> void {
+  if(!ImGui::BeginMenuBar()) return;
+
+  DrawFileMenu();
+  if(emulator) DrawSystemMenu();
+  DrawSettingsMenu();
+  if(emulator) DrawToolsMenu();
+  DrawHelpMenu();
+
   // VPS counter on the right side of the menu bar
   if(emulator) {
     auto vps = program.vblanksPerSecond.load();
@@ -338,7 +360,7 @@ auto DrawMainMenuBar() -> void {
     }
   }
 
-  ImGui::EndMainMenuBar();
+  ImGui::EndMenuBar();
 }
 
 }  // namespace ares::ui

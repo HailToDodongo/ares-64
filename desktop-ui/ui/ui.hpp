@@ -6,6 +6,7 @@
 namespace ares::ui {
 
 auto DrawMainMenuBar() -> void;
+auto DrawMenuBar() -> void;
 auto DrawViewport() -> void;
 auto DrawSettingsWindow() -> void;
 auto DrawToolsWindow() -> void;

@@ -45,7 +45,14 @@ auto AresApp::initialize() -> bool {
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-  io.IniFilename = nullptr;
+  // Persist docking layout across sessions
+  static char iniPath[1024];
+  char* prefPath = SDL_GetPrefPath("ares-imgui", "ares");
+  if(prefPath) {
+    snprintf(iniPath, sizeof(iniPath), "%simgui.ini", prefPath);
+    SDL_free(prefPath);
+    io.IniFilename = iniPath;
+  }
 
   // DPI scaling: detect the ratio of framebuffer pixels to window size
   int fbW, fbH, winW, winH;
@@ -182,8 +189,30 @@ auto AresApp::run() -> void {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    static bool _firstFrame = true;
-    if (onMain) onMain();
+    // Full-window dockspace with embedded menu bar
+    {
+      ImGuiViewport* vp = ImGui::GetMainViewport();
+      ImGui::SetNextWindowPos(vp->Pos);
+      ImGui::SetNextWindowSize(vp->Size);
+      ImGui::SetNextWindowViewport(vp->ID);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+
+      ImGuiWindowFlags dockFlags = ImGuiWindowFlags_NoDocking |
+          ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+          ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+          ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+          ImGuiWindowFlags_MenuBar;
+
+      ImGui::Begin("MainDockSpace", nullptr, dockFlags);
+      ImGui::PopStyleVar(3);
+      ImGui::DockSpace(ImGui::GetID("MainDockSpace"), ImVec2(0, 0));
+
+      if (onMain) onMain();
+
+      ImGui::End();
+    }
 
     ImGui::Render();
     int displayW, displayH;

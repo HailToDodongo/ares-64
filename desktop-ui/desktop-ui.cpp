@@ -251,10 +251,10 @@ auto nall::main(Arguments arguments) -> void {
     ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
     program.main();
 
+    ares::ui::DrawMenuBar();
     ares::ui::DrawViewport();
     ares::ui::DrawSettingsWindow();
     ares::ui::DrawToolsWindow();
-    ares::ui::DrawMainMenuBar();
 
     if(ares::ui::showAboutDialog) {
       ImGui::OpenPopup("About ares");
