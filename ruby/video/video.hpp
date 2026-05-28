@@ -46,6 +46,7 @@ struct VideoDriver {
   virtual auto output(u32 width = 0, u32 height = 0) -> void {}
   virtual auto renderFrame() -> void {}
   virtual auto outputTexture() -> uintptr { return 0; }
+  virtual auto outputSize(u32& w, u32& h) -> void { w = 0; h = 0; }
   virtual auto poll() -> void {}
 
 protected:
@@ -155,6 +156,7 @@ struct Video {
   auto output(u32 width = 0, u32 height = 0) -> void;
   auto renderFrame() -> void { lock_guard<recursive_mutex> lock(mutex); instance->renderFrame(); }
   auto outputTexture() -> uintptr { return instance->outputTexture(); }
+  auto outputSize(u32& w, u32& h) -> void { instance->outputSize(w, h); }
   auto poll() -> void;
 
   auto onUpdate(const std::function<void (u32, u32)>&) -> void;

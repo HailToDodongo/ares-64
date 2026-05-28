@@ -116,12 +116,8 @@ struct VideoSDL3 : VideoDriver, OpenGL {
 
     ensureOutputFBO();
 
-    u32 targetWidth = absoluteWidth ? absoluteWidth : _pendingWidth;
-    u32 targetHeight = absoluteHeight ? absoluteHeight : _pendingHeight;
-    int windowW, windowH;
-    SDL_GetWindowSize(_window, &windowW, &windowH);
-    u32 x = ((u32)windowW - targetWidth) / 2;
-    u32 y = ((u32)windowH - targetHeight) / 2;
+    u32 targetWidth = _cpuWidth;
+    u32 targetHeight = _cpuHeight;
 
     if(_chain != NULL) {
       if(!framebuffer || framebufferWidth != targetWidth || framebufferHeight != targetHeight) {
@@ -149,13 +145,13 @@ struct VideoSDL3 : VideoDriver, OpenGL {
     }
 
     OpenGL::clear(_outputFBO);
-    OpenGL::absoluteWidth = _pendingWidth;
-    OpenGL::absoluteHeight = _pendingHeight;
+    OpenGL::absoluteWidth = 0;
+    OpenGL::absoluteHeight = 0;
     OpenGL::outputX = 0;
     OpenGL::outputY = 0;
-    OpenGL::outputWidth = windowW;
-    OpenGL::outputHeight = windowH;
-    OpenGL::render(_cpuWidth, _cpuHeight, outputX + x, outputY + y, targetWidth, targetHeight, _outputFBO);
+    OpenGL::outputWidth = _cpuWidth;
+    OpenGL::outputHeight = _cpuHeight;
+    OpenGL::render(_cpuWidth, _cpuHeight, 0, 0, targetWidth, targetHeight, _outputFBO);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     _framePending = false;
@@ -165,6 +161,11 @@ struct VideoSDL3 : VideoDriver, OpenGL {
     return _outputTexture;
   }
 
+  auto outputSize(u32& w, u32& h) -> void override {
+    w = _cpuWidth;
+    h = _cpuHeight;
+  }
+
   auto poll() -> void override {}
 
 private:
@@ -172,10 +173,10 @@ private:
   auto destruct() -> void { terminate(); }
 
   auto ensureOutputFBO() -> void {
-    int w, h;
-    SDL_GetWindowSizeInPixels(_window, &w, &h);
+    u32 w = _cpuWidth ? _cpuWidth : 640;
+    u32 h = _cpuHeight ? _cpuHeight : 480;
 
-    if(_outputFBO == 0 || _outputFBOWidth != w || _outputFBOHeight != h) {
+    if(_outputFBO == 0 || _outputFBOWidth != (int)w || _outputFBOHeight != (int)h) {
       if(_outputFBO) glDeleteFramebuffers(1, &_outputFBO);
       if(_outputTexture) glDeleteTextures(1, &_outputTexture);
 
