@@ -297,6 +297,8 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("Properties")) showToolsWindow = true;
   if(ImGui::MenuItem("Tracer")) showToolsWindow = true;
   if(ImGui::MenuItem("Tape")) showToolsWindow = true;
+  ImGui::Separator();
+  if(ImGui::MenuItem("Audio Viewer")) showAudioViewer = true;
 
   ImGui::EndMenu();
 }

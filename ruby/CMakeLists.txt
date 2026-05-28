@@ -11,9 +11,9 @@ endif()
 
 target_sources(ruby PRIVATE ruby.hpp)
 
-target_sources(ruby PRIVATE audio/audio.cpp audio/audio.hpp audio/sdl.cpp)
+target_sources(ruby PRIVATE audio/audio.cpp audio/audio.hpp)
 
-target_sources(ruby PRIVATE input/input.cpp input/input.hpp input/sdl.cpp)
+target_sources(ruby PRIVATE input/input.cpp input/input.hpp)
 
 target_include_directories(ruby PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty)
 

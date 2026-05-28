@@ -228,6 +228,9 @@ auto Program::audio(ares::Node::Audio::Stream node) -> void {
       if(balance > 0.0) samples[0] *= 1.0 - balance;
     }
 
+    //capture samples before sending to audio device
+    audioCapture.push(samples[0], samples[1]);
+
     //send frame to the audio output device
     ruby::audio.output(samples);
   }

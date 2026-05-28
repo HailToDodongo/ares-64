@@ -255,6 +255,7 @@ auto nall::main(Arguments arguments) -> void {
     ares::ui::DrawViewport();
     ares::ui::DrawSettingsWindow();
     ares::ui::DrawToolsWindow();
+    ares::ui::DrawAudioViewer();
 
     if(ares::ui::showAboutDialog) {
       ImGui::OpenPopup("About ares");

@@ -1,3 +1,18 @@
+struct AudioCapture {
+  static constexpr u32 bufferSize = 48000 * 4;  // ~4 seconds at 48kHz
+  f32 left[bufferSize] = {};
+  f32 right[bufferSize] = {};
+  std::atomic<u32> writePos{0};
+  bool enabled = true;
+  auto push(f64 l, f64 r) -> void {
+    if(!enabled) return;
+    auto pos = writePos.load(std::memory_order_relaxed);
+    left[pos] = (f32)l;
+    right[pos] = (f32)r;
+    writePos.store((pos + 1) % bufferSize, std::memory_order_release);
+  }
+};
+
 struct Program : ares::Platform {
   auto create() -> void;
   auto main() -> void;
@@ -73,6 +88,7 @@ struct Program : ares::Platform {
   string startShader;
   string startSaveStateSlot;
 
+  AudioCapture audioCapture;
   std::vector<ares::Node::Video::Screen> screens;
   std::vector<ares::Node::Audio::Stream> streams;
 

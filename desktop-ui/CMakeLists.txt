@@ -7,6 +7,7 @@ add_executable(
   ui/assign.cpp
   ui/settings.cpp
   ui/tools.cpp
+  ui/audio-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   resource/resource.cpp
@@ -33,6 +34,7 @@ set_source_files_properties(
   ui/assign.cpp
   ui/settings.cpp
   ui/tools.cpp
+  ui/audio-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   resource/resource.cpp
