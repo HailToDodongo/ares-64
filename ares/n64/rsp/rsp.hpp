@@ -40,8 +40,10 @@ struct RSPCapture {
   // RSPQ banner for validation (from JSON)
   string banner;
 
-  // Overlay name table (populated at runtime)
-  string overlayNames[16];
+  // Command name lookup: commandNameMap[overlayId][commandId]
+  string commandNameMap[16][256];
+  // Overlay name lookup: overlayNameMap[overlayId]
+  string overlayNameMap[16];
 
   // Per-frame cycle tracking
   u32 frameNumber = 0;

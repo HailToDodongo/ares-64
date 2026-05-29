@@ -196,5 +196,6 @@ set_source_files_properties(ares ${ARES_HEADER_SOURCES} PROPERTIES HEADER_FILE_O
 set_source_files_properties(ares ares/ares.cpp ares/memory/fixed-allocator.cpp PROPERTIES HEADER_FILE_ONLY FALSE)
 
 target_include_directories(ares INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(ares PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/json)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ares_SOURCES})

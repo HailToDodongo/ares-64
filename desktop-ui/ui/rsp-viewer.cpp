@@ -112,7 +112,7 @@ auto DrawRspViewer() -> void {
     return;
   }
 
-  if(!ImGui::BeginTable("rsp_cmds", 7,
+  if(!ImGui::BeginTable("rsp_cmds", 6,
        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
        ImVec2(0, 0))) {
@@ -121,10 +121,9 @@ auto DrawRspViewer() -> void {
     return;
   }
   ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 45);
-  ImGui::TableSetupColumn("Frame", ImGuiTableColumnFlags_WidthFixed, 50);
-  ImGui::TableSetupColumn("Cycles", ImGuiTableColumnFlags_WidthFixed, 70);
-  ImGui::TableSetupColumn("Ovl", ImGuiTableColumnFlags_WidthFixed, 30);
-  ImGui::TableSetupColumn("Cmd", ImGuiTableColumnFlags_WidthFixed, 30);
+  ImGui::TableSetupColumn("Cycles", ImGuiTableColumnFlags_WidthFixed, 60);
+  ImGui::TableSetupColumn("Ovl", ImGuiTableColumnFlags_WidthFixed, 35);
+  ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthFixed, 140);
   ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_WidthStretch);
   ImGui::TableSetupColumn("Hex words", ImGuiTableColumnFlags_WidthFixed, 280);
   ImGui::TableSetupScrollFreeze(0, 1);
@@ -139,9 +138,6 @@ auto DrawRspViewer() -> void {
     ImGui::Text("%u", row);
 
     ImGui::TableNextColumn();
-    ImGui::Text("%u", cmd.frame);
-
-    ImGui::TableNextColumn();
     if(cmd.isOverhead) {
       ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "(%llu)", (unsigned long long)cmd.cycle);
     } else {
@@ -149,11 +145,23 @@ auto DrawRspViewer() -> void {
     }
 
     ImGui::TableNextColumn();
-    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(overlayColor(cmd.overlayId)),
-                       "%X", cmd.overlayId);
+    auto& ovlName = cap.overlayNameMap[cmd.overlayId];
+    if(ovlName) {
+      ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(overlayColor(cmd.overlayId)),
+                         "%s", ovlName.data());
+    } else {
+      ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(overlayColor(cmd.overlayId)),
+                         "%X", cmd.overlayId);
+    }
 
     ImGui::TableNextColumn();
-    ImGui::Text("%02X", cmd.commandId);
+    auto& name = cap.commandNameMap[cmd.overlayId][cmd.commandId];
+    if(name) {
+      ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(overlayColor(cmd.overlayId)),
+                         "%s", name.data());
+    } else {
+      ImGui::Text("%02X", cmd.commandId);
+    }
 
     ImGui::TableNextColumn();
     if(cmd.isOverhead) {

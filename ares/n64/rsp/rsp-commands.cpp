@@ -1,65 +1,6 @@
-// RSP command viewer — JSON config loading, ELF auto-detection, and capture
+// RSP command viewer — JSON config loading (nlohmann), ELF auto-detection, and capture
 
 namespace {
-
-// Minimal JSON string unescape
-auto jsonUnescapeString(const char*& p) -> string {
-  if(*p != '"') return {};
-  p++;
-  string result;
-  while(*p && *p != '"') {
-    if(*p == '\\' && p[1]) { p++; }
-    result.append(*p++);
-  }
-  if(*p == '"') p++;
-  return result;
-}
-
-auto jsonSkipWhitespace(const char*& p) -> void {
-  while(*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-}
-
-auto jsonExpect(const char*& p, char c) -> bool {
-  jsonSkipWhitespace(p);
-  if(*p != c) return false;
-  p++;
-  return true;
-}
-
-auto jsonReadHex(const char*& p, u32& out) -> bool {
-  jsonSkipWhitespace(p);
-  if(*p != '"') return false;
-  p++;
-  out = 0;
-  while(*p && *p != '"') {
-    char c = *p++;
-    u32 nib = 0;
-    if(c >= '0' && c <= '9') nib = c - '0';
-    else if(c >= 'a' && c <= 'f') nib = c - 'a' + 10;
-    else if(c >= 'A' && c <= 'F') nib = c - 'A' + 10;
-    else if(c == 'x' || c == 'X') continue;
-    else return false;
-    out = (out << 4) | nib;
-  }
-  if(*p == '"') p++;
-  return true;
-}
-
-auto jsonReadString(const char*& p, string& out) -> bool {
-  jsonSkipWhitespace(p);
-  out = jsonUnescapeString(p);
-  return (bool)out;
-}
-
-auto jsonSkipValue(const char*& p) -> void {
-  jsonSkipWhitespace(p);
-  if(*p == '"') { p++; while(*p && *p != '"') { if(*p == '\\') p++; p++; } if(*p == '"') p++; }
-  else if(*p == '{') { p++; int depth = 1; while(*p && depth) { if(*p == '{') depth++; if(*p == '}') depth--; p++; } }
-  else if(*p == '[') { p++; int depth = 1; while(*p && depth) { if(*p == '[') depth++; if(*p == ']') depth--; p++; } }
-  else { while(*p && *p != ',' && *p != '}' && *p != ']') p++; }
-}
-
-// ---- ELF64 big-endian symbol extraction ----
 
 struct Elf64Header {
   u8  ident[16];
@@ -229,71 +170,77 @@ static auto elfTryReadSymbol(const string& elfPath, const string& symName, u64& 
 
 auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
   string data = string::read(jsonPath);
-  if(!data) return false;
+  if(!data) {
+    print("RSP: loadConfig: cannot read ", jsonPath, "\n");
+    return false;
+  }
 
-  const char* p = data.data();
-  jsonSkipWhitespace(p);
-  if(!jsonExpect(p, '{')) return false;
+  try {
+    auto j = nlohmann::json::parse(data.data());
 
-  // Reset state
-  hookCount = 0;
-  dmemCmdsOffset = 0;
-  dmemCmdsSize = 0;
-  dmemDramAddrOffset = 0;
-  dmemOvlTableOffset = 0;
-  dmemOvlIdmapOffset = 0;
-  banner = {};
+    // Reset state
+    hookCount = 0;
+    dmemCmdsOffset = 0;
+    dmemCmdsSize = 0;
+    dmemDramAddrOffset = 0;
+    dmemOvlTableOffset = 0;
+    dmemOvlIdmapOffset = 0;
+    banner = {};
 
-  while(*p && *p != '}') {
-    jsonSkipWhitespace(p);
-    if(*p == '}') break;
-    if(*p == ',') { p++; continue; }
+    if(j.contains("banner")) banner = j["banner"].get<std::string>().c_str();
 
-    string key = jsonUnescapeString(p);
-    if(!key) break;
-    if(!jsonExpect(p, ':')) break;
-
-    if(key == "banner") {
-      jsonReadString(p, banner);
-    } else if(key == "imem") {
-      if(!jsonExpect(p, '{')) break;
-      while(*p && *p != '}') {
-        jsonSkipWhitespace(p);
-        if(*p == '}') break;
-        if(*p == ',') { p++; continue; }
-        string addrKey = jsonUnescapeString(p);
-        if(!addrKey) break;
-        if(!jsonExpect(p, ':')) break;
+    // Parse IMEM hook addresses
+    if(j.contains("imem")) {
+      for(auto& [key, val] : j["imem"].items()) {
+        if(hookCount >= maxHookAddresses) break;
+        auto hexStr = val.get<std::string>();
         u32 addr = 0;
-        if(jsonReadHex(p, addr) && hookCount < maxHookAddresses) {
-          hookAddresses[hookCount++] = addr;
+        for(char c : hexStr) {
+          if(c == 'x' || c == 'X') { addr = 0; continue; }
+          u32 nib = 0;
+          if(c >= '0' && c <= '9') nib = c - '0';
+          else if(c >= 'a' && c <= 'f') nib = c - 'a' + 10;
+          else if(c >= 'A' && c <= 'F') nib = c - 'A' + 10;
+          else break;
+          addr = (addr << 4) | nib;
         }
+        hookAddresses[hookCount++] = addr;
       }
-      if(!jsonExpect(p, '}')) break;
-    } else if(key == "dmem") {
-      if(!jsonExpect(p, '{')) break;
-      while(*p && *p != '}') {
-        jsonSkipWhitespace(p);
-        if(*p == '}') break;
-        if(*p == ',') { p++; continue; }
-        string dmemKey = jsonUnescapeString(p);
-        if(!dmemKey) break;
-        if(!jsonExpect(p, ':')) break;
-        u32 val = 0;
-        if(jsonReadHex(p, val)) {
-          if(dmemKey == "cmds_offset") dmemCmdsOffset = val;
-          else if(dmemKey == "cmds_size") dmemCmdsSize = val;
-          else if(dmemKey == "dram_addr_offset") dmemDramAddrOffset = val;
-          else if(dmemKey == "ovl_table_offset") dmemOvlTableOffset = val;
-          else if(dmemKey == "ovl_idmap_offset") dmemOvlIdmapOffset = val;
-        }
-      }
-      if(!jsonExpect(p, '}')) break;
-    } else if(key == "overlays" || key == "overlay_id_map") {
-      jsonSkipValue(p);
-    } else {
-      jsonSkipValue(p);
     }
+
+    // Parse DMEM layout
+    if(j.contains("dmem")) {
+      auto& d = j["dmem"];
+      if(d.contains("cmds_offset"))      dmemCmdsOffset     = (u32)std::stoul(d["cmds_offset"].get<std::string>(), nullptr, 16);
+      if(d.contains("cmds_size"))        dmemCmdsSize       = (u32)std::stoul(d["cmds_size"].get<std::string>(), nullptr, 16);
+      if(d.contains("dram_addr_offset")) dmemDramAddrOffset = (u32)std::stoul(d["dram_addr_offset"].get<std::string>(), nullptr, 16);
+      if(d.contains("ovl_table_offset")) dmemOvlTableOffset = (u32)std::stoul(d["ovl_table_offset"].get<std::string>(), nullptr, 16);
+      if(d.contains("ovl_idmap_offset")) dmemOvlIdmapOffset = (u32)std::stoul(d["ovl_idmap_offset"].get<std::string>(), nullptr, 16);
+    }
+
+    // Parse overlay command names (array format: [{"id": N, "name": "...", "commands": {...}}])
+    if(j.contains("overlays") && j["overlays"].is_array()) {
+      for(auto& ovl : j["overlays"]) {
+        u32 ovlId = ovl.value("id", 0u);
+        if(ovlId >= 16) continue;
+        if(ovl.contains("name")) {
+          overlayNameMap[ovlId] = ovl["name"].get<std::string>().c_str();
+        }
+        if(ovl.contains("commands")) {
+          for(auto& [cmdKey, cmdData] : ovl["commands"].items()) {
+            u32 cmdId = (u32)std::stoul(cmdKey, nullptr, 16);
+            if(cmdId >= 256) continue;
+            if(cmdData.contains("name")) {
+              commandNameMap[ovlId][cmdId] = cmdData["name"].get<std::string>().c_str();
+            }
+          }
+        }
+      }
+    }
+
+  } catch(const nlohmann::json::exception& e) {
+    print("RSP: loadConfig: JSON parse error: ", e.what(), "\n");
+    return false;
   }
 
   configLoaded = (hookCount > 0);
@@ -363,18 +310,23 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
   // within IMEM when loaded via rsp_load().
   // The DMEM layout is standard per rsp_queue_t.
 
-  // Set up known DMEM layout (same for all libdragon versions using rsp_queue.inc)
-  dmemCmdsOffset     = 0x0A0;
-  dmemCmdsSize       = 0x100;
-  dmemDramAddrOffset = 0x1DC;
-  dmemOvlTableOffset = 0x008;
-  dmemOvlIdmapOffset = 0x048;
+  // Try to load JSON config for hooks, DMEM layout, and overlay names
+  // Look next to the ELF, then in the program directory
+  bool jsonLoaded = false;
+  {
+    string jsonPaths[] = {
+      {stringDirname(elfPath), "/rspq-libdragon.json"},
+      {Path::program(), "rspq-libdragon.json"},
+    };
+    for(auto& jp : jsonPaths) {
+      if(loadConfig(jp)) { jsonLoaded = true; break; }
+    }
+  }
 
-  // Set up known IMEM hook addresses (offsets within IMEM, i.e., 12-bit RSP PC values)
-  // These are stable per libdragon's rsp_queue.inc assembly.
-  // Values: RSP PC = (symbol_addr & 0xFFF), stripping the IMEM bit (0x1000)
-  hookCount = 0;
-  hookAddresses[hookCount++] = 0x0B4; // rspq_execute_command
+  if(!jsonLoaded) {
+    print("RSP: autoDetect: ELF found but JSON config not loaded\n");
+    return false;
+  }
 
   configLoaded = true;
   enabled.store(true, std::memory_order_relaxed);

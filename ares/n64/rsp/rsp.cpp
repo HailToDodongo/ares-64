@@ -1,4 +1,5 @@
 #include <n64/n64.hpp>
+#include <nlohmann/json.hpp>
 
 namespace ares::Nintendo64 {
 

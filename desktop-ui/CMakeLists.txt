@@ -81,9 +81,12 @@ add_sourcery_command(desktop-ui resource)
 
 ares_configure_executable(desktop-ui)
 
-# Copy font to build output
+# Copy font and RSP config to build output
 add_custom_command(TARGET desktop-ui POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/resource/Altinn-DINExp.ttf"
     "$<TARGET_FILE_DIR:desktop-ui>/Altinn-DINExp.ttf"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/rspq-libdragon.json"
+    "$<TARGET_FILE_DIR:desktop-ui>/rspq-libdragon.json"
 )

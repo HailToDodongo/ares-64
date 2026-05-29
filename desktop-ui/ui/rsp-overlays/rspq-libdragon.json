@@ -15,22 +15,23 @@
     "ovl_table_offset": "0x008",
     "ovl_idmap_offset": "0x048"
   },
-  "overlays": {
-    "__builtin__": {
+  "overlays": [
+    {
       "id": 0,
+      "name": "RSPQ",
       "commands": {
-        "0x00": {"name": "INVALID"},
-        "0x01": {"name": "WRITE_WORD"},
-        "0x02": {"name": "JUMP"},
-        "0x03": {"name": "CALL"},
-        "0x04": {"name": "RET"},
+        "0x00": {"name": "NOP"},
+        "0x01": {"name": "Write Word"},
+        "0x02": {"name": "Jump"},
+        "0x03": {"name": "Call"},
+        "0x04": {"name": "Return"},
         "0x05": {"name": "DMA"},
-        "0x06": {"name": "WRITE_STATUS"},
-        "0x07": {"name": "SWAP_BUFFERS"},
-        "0x08": {"name": "TEST_WRITE_STATUS"},
-        "0x09": {"name": "RDP_SET_BUFFER"},
-        "0x0A": {"name": "RDP_APPEND_BUFFER"}
+        "0x06": {"name": "Write Status"},
+        "0x07": {"name": "Swap Buff."},
+        "0x08": {"name": "Test Write Status"},
+        "0x09": {"name": "RDP Set Buff."},
+        "0x0A": {"name": "RDP Append Buff."}
       }
     }
-  }
+  ]
 }

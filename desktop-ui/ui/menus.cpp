@@ -395,14 +395,14 @@ auto DrawMenuBar() -> void {
     ImGui::TextUnformatted(buf);
 
     // Log VPS every 2 seconds
-    static auto lastLog = std::chrono::steady_clock::now();
+    /*static auto lastLog = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
     if(now - lastLog > std::chrono::seconds(2)) {
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
       fprintf(stderr, "[%lld.%02lld] VPS: %u\n",
               (long long)(ms / 1000), (long long)(ms % 1000) / 10, (u32)vps);
       lastLog = now;
-    }
+    }*/
   }
 
   ImGui::EndMenuBar();
