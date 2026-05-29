@@ -11,6 +11,7 @@ bool showFramebufferViewer = false;
 static GLuint fbTex = 0;
 static u32  fbTexW = 0, fbTexH = 0;
 static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth
+static int  fbScaleMode = 1; // 0=Integer, 1=Linear
 
 static auto n64ToRGBA32(u32* dst, const u8* src, u32 w, u32 h, u8 format, u8 size) -> void {
   u32 pixels = w * h;
@@ -174,9 +175,14 @@ auto DrawFramebufferViewer() -> void {
   u32 colorPos = stickyColorPos;
 
   // View mode selector
-  ImGui::SetNextItemWidth(100);
+  ImGui::SetNextItemWidth(80);
   const char* modes[] = {"Color", "Coverage", "Depth"};
   ImGui::Combo("##fbmode", &fbViewMode, modes, 3);
+  ImGui::SameLine();
+  // Scale mode selector
+  ImGui::SetNextItemWidth(100);
+  const char* scales[] = {"Integer", "Linear"};
+  ImGui::Combo("##fbscale", &fbScaleMode, scales, 2);
   ImGui::SameLine();
 
   u32 readAddr = addr;
@@ -248,16 +254,28 @@ auto DrawFramebufferViewer() -> void {
   if(fbTex == 0) glGenTextures(1, &fbTex);
   glBindTexture(GL_TEXTURE_2D, fbTex);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixelBuf.data());
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, fbScaleMode == 0 ? GL_NEAREST : GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, fbScaleMode == 0 ? GL_NEAREST : GL_LINEAR);
   glBindTexture(GL_TEXTURE_2D, 0);
 
   const char* modeTxt = fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
   ImGui::Text("%s  addr=0x%06X  %ux%u  fmt=%u sz=%u", modeTxt, readAddr, w, h, fmt, sz);
 
   auto avail = ImGui::GetContentRegionAvail();
-  float scale = std::min(avail.x / (float)w, avail.y / (float)h);
+  float scale;
+  if(fbScaleMode == 0) {
+    // Integer scale: largest integer multiple that fits
+    float maxW = std::floor(avail.x / (float)w);
+    float maxH = std::floor(avail.y / (float)h);
+    scale = std::max(1.0f, std::min(maxW, maxH));
+  } else {
+    // Linear: fill window keeping aspect ratio
+    scale = std::min(avail.x / (float)w, avail.y / (float)h);
+  }
   ImVec2 imgSize(w * scale, h * scale);
+  // Center image in available space
+  if(avail.x > imgSize.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - imgSize.x) * 0.5f);
+  if(avail.y > imgSize.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - imgSize.y) * 0.5f);
   ImGui::Image((ImTextureID)(intptr_t)fbTex, imgSize);
 
   ImGui::End();

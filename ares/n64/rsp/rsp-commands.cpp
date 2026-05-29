@@ -170,10 +170,7 @@ static auto elfTryReadSymbol(const string& elfPath, const string& symName, u64& 
 
 auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
   string data = string::read(jsonPath);
-  if(!data) {
-    print("RSP: loadConfig: cannot read ", jsonPath, "\n");
-    return false;
-  }
+  if(!data) return false;
 
   try {
     auto j = nlohmann::json::parse(data.data());
@@ -219,19 +216,35 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
     }
 
     // Parse overlay command names (array format: [{"id": N, "name": "...", "commands": {...}}])
+    jsonOvlDataCount = 0;
     if(j.contains("overlays") && j["overlays"].is_array()) {
       for(auto& ovl : j["overlays"]) {
-        u32 ovlId = ovl.value("id", 0u);
-        if(ovlId >= 16) continue;
-        if(ovl.contains("name")) {
-          overlayNameMap[ovlId] = ovl["name"].get<std::string>().c_str();
+        u32 ovlId = ovl.value("id", ~0u);
+        auto ovlName = ovl.value("name", std::string{});
+        // Store by name for runtime matching
+        if(!ovlName.empty() && jsonOvlDataCount < 16) {
+          auto& jd = jsonOvlData[jsonOvlDataCount++];
+          jd.name = ovlName.c_str();
+          if(ovl.contains("commands")) {
+            for(auto& [cmdKey, cmdData] : ovl["commands"].items()) {
+              u32 cmdId = (u32)std::stoul(cmdKey, nullptr, 16);
+              if(cmdId >= 256) continue;
+              if(cmdData.contains("name")) {
+                jd.commandNames[cmdId] = cmdData["name"].get<std::string>().c_str();
+              }
+            }
+          }
         }
-        if(ovl.contains("commands")) {
-          for(auto& [cmdKey, cmdData] : ovl["commands"].items()) {
-            u32 cmdId = (u32)std::stoul(cmdKey, nullptr, 16);
-            if(cmdId >= 256) continue;
-            if(cmdData.contains("name")) {
-              commandNameMap[ovlId][cmdId] = cmdData["name"].get<std::string>().c_str();
+        // Also store by id for overlays with known fixed ids
+        if(ovlId < 16) {
+          if(!ovlName.empty()) overlayNameMap[ovlId] = ovlName.c_str();
+          if(ovl.contains("commands")) {
+            for(auto& [cmdKey, cmdData] : ovl["commands"].items()) {
+              u32 cmdId = (u32)std::stoul(cmdKey, nullptr, 16);
+              if(cmdId >= 256) continue;
+              if(cmdData.contains("name")) {
+                commandNameMap[ovlId][cmdId] = cmdData["name"].get<std::string>().c_str();
+              }
             }
           }
         }
@@ -280,43 +293,43 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
   if(dot >= 0) { base.resize(dot); }
 
   // Try several ELF paths relative to the ROM
-  string elfPath;
+  string foundElfPath;
 
   // 1) Direct replacement: rom.z64 -> rom.elf
   string directPath = {base, ".elf"};
-  if(string::read(directPath)) { elfPath = directPath; }
+  if(string::read(directPath)) { foundElfPath = directPath; }
 
   // 2) build/ subdirectory of the ROM's own directory
-  if(!elfPath) {
+  if(!foundElfPath) {
     string buildPath = {base, "/build/", stringBasename(base), ".elf"};
-    if(string::read(buildPath)) { elfPath = buildPath; }
+    if(string::read(buildPath)) { foundElfPath = buildPath; }
   }
 
   // 3) Parent dir's build/ subdirectory (e.g., examples/00_quad/build/name.elf)
-  if(!elfPath) {
+  if(!foundElfPath) {
     string parentPath = {stringDirname(base), "/build/", stringBasename(base), ".elf"};
-    if(string::read(parentPath)) { elfPath = parentPath; }
+    if(string::read(parentPath)) { foundElfPath = parentPath; }
   }
 
-  if(!elfPath) return false;
-
-  // Read rsp_queue_text_start from ELF — this gives us RDRAM address of IMEM code
-  u64 textStart = 0;
-  if(!elfTryReadSymbol(elfPath, "rsp_queue_text_start", textStart)) return false;
-  u64 dataStart = 0;
-  if(!elfTryReadSymbol(elfPath, "rsp_queue_data_start", dataStart)) return false;
+  if(!foundElfPath) return false;
+  elfPath = foundElfPath;
 
   // rsp_queue_text_start is in KSEG0 (0x80000000). The RSPQ code is at offset 0
   // within IMEM when loaded via rsp_load().
   // The DMEM layout is standard per rsp_queue_t.
 
+  // Read rspq_overlay_ucodes address from ELF for runtime overlay name detection
+  u64 ovlUcodesVal = 0;
+  elfTryReadSymbol(elfPath, "rspq_overlay_ucodes", ovlUcodesVal);
+  ovlUcodesAddr = ovlUcodesVal;
+
   // Try to load JSON config for hooks, DMEM layout, and overlay names
-  // Look next to the ELF, then in the program directory
   bool jsonLoaded = false;
   {
     string jsonPaths[] = {
       {stringDirname(elfPath), "/rspq-libdragon.json"},
       {Path::program(), "rspq-libdragon.json"},
+      {stringDirname(Path::program()), "rspq-libdragon.json"},
     };
     for(auto& jp : jsonPaths) {
       if(loadConfig(jp)) { jsonLoaded = true; break; }
@@ -331,6 +344,79 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
   configLoaded = true;
   enabled.store(true, std::memory_order_relaxed);
   return true;
+}
+
+auto RSPCapture::refreshOverlayNames() -> void {
+  static u32 tries = 0;
+  if(tries >= 120) return;
+  tries++;
+
+  // Lazily scan and match DMEM overlay table against ELF symbols
+  if(elfPath) {
+    auto& r = ares::Nintendo64::rsp;
+    auto rdPhys = [](u32 phys) -> u32 {
+      return (u32)Nintendo64::rdram.ram.read<Word>(phys, RBusDevice::ARES_DEBUGGER);
+    };
+    // Read rspq_data_size from ELF: DMEM offset to add to overlay data pointers
+    u64 rspqDataSizeVal = 0;
+    if(!elfTryReadSymbol(elfPath, "rsp_queue_data_size", rspqDataSizeVal)) return;
+    u32 rspqDataSize = (u32)rspqDataSizeVal;
+    // For each non-zero DMEM overlay entry, find matching ELF symbol
+    for(u32 slot = 0; slot < 16; slot++) {
+      u32 entry = r.dmem.read<Word>(dmemOvlTableOffset + slot * 4);
+      u32 dataPhys = entry & 0x00FFFFFF;
+      if(!dataPhys) continue;
+      // Try each known ucode name from ELF
+      const char* ucodeNames[] = {
+        "rsp_queue", "rsp_rdpq", "rsp_tiny3d", "rsp_tinypx", "rsp_tiny3d_clip",
+        "rsp_yuv", "rsp_h264", "rsp_audio", "rsp_mp3", "rsp_profile", "rsp_crash", nullptr
+      };
+      for(u32 n = 0; ucodeNames[n]; n++) {
+        u64 addr = 0;
+        if(!elfTryReadSymbol(elfPath, ucodeNames[n], addr)) continue;
+        u32 physBase = (u32)addr - 0x80000000u;
+        u32 dataPtr = rdPhys(physBase + 8);
+        u32 namePtr = rdPhys(physBase + 24);
+        if(!dataPtr || !namePtr) continue;
+        u32 elfDataPhys = (dataPtr + rspqDataSize) - 0x80000000u;
+        if(elfDataPhys != dataPhys) continue;
+        // Match! Read name
+        u32 namePhys = namePtr - 0x80000000u;
+        char buf[64] = {};
+        for(u32 j = 0; j < 63; j++) {
+          buf[j] = (char)Nintendo64::rdram.ram.read<Byte>(namePhys + j, RBusDevice::ARES_DEBUGGER);
+          if(!buf[j]) break;
+        }
+        // Strip "rsp_" prefix and resolve
+        nall::string finalName{buf};
+        if(finalName.beginsWith("rsp_")) {
+          nall::string stripped;
+          for(u32 c = 4; c < finalName.size(); c++) stripped.append(finalName[c]);
+          finalName = stripped;
+        }
+        // Read idmap to determine which command block this slot covers
+        // idmap[slot] = base_id << 2; command offset = (slot - base_id) * 16
+        u8 idmapEntry = r.dmem.read<Byte>(dmemOvlIdmapOffset + slot);
+        u32 baseId = idmapEntry >> 2;
+        u32 cmdOffset = (slot - baseId) * 16;
+
+        overlayNameMap[slot] = finalName;
+        if(tries == 1) print("RSP: overlay ", slot, " = '", finalName, "'\n");
+        // Populate command names from JSON, shifted by cmdOffset
+        for(u32 j = 0; j < jsonOvlDataCount; j++) {
+          if(jsonOvlData[j].name == finalName) {
+            for(u32 c = 0; c < 256; c++) {
+              if(c >= cmdOffset && jsonOvlData[j].commandNames[c]) {
+                commandNameMap[slot][c - cmdOffset] = jsonOvlData[j].commandNames[c];
+              }
+            }
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
 }
 
 auto RSPCapture::detectRspq() -> bool {

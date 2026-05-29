@@ -127,6 +127,7 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
         rspCap.committedCount.store(rspCap.writePos.load(std::memory_order_acquire), std::memory_order_release);
         rspCap.writePos.store(0, std::memory_order_release);
         rspCap.frameNumber++;
+        rspCap.refreshOverlayNames();
       }
     }
 

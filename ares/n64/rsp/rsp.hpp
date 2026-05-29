@@ -45,6 +45,14 @@ struct RSPCapture {
   // Overlay name lookup: overlayNameMap[overlayId]
   string overlayNameMap[16];
 
+  // JSON overlay data keyed by name for runtime matching
+  struct JsonOvlData {
+    string name;
+    string commandNames[256];
+  };
+  JsonOvlData jsonOvlData[16];
+  u32 jsonOvlDataCount = 0;
+
   // Per-frame cycle tracking
   u32 frameNumber = 0;
 
@@ -91,6 +99,13 @@ struct RSPCapture {
   auto loadConfig(const string& jsonPath) -> bool;
   auto autoDetect(const string& romPath) -> bool;
   auto detectRspq() -> bool;
+  auto refreshOverlayNames() -> void;
+
+  // RDRAM address of the rspq_overlay_ucodes array (found via ELF)
+  u64 ovlUcodesAddr = 0;
+
+  // ELF path for lazy overlay name resolution
+  string elfPath;
 };
 
 struct RSP : Thread, Memory::RCP<RSP> {
