@@ -86,6 +86,7 @@ struct Settings : Markup::Node {
     bool showCheatEditor = false;
     bool showTracerViewer = false;
     bool showRdpViewer = false;
+    bool showRspViewer = false;
     bool showFramebufferViewer = false;
   } general;
 

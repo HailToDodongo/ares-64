@@ -1,0 +1,36 @@
+{
+  "name": "libdragon RSPQ",
+  "banner": "Dragon RSP Queue",
+  "imem": {
+    "rspq_execute_command": "0x0B4",
+    "rspq_fetch_buffer": "0x01C",
+    "rspq_load_overlay": "0x104",
+    "rspq_fetch_buffer_with_ptr": "0x024",
+    "RSPQ_Loop": "0x03C"
+  },
+  "dmem": {
+    "cmds_offset": "0x0A0",
+    "cmds_size": "0x100",
+    "dram_addr_offset": "0x1DC",
+    "ovl_table_offset": "0x008",
+    "ovl_idmap_offset": "0x048"
+  },
+  "overlays": {
+    "__builtin__": {
+      "id": 0,
+      "commands": {
+        "0x00": {"name": "INVALID"},
+        "0x01": {"name": "WRITE_WORD"},
+        "0x02": {"name": "JUMP"},
+        "0x03": {"name": "CALL"},
+        "0x04": {"name": "RET"},
+        "0x05": {"name": "DMA"},
+        "0x06": {"name": "WRITE_STATUS"},
+        "0x07": {"name": "SWAP_BUFFERS"},
+        "0x08": {"name": "TEST_WRITE_STATUS"},
+        "0x09": {"name": "RDP_SET_BUFFER"},
+        "0x0A": {"name": "RDP_APPEND_BUFFER"}
+      }
+    }
+  }
+}

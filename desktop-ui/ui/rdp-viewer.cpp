@@ -52,14 +52,9 @@ auto DrawRdpViewer() -> void {
   if(count > cap.maxCommands) count = cap.maxCommands;
   ImGui::Text("Commands: %u", count);
 
-  // Step mode controls
-  ImGui::SameLine();
-  bool sm = cap.stepMode.load(std::memory_order_relaxed);
-  if(ImGui::Checkbox("Step Mode", &sm)) {
-    cap.stepMode.store(sm, std::memory_order_relaxed);
-    if(!sm) cap.stepPending.store(false, std::memory_order_release); // unblock if disabled
-  }
-  if(sm) {
+  // Step button — shown when RDP stepping is the active mode
+  bool isRdpStep = (program.stepType == Program::StepType::RDP);
+  if(isRdpStep) {
     ImGui::SameLine();
     if(ImGui::Button("Step >")) {
       cap.stepPending.store(true, std::memory_order_release);
@@ -77,6 +72,7 @@ auto DrawRdpViewer() -> void {
       steppingHeld = false;
     }
   }
+  bool sm = isRdpStep;
 
   ImGui::Separator();
 

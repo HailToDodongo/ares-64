@@ -88,14 +88,29 @@ auto InputManager::createHotkeys() -> void {
     program.rewindSetMode(Program::Rewind::Mode::Playing);
   }));
 
+  // Hold-to-repeat state for the Frame Advance hotkey
+  stepHotkeyHeld = false;
+
   hotkeys.push_back(InputHotkey("Frame Advance").onPress([&] {
     if(!emulator) return;
-    auto& cap = ares::Nintendo64::rdp.capture;
-    cap.stepMode.store(false, std::memory_order_release);
-    cap.stepPending.store(true, std::memory_order_release);
-    Program::Guard guard;
-    if(!program.paused) program.pause(true);
-    program.requestFrameAdvance = true;
+    stepHotkeyHeld = true;
+    stepHotkeyHoldStart = std::chrono::steady_clock::now();
+    switch(program.stepType) {
+    case Program::StepType::Frame:
+      program.requestFrameAdvance = true;
+      break;
+    case Program::StepType::RSP:
+      ares::Nintendo64::rsp.capture.stepPending.store(true, std::memory_order_release);
+      break;
+    case Program::StepType::RDP:
+      ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
+      break;
+    default:
+      program.requestFrameAdvance = true;
+      break;
+    }
+  }).onRelease([&] {
+    stepHotkeyHeld = false;
   }));
 
   hotkeys.push_back(InputHotkey("Capture Screenshot").onPress([&] {
@@ -132,11 +147,24 @@ auto InputManager::createHotkeys() -> void {
 
   hotkeys.push_back(InputHotkey("Pause Emulation").onPress([&] {
     if(!emulator) return;
-    auto& cap = ares::Nintendo64::rdp.capture;
-    cap.stepMode.store(false, std::memory_order_release);
-    cap.stepPending.store(true, std::memory_order_release);
-    Program::Guard guard;
-    program.pause(!program.paused);
+    auto& rspCap = ares::Nintendo64::rsp.capture;
+    auto& rdpCap = ares::Nintendo64::rdp.capture;
+    if(program.paused || rspCap.stepMode.load() || rdpCap.stepMode.load()) {
+      // Unpausing: break spin-waits FIRST (no Guard), then Guard for pause(false)
+      rspCap.stepMode.store(false, std::memory_order_release);
+      rspCap.stepPending.store(true, std::memory_order_release);
+      rdpCap.stepMode.store(false, std::memory_order_release);
+      rdpCap.stepPending.store(true, std::memory_order_release);
+      Program::Guard guard;
+      program.pause(false);
+    } else if(program.stepType == Program::StepType::Frame) {
+      Program::Guard guard;
+      program.pause(true);
+    } else {
+      // RSP/RDP: just set stepMode, emulation keeps running
+      rspCap.stepMode.store(program.stepType == Program::StepType::RSP, std::memory_order_release);
+      rdpCap.stepMode.store(program.stepType == Program::StepType::RDP, std::memory_order_release);
+    }
   }));
 
   hotkeys.push_back(InputHotkey("Reset System").onPress([&] {

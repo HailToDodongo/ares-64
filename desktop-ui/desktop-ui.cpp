@@ -252,6 +252,7 @@ auto nall::main(Arguments arguments) -> void {
   ares::ui::showCheatEditor = settings.general.showCheatEditor;
   ares::ui::showTracerViewer = settings.general.showTracerViewer;
   ares::ui::showRdpViewer = settings.general.showRdpViewer;
+  ares::ui::showRspViewer = settings.general.showRspViewer;
   ares::ui::showFramebufferViewer = settings.general.showFramebufferViewer;
 
   AresApp::onMain = [=] {
@@ -265,6 +266,7 @@ auto nall::main(Arguments arguments) -> void {
     ares::ui::DrawCheatEditor();
     ares::ui::DrawTracerViewer();
     ares::ui::DrawRdpViewer();
+    ares::ui::DrawRspViewer();
     ares::ui::DrawFramebufferViewer();
     ares::ui::DrawAudioViewer();
 

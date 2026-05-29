@@ -267,6 +267,7 @@ ares_add_sources(
     rsp/interpreter.cpp
     rsp/io.cpp
     rsp/recompiler.cpp
+    rsp/rsp-commands.cpp
     rsp/rsp.hpp
     rsp/serialization.cpp
 )

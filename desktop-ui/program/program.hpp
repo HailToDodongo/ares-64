@@ -92,6 +92,9 @@ struct Program : ares::Platform {
   std::vector<ares::Node::Video::Screen> screens;
   std::vector<ares::Node::Audio::Stream> streams;
 
+  enum class StepType : u32 { None, Frame, RSP, RDP };
+  StepType stepType = StepType::Frame;
+
   bool paused = false;
   bool fastForwarding = false;
   bool rewinding = false;

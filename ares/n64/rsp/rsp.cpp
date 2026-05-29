@@ -15,6 +15,7 @@ RSP rsp;
 #include "serialization.cpp"
 #include "disassembler.cpp"
 #include "emux.cpp"
+#include "rsp-commands.cpp"
 
 auto RSP::load(Node::Object parent) -> void {
   node = parent->append<Node::Object>("RSP");
@@ -86,6 +87,13 @@ auto RSP::instructionPrologue(u32 instruction) -> void {
   pipeline.address = ipu.pc;
   pipeline.instruction = instruction;
   debugger.instruction();
+
+  // RSP command viewer: check if this PC is a hooked RSPQ dispatch address
+  if(capture.configLoaded && capture.hasHook(ipu.pc)) {
+    // The GP register (r28) holds the offset into the cmds[] buffer
+    u32 gpOffset = ipu.r[28].u32;
+    rspCaptureCommand(pipeline.clocksTotal, gpOffset);
+  }
 }
 
 auto RSP::instructionBranchEpilogue() -> s32 {

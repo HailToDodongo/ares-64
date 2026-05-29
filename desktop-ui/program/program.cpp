@@ -123,6 +123,10 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
         auto& cap = ares::Nintendo64::rdp.capture;
         cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
         cap.writePos.store(0, std::memory_order_release);
+        auto& rspCap = ares::Nintendo64::rsp.capture;
+        rspCap.committedCount.store(rspCap.writePos.load(std::memory_order_acquire), std::memory_order_release);
+        rspCap.writePos.store(0, std::memory_order_release);
+        rspCap.frameNumber++;
       }
     }
 
@@ -154,6 +158,19 @@ auto Program::main() -> void {
 
   inputManager.poll();
   inputManager.pollHotkeys();
+
+  // Hold-to-repeat for step hotkey: after 400ms, auto-fire every frame
+  if(inputManager.stepHotkeyHeld && emulator) {
+    auto elapsed = std::chrono::steady_clock::now() - inputManager.stepHotkeyHoldStart;
+    if(elapsed > std::chrono::milliseconds(400)) {
+      if(program.stepType == Program::StepType::RSP)
+        ares::Nintendo64::rsp.capture.stepPending.store(true, std::memory_order_release);
+      else if(program.stepType == Program::StepType::RDP)
+        ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
+      else
+        program.requestFrameAdvance = true;
+    }
+  }
 
   if(pendingKioskExit) {
     pendingKioskExit = false;
@@ -195,6 +212,9 @@ auto Program::quit() -> void {
     ares::Nintendo64::rdp.capture.enabled.store(false, std::memory_order_release);
     ares::Nintendo64::rdp.capture.stepMode.store(false, std::memory_order_release);
     ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
+    ares::Nintendo64::rsp.capture.enabled.store(false, std::memory_order_release);
+    ares::Nintendo64::rsp.capture.stepMode.store(false, std::memory_order_release);
+    ares::Nintendo64::rsp.capture.stepPending.store(true, std::memory_order_release);
   }
 
   _quitting = true;

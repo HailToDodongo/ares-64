@@ -271,21 +271,42 @@ static void DrawToolsMenu() {
 
   bool paused = program.paused;
   if(ImGui::MenuItem("Pause Emulation", nullptr, &paused)) {
-    // Disable step mode so worker exits spin-wait before Guard locks
-    auto& cap = ares::Nintendo64::rdp.capture;
-    cap.stepMode.store(false, std::memory_order_release);
-    cap.stepPending.store(true, std::memory_order_release);
-    Program::Guard guard;
-    program.pause(!program.paused);
+    auto& rspCap = ares::Nintendo64::rsp.capture;
+    auto& rdpCap = ares::Nintendo64::rdp.capture;
+    if(program.paused || rspCap.stepMode.load() || rdpCap.stepMode.load()) {
+      // Unpausing: break spin-waits FIRST, then Guard
+      rspCap.stepMode.store(false, std::memory_order_release);
+      rspCap.stepPending.store(true, std::memory_order_release);
+      rdpCap.stepMode.store(false, std::memory_order_release);
+      rdpCap.stepPending.store(true, std::memory_order_release);
+      Program::Guard guard;
+      program.pause(false);
+    } else if(program.stepType == Program::StepType::Frame) {
+      Program::Guard guard;
+      program.pause(true);
+    } else {
+      rspCap.stepMode.store(program.stepType == Program::StepType::RSP, std::memory_order_release);
+      rdpCap.stepMode.store(program.stepType == Program::StepType::RDP, std::memory_order_release);
+    }
   }
 
-  if(ImGui::MenuItem("Frame Advance")) {
-    auto& cap = ares::Nintendo64::rdp.capture;
-    cap.stepMode.store(false, std::memory_order_release);
-    cap.stepPending.store(true, std::memory_order_release);
-    Program::Guard guard;
-    if(!program.paused) program.pause(true);
-    program.requestFrameAdvance = true;
+  ImGui::Separator();
+
+  if(ImGui::MenuItem("Step >")) {
+    switch(program.stepType) {
+    case Program::StepType::Frame:
+      program.requestFrameAdvance = true;
+      break;
+    case Program::StepType::RSP:
+      ares::Nintendo64::rsp.capture.stepPending.store(true, std::memory_order_release);
+      break;
+    case Program::StepType::RDP:
+      ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
+      break;
+    default:
+      program.requestFrameAdvance = true;
+      break;
+    }
   }
 
   if(ImGui::MenuItem("Reload Game")) {
@@ -300,6 +321,7 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("Cheat Editor")) showCheatEditor = true;
   if(ImGui::MenuItem("Trace Logger")) showTracerViewer = true;
   if(ImGui::MenuItem("RDP Commands")) showRdpViewer = true;
+  if(ImGui::MenuItem("RSP Commands")) showRspViewer = true;
   if(ImGui::MenuItem("Framebuffer")) showFramebufferViewer = true;
   if(ImGui::MenuItem("Audio Viewer")) showAudioViewer = true;
 
@@ -314,6 +336,16 @@ static void DrawHelpMenu() {
   ImGui::EndMenu();
 }
 
+static auto drawStepTypeCombo() -> void {
+  static const char* stepNames[] = {"Frame", "RSP", "RDP"};
+  int st = (int)program.stepType - 1;
+  if(st < 0) st = 0;
+  ImGui::SetNextItemWidth(80);
+  if(ImGui::Combo("##steptype_bar", &st, stepNames, 3)) {
+    program.stepType = (Program::StepType)(st + 1);
+  }
+}
+
 auto DrawMainMenuBar() -> void {
   if(!ImGui::BeginMainMenuBar()) return;
 
@@ -324,6 +356,9 @@ auto DrawMainMenuBar() -> void {
   DrawHelpMenu();
 
   if(emulator) {
+    ImGui::SameLine();
+    drawStepTypeCombo();
+
     auto vps = program.vblanksPerSecond.load();
     char buf[32];
     snprintf(buf, sizeof(buf), "%u VPS", (u32)vps);
@@ -344,6 +379,11 @@ auto DrawMenuBar() -> void {
   DrawSettingsMenu();
   if(emulator) DrawToolsMenu();
   DrawHelpMenu();
+
+  if(emulator) {
+    ImGui::SameLine();
+    drawStepTypeCombo();
+  }
 
   // VPS counter on the right side of the menu bar
   if(emulator) {

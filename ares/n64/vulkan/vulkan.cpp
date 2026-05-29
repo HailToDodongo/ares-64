@@ -173,6 +173,12 @@ auto Vulkan::frame() -> void {
   implementation->processor->begin_frame_context();
 }
 
+auto Vulkan::flush() -> void {
+  if(!implementation) return;
+  u64 tl = implementation->processor->signal_timeline();
+  implementation->processor->wait_for_timeline(tl);
+}
+
 auto Vulkan::writeWord(u32 address, u32 data) -> void {
   if(!implementation) return;
   implementation->processor->set_vi_register(::RDP::VIRegister(address), data);

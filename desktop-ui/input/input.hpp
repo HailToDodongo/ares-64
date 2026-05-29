@@ -306,6 +306,10 @@ struct InputManager {
   auto createHotkeys() -> void;
   auto pollHotkeys() -> void;
 
+  // Hold-to-repeat state for the Frame Advance hotkey
+  bool stepHotkeyHeld = false;
+  std::chrono::steady_clock::time_point stepHotkeyHoldStart;
+
   std::vector<std::shared_ptr<HID::Device>> devices;
   std::vector<InputHotkey> hotkeys;
 

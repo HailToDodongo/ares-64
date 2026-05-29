@@ -438,6 +438,11 @@ auto RSP::Recompiler::emit(u12 address, bool callInstructionPrologue) -> Block* 
     if(callInstructionPrologue) {
       callf(&RSP::instructionPrologue, imm(instruction));
     }
+    // RSP command viewer: per-instruction PC hook (recompiler-safe)
+    if(self.capture.configLoaded && self.capture.hasHook(address)) {
+      flushDeferredForCallf();
+      callf(&RSP::captureCommandHook);
+    }
     if(delaySlot) mov32(BranchReg(nstate), imm(0));
     pipeline.begin();
     OpInfo op0 = self.decoderEXECUTE(instruction);
@@ -459,6 +464,11 @@ auto RSP::Recompiler::emit(u12 address, bool callInstructionPrologue) -> Block* 
         }
         if(callInstructionPrologue) {
           callf(&RSP::instructionPrologue, imm(instruction));
+        }
+        // Hook check for dual-issued second op
+        if(self.capture.configLoaded && self.capture.hasHook(address + 4)) {
+          flushDeferredForCallf();
+          callf(&RSP::captureCommandHook);
         }
         checkHalted |= op1.mayHalt();
         address += 4;

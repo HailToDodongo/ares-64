@@ -1,5 +1,96 @@
 //Reality Signal Processor
 
+// Forward declarations for RSP command capture (defined in rsp-commands.cpp)
+auto rspCaptureCommand(u64 cycle, u32 cmdDmemOffset) -> void;
+
+struct RSPCapture {
+  static constexpr u32 maxCommands = 65536;
+  static constexpr u32 maxCommandWords = 16;
+  static constexpr u32 maxHookAddresses = 16;
+
+  struct Command {
+    u64 cycle = 0;        // pipeline.clocksTotal at capture time
+    u32 frame = 0;        // frame number
+    u16 overlayId = 0;
+    u8  commandId = 0;
+    u8  wordCount = 0;
+    u32 words[maxCommandWords] = {};
+    bool isOverhead = false;
+    u8  overheadType = 0;
+  };
+
+  Command commands[maxCommands];
+  std::atomic<u32> writePos{0};
+  std::atomic<u32> committedCount{0};
+  std::atomic<bool> enabled{false};
+  std::atomic<bool> stepMode{false};
+  std::atomic<bool> stepPending{false};
+
+  // Hook addresses from JSON config (IMEM offsets)
+  u32 hookAddresses[maxHookAddresses];
+  u32 hookCount = 0;
+
+  // DMEM layout from JSON config
+  u32 dmemCmdsOffset = 0;
+  u32 dmemCmdsSize = 0;
+  u32 dmemDramAddrOffset = 0;
+  u32 dmemOvlTableOffset = 0;
+  u32 dmemOvlIdmapOffset = 0;
+
+  // RSPQ banner for validation (from JSON)
+  string banner;
+
+  // Overlay name table (populated at runtime)
+  string overlayNames[16];
+
+  // Per-frame cycle tracking
+  u32 frameNumber = 0;
+
+  // JSON config loaded flag
+  bool configLoaded = false;
+
+  auto push(u64 cycle, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words) -> void {
+    if(!enabled.load(std::memory_order_relaxed)) return;
+    auto pos = writePos.load(std::memory_order_relaxed);
+    auto& cmd = commands[pos % maxCommands];
+    cmd.cycle = cycle;
+    cmd.frame = frame;
+    cmd.overlayId = overlayId;
+    cmd.commandId = commandId;
+    cmd.wordCount = wordCount;
+    cmd.isOverhead = false;
+    cmd.overheadType = 0;
+    u32 wc = min(wordCount, maxCommandWords);
+    for(u32 i = 0; i < wc; i++) cmd.words[i] = words[i];
+    writePos.store(pos + 1, std::memory_order_release);
+  }
+
+  auto pushOverhead(u64 cycle, u8 overheadType) -> void {
+    if(!enabled.load(std::memory_order_relaxed)) return;
+    auto pos = writePos.load(std::memory_order_relaxed);
+    auto& cmd = commands[pos % maxCommands];
+    cmd.cycle = cycle;
+    cmd.frame = frameNumber;
+    cmd.overlayId = 0;
+    cmd.commandId = 0;
+    cmd.wordCount = 0;
+    cmd.isOverhead = true;
+    cmd.overheadType = overheadType;
+    writePos.store(pos + 1, std::memory_order_release);
+  }
+
+  auto hasHook(u32 imemAddress) const -> bool {
+    for(u32 i = 0; i < hookCount; i++) {
+      if(hookAddresses[i] == imemAddress) return true;
+    }
+    return false;
+  }
+
+  auto loadConfig(const string& jsonPath) -> bool;
+  auto autoDetect(const string& romPath) -> bool;
+  auto detectRspq() -> bool;
+};
+
 struct RSP : Thread, Memory::RCP<RSP> {
   Node::Object node;
   struct Writable : public Memory::Writable {
@@ -108,6 +199,8 @@ struct RSP : Thread, Memory::RCP<RSP> {
       u32 traceStartCycle = 0;
     } tracer;
   } debugger;
+
+  RSPCapture capture;
 
   //rsp.cpp
   auto load(Node::Object) -> void;
@@ -563,6 +656,9 @@ struct RSP : Thread, Memory::RCP<RSP> {
   template<u8 e> auto VXOR(r128& rd, cr128& vs, cr128& vt) -> void;
   template<u8 e> auto VZERO(r128& rd, cr128& vs, cr128& vt) -> void;
 
+  //rsp-commands.cpp
+  auto captureCommandHook() -> void;
+
   //emux.cpp
   auto XDETECT(r32& rd, u32 code) -> void;
   auto XTRACESTART(u32 code) -> void;
@@ -609,7 +705,9 @@ struct RSP : Thread, Memory::RCP<RSP> {
 
     struct Block {
       auto execute(RSP& self) -> void {
+        auto savedClocksTotal = self.pipeline.clocksTotal;
         self.pipeline = pipeline;  //must be updated first so instructionEpilog() can handle taken branch
+        self.pipeline.clocksTotal = savedClocksTotal;
         ((void (*)(RSP*, IPU*, VU*))code)(&self, &self.ipu, &self.vpu);
       }
 

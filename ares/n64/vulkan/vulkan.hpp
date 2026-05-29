@@ -16,6 +16,7 @@ struct Vulkan {
   auto mapHiddenRDRAM(const u8*& data, u32& size) -> void;
   auto unmapHiddenRDRAM() -> void;
   auto crashed() -> const char*;
+  auto flush() -> void;
 
   struct Implementation;
   Implementation* implementation = nullptr;

@@ -109,6 +109,12 @@ auto Program::load(string location) -> bool {
 
   paletteUpdate();
   runAheadUpdate();
+
+  // Auto-detect RSPQ from ELF alongside the ROM
+  if(emulator && emulator->name == "Nintendo 64") {
+    ares::Nintendo64::rsp.capture.autoDetect(location);
+  }
+
   if(!_imguiMode) {
     presentation.loadEmulator();
     presentation.showIcon(false);
