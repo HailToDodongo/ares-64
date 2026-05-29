@@ -2,6 +2,7 @@
 
 #include "../desktop-ui.hpp"
 #include "../application/application.hpp"
+#include <n64/n64.hpp>
 #include <chrono>
 #include <cstdio>
 
@@ -270,11 +271,18 @@ static void DrawToolsMenu() {
 
   bool paused = program.paused;
   if(ImGui::MenuItem("Pause Emulation", nullptr, &paused)) {
+    // Disable step mode so worker exits spin-wait before Guard locks
+    auto& cap = ares::Nintendo64::rdp.capture;
+    cap.stepMode.store(false, std::memory_order_release);
+    cap.stepPending.store(true, std::memory_order_release);
     Program::Guard guard;
     program.pause(!program.paused);
   }
 
   if(ImGui::MenuItem("Frame Advance")) {
+    auto& cap = ares::Nintendo64::rdp.capture;
+    cap.stepMode.store(false, std::memory_order_release);
+    cap.stepPending.store(true, std::memory_order_release);
     Program::Guard guard;
     if(!program.paused) program.pause(true);
     program.requestFrameAdvance = true;

@@ -16,6 +16,14 @@ static auto cmdColor(u8 opcode) -> ImU32 {
   return IM_COL32(128, 128, 128, 255);
 }
 
+static auto isInteresting(u8 opcode) -> bool {
+  return (opcode >= 0x08 && opcode <= 0x0f) || // triangles
+         opcode == 0x24 || opcode == 0x25 ||    // tex rects
+         opcode == 0x29 ||                       // sync full
+         opcode == 0x36 ||                       // fill rect
+         opcode == 0x3f;                         // set color image
+}
+
 auto DrawRdpViewer() -> void {
   if(!showRdpViewer) return;
 
@@ -44,6 +52,32 @@ auto DrawRdpViewer() -> void {
   if(count > cap.maxCommands) count = cap.maxCommands;
   ImGui::Text("Commands: %u", count);
 
+  // Step mode controls
+  ImGui::SameLine();
+  bool sm = cap.stepMode.load(std::memory_order_relaxed);
+  if(ImGui::Checkbox("Step Mode", &sm)) {
+    cap.stepMode.store(sm, std::memory_order_relaxed);
+    if(!sm) cap.stepPending.store(false, std::memory_order_release); // unblock if disabled
+  }
+  if(sm) {
+    ImGui::SameLine();
+    if(ImGui::Button("Step >")) {
+      cap.stepPending.store(true, std::memory_order_release);
+    }
+    // Hold-to-repeat: 400ms initial delay, then fire every frame
+    static bool steppingHeld = false;
+    static auto stepHoldStart = std::chrono::steady_clock::now();
+    if(ImGui::IsItemActive()) {
+      if(!steppingHeld) { steppingHeld = true; stepHoldStart = std::chrono::steady_clock::now(); }
+      auto elapsed = std::chrono::steady_clock::now() - stepHoldStart;
+      if(elapsed > std::chrono::milliseconds(400)) {
+        cap.stepPending.store(true, std::memory_order_release);
+      }
+    } else {
+      steppingHeld = false;
+    }
+  }
+
   ImGui::Separator();
 
   if(count == 0) {
@@ -68,6 +102,14 @@ auto DrawRdpViewer() -> void {
   ImGui::TableSetupScrollFreeze(0, 1);
   ImGui::TableHeadersRow();
 
+  // Pre-find last interesting command for highlight
+  int lastInteresting = -1;
+  if(sm) {
+    for(int r = (int)count - 1; r >= 0; r--) {
+      if(isInteresting(cap.commands[r].opcode)) { lastInteresting = r; break; }
+    }
+  }
+
   for(u32 row = 0; row < count; row++) {
     auto& cmd = cap.commands[row];
     auto name = ares::Nintendo64::rdpCommandName(cmd.opcode);
@@ -75,6 +117,11 @@ auto DrawRdpViewer() -> void {
 
     int lines = 1;
     for(char c : desc) if(c == '\n') lines++;
+
+    // Highlight the last interesting command (emulator paused here)
+    if(sm && (int)row == lastInteresting) {
+      ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(60, 60, 0, 255));
+    }
 
     ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() * lines);
 
@@ -85,7 +132,6 @@ auto DrawRdpViewer() -> void {
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(cmdColor(cmd.opcode)), "%s", name);
 
     ImGui::TableNextColumn();
-    // Color swatches for color-setting commands
     if(cmd.opcode >= 0x37 && cmd.opcode <= 0x3b) {
       u32 c = (u32)cmd.word0;
       u8 r = (c >> 24) & 0xff, g = (c >> 16) & 0xff, b = (c >> 8) & 0xff, a = c & 0xff;
@@ -115,6 +161,14 @@ auto DrawRdpViewer() -> void {
     ImGui::TableNextColumn();
     ImGui::Text("%016llX", (unsigned long long)cmd.word0);
   }
+
+  // Auto-scroll to bottom when stepping (only when a step just happened)
+  static u32 lastStepCount = ~0u;
+  if(sm && count != lastStepCount) {
+    ImGui::SetScrollY(ImGui::GetScrollMaxY());
+    lastStepCount = count;
+  }
+
   ImGui::EndTable();
 
   ImGui::End();

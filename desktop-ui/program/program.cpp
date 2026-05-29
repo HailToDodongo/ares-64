@@ -189,14 +189,26 @@ auto Program::quit() -> void {
     _quitRequested = true;
     return;
   }
-  Program::Guard guard;
-  _quitRequested = false;
-  _quitting = true;
-  if(lock.owns_lock()) {
-    lock.unlock();
+
+  // Signal worker to stop, release any step-mode spin-wait first
+  if(emulator && emulator->name == "Nintendo 64") {
+    ares::Nintendo64::rdp.capture.enabled.store(false, std::memory_order_release);
+    ares::Nintendo64::rdp.capture.stepMode.store(false, std::memory_order_release);
+    ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
   }
+
+  _quitting = true;
   _programConditionVariable.notify_all();
+
+  // Safety net: force-quit after 3s if worker is irrevocably stuck
+  thread::create([](uintptr) {
+    usleep(3'000'000);
+    _exit(0);
+  }, 0);
   worker.join();
+
+  program._isRunning = false;
+  unload();
   program._isRunning = false;
   unload();
   if(false && Application::state().initialized /* hiro removed */) {

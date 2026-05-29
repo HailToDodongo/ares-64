@@ -13,6 +13,8 @@ struct Vulkan {
   auto mapScanoutRead(const u8*& rgba, u32& width, u32& height) -> void;
   auto unmapScanoutRead() -> void;
   auto endScanout() -> void;
+  auto mapHiddenRDRAM(const u8*& data, u32& size) -> void;
+  auto unmapHiddenRDRAM() -> void;
   auto crashed() -> const char*;
 
   struct Implementation;

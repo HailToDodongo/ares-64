@@ -1,5 +1,6 @@
 #include "../desktop-ui.hpp"
 #include "../ui/assign.hpp"
+#include <n64/n64.hpp>
 #include "hotkeys.cpp"
 
 VirtualPort virtualPorts[5];

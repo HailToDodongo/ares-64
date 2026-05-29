@@ -89,8 +89,11 @@ auto InputManager::createHotkeys() -> void {
   }));
 
   hotkeys.push_back(InputHotkey("Frame Advance").onPress([&] {
-    Program::Guard guard;
     if(!emulator) return;
+    auto& cap = ares::Nintendo64::rdp.capture;
+    cap.stepMode.store(false, std::memory_order_release);
+    cap.stepPending.store(true, std::memory_order_release);
+    Program::Guard guard;
     if(!program.paused) program.pause(true);
     program.requestFrameAdvance = true;
   }));
@@ -128,8 +131,11 @@ auto InputManager::createHotkeys() -> void {
   }));
 
   hotkeys.push_back(InputHotkey("Pause Emulation").onPress([&] {
-    Program::Guard guard;
     if(!emulator) return;
+    auto& cap = ares::Nintendo64::rdp.capture;
+    cap.stepMode.store(false, std::memory_order_release);
+    cap.stepPending.store(true, std::memory_order_release);
+    Program::Guard guard;
     program.pause(!program.paused);
   }));
 

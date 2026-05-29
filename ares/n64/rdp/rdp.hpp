@@ -17,6 +17,8 @@ struct RDPCapture {
   std::atomic<u32> writePos{0};
   std::atomic<u32> committedCount{0};
   std::atomic<bool> enabled{true};
+  std::atomic<bool> stepMode{false};
+  std::atomic<bool> stepPending{false};
 
   auto push(u32 frame, u32 index, u8 opcode, u64 word0, u64 word1 = 0, u8 wordCount = 1) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;

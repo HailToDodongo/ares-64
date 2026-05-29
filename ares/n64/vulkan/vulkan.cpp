@@ -116,7 +116,6 @@ auto Vulkan::render() -> bool {
     u32 length = commandLength[code];
 
     if(queueOffset + length > queueSize) {
-      //partial command, keep data around for next processing call
       command.start = command.current = command.end;
       return true;
     }
@@ -133,6 +132,31 @@ auto Vulkan::render() -> bool {
     if(::RDP::Op(code) == ::RDP::Op::SyncFull) {
       implementation->processor->wait_for_timeline(implementation->processor->signal_timeline());
       rdp.syncFull();
+    }
+
+    // Step mode: pause on interesting commands without leaving render()
+    if(rdp.capture.stepMode.load(std::memory_order_relaxed)) {
+      bool interesting = (code >= 0x08 && code <= 0x0f) || // triangles
+                          code == 0x24 || code == 0x25 ||    // tex rects
+                          code == 0x29 ||                     // sync full
+                          code == 0x36 ||                     // fill rect
+                          code == 0x3f;                       // set color image
+
+      if(interesting) {
+        // Flush GPU so framebuffer reflects this command
+        u64 tl = implementation->processor->signal_timeline();
+        implementation->processor->wait_for_timeline(tl);
+
+        // Commit capture for viewer
+        rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
+        rdp.capture.stepPending.store(false, std::memory_order_release);
+
+        // Wait for next step
+        while(rdp.capture.stepMode.load() && rdp.capture.enabled.load() &&
+              !rdp.capture.stepPending.load()) {
+          usleep(2000);
+        }
+      }
     }
 
     queueOffset += length;
@@ -218,6 +242,16 @@ auto Vulkan::endScanout() -> void {
     implementation->endCount++;
     implementation->condition.notify_one();
   }
+}
+
+auto Vulkan::mapHiddenRDRAM(const u8*& data, u32& size) -> void {
+  if(!implementation) { data = nullptr; size = 0; return; }
+  data = (const u8*)implementation->processor->begin_read_hidden_rdram();
+  size = (u32)implementation->processor->get_hidden_rdram_size();
+}
+
+auto Vulkan::unmapHiddenRDRAM() -> void {
+  if(implementation) implementation->processor->end_write_hidden_rdram();
 }
 
 auto Vulkan::crashed() -> const char* {
