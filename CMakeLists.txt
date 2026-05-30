@@ -26,14 +26,6 @@ add_subdirectory(ares)
 add_subdirectory(mia)
 add_subdirectory(desktop-ui)
 
-option(ARES_BUILD_OPTIONAL_TARGETS "Include supplemental tools and tests" OFF)
-
-if(ARES_BUILD_OPTIONAL_TARGETS)
-  add_subdirectory(tools/mame2bml)
-else()
-  target_disable_subproject(mame2bml "mame2bml (MAME manifest converter)")
-endif()
-
 add_subdirectory(tools/sourcery)
 
 message_configuration()

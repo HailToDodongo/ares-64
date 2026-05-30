@@ -27,19 +27,9 @@ target_sources(desktop-ui PRIVATE resource/resource.cpp resource/resource.hpp)
 target_sources(
   desktop-ui
   PRIVATE
-    settings/audio.cpp
-    settings/debug.cpp
-    settings/drivers.cpp
-    settings/emulators.cpp
-    settings/firmware.cpp
-    settings/home.cpp
     settings/hotkeys.cpp
     settings/input.cpp
-    settings/options.cpp
-    settings/paths.cpp
     settings/settings.hpp
-    settings/video.cpp
-    settings/importexport.cpp
 )
 
 target_sources(

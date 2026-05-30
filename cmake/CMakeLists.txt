@@ -11,16 +11,8 @@ set(
   common/helpers_common.cmake
   common/osconfig.cmake
   common/versionconfig.cmake
-  finders/Findlibrashader.cmake
   finders/Findslang_shaders.cmake
   finders/FindMoltenVK.cmake
-  finders/FindSDL.cmake
-  finders/FindGTK.cmake
-  finders/FindAO.cmake
-  finders/FindOSS.cmake
-  finders/FindPulseAudio.cmake
-  finders/Findudev.cmake
-  finders/Findusbhid.cmake
   macos/dependencies.cmake
   macos/compilerconfig.cmake
   macos/defaults.cmake

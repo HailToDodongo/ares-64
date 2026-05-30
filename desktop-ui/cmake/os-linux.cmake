@@ -41,10 +41,14 @@ add_custom_command(
   TARGET desktop-ui
   POST_BUILD
   COMMAND
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/resource/ares.desktop"
+    ${CMAKE_COMMAND} -E make_directory "${ARES_BUILD_OUTPUT_DIR}/${ARES_INSTALL_DATA_DESTINATION}"
+  COMMAND
+    ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/resource/ares.desktop"
     "${ARES_BUILD_OUTPUT_DIR}/${ARES_INSTALL_DATA_DESTINATION}/ares.desktop"
   COMMAND
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/resource/ares.png"
+    ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/resource/ares.png"
     "${ARES_BUILD_OUTPUT_DIR}/${ARES_INSTALL_DATA_DESTINATION}/ares.png"
   COMMENT "Copying icon to staging directory"
 )
