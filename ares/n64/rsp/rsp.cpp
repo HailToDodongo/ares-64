@@ -91,9 +91,7 @@ auto RSP::instructionPrologue(u32 instruction) -> void {
 
   // RSP command viewer: check if this PC is a hooked RSPQ dispatch address
   if(capture.configLoaded && capture.hasHook(ipu.pc)) {
-    // The GP register (r28) holds the offset into the cmds[] buffer
-    u32 gpOffset = ipu.r[28].u32;
-    rspCaptureCommand(pipeline.clocksTotal, gpOffset);
+    captureCommandHook(ipu.pc);
   }
 }
 

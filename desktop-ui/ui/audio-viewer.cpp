@@ -71,13 +71,14 @@ auto DrawAudioViewer() -> void {
   u32 writePos = cap.writePos.load(std::memory_order_acquire);
 
   ImVec2 avail = ImGui::GetContentRegionAvail();
+  avail.y -= 20;
   float channelHeight = (avail.y - ImGui::GetTextLineHeight() - ImGui::GetStyle().ItemSpacing.y * 3) / 2.0f;
   if(channelHeight < 30) channelHeight = 30;
 
   ImDrawList* dl = ImGui::GetWindowDrawList();
 
   // Left channel
-  ImGui::TextUnformatted("Left");
+  //ImGui::TextUnformatted("Left");
   ImVec2 leftPos = ImGui::GetCursorScreenPos();
   drawWaveform(dl, leftPos, ImVec2(avail.x, channelHeight), cap.left, cap.bufferSize, writePos, IM_COL32(0, 200, 255, 255));
   ImGui::Dummy(ImVec2(avail.x, channelHeight));
@@ -85,7 +86,7 @@ auto DrawAudioViewer() -> void {
   ImGui::Spacing();
 
   // Right channel
-  ImGui::TextUnformatted("Right");
+  //ImGui::TextUnformatted("Right");
   ImVec2 rightPos = ImGui::GetCursorScreenPos();
   drawWaveform(dl, rightPos, ImVec2(avail.x, channelHeight), cap.right, cap.bufferSize, writePos, IM_COL32(255, 100, 50, 255));
   ImGui::Dummy(ImVec2(avail.x, channelHeight));

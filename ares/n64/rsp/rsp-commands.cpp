@@ -177,6 +177,7 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
 
     // Reset state
     hookCount = 0;
+    pcLoop = pcExecCommand = pcLoadOverlay = pcFetchBuffer = pcFetchBufferPtr = ~0u;
     dmemCmdsOffset = 0;
     dmemCmdsSize = 0;
     dmemDramAddrOffset = 0;
@@ -202,6 +203,15 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
           addr = (addr << 4) | nib;
         }
         hookAddresses[hookCount++] = addr;
+
+        // Resolve the well-known dispatch points by key name so the capture
+        // logic can tell them apart (see captureCommandHook).
+        nall::string k{key.c_str()};
+        if(k == "RSPQ_Loop")                  pcLoop = addr;
+        else if(k == "rspq_execute_command")  pcExecCommand = addr;
+        else if(k == "rspq_load_overlay")     pcLoadOverlay = addr;
+        else if(k == "rspq_fetch_buffer")     pcFetchBuffer = addr;
+        else if(k == "rspq_fetch_buffer_with_ptr") pcFetchBufferPtr = addr;
       }
     }
 
@@ -424,44 +434,88 @@ auto RSPCapture::detectRspq() -> bool {
   return true;
 }
 
-// Called from the interpreter hook when the RSP is about to dispatch a command.
-auto rspCaptureCommand(u64 cycle, u32 cmdDmemOffset) -> void {
-  auto& rsp = ares::Nintendo64::rsp;
+// Read the command currently pointed to by gp (rspq_dmem_buf_ptr) into the
+// pending-command slot of the capture state.
+static auto rspReadPendingCommand(RSP& rsp) -> void {
   auto& cap = rsp.capture;
-  if(!cap.enabled.load(std::memory_order_relaxed)) return;
-
-  u32 base = cap.dmemCmdsOffset + cmdDmemOffset;
-  if(base > 0xFFF) return;
-
-  // Read first word to get command ID
+  u32 gp = rsp.ipu.r[28].u32;          // rspq_dmem_buf_ptr: offset into the cmd buffer
+  u32 base = cap.dmemCmdsOffset + gp;
+  if(base > 0xFFF) {
+    cap.segOverlay = 0;
+    cap.segCommand = 0;
+    cap.segWordCount = 0;
+    return;
+  }
   u32 firstWord = rsp.dmem.read<Word>(base);
-  u8 overlayId = (firstWord >> 28) & 0xF;
-  u8 commandId = (firstWord >> 24) & 0xF;
-
-  // Read up to 16 argument words
-  u32 words[16];
-  u32 maxWords = (cap.dmemCmdsSize - cmdDmemOffset) / 4;
-  if(maxWords > 16) maxWords = 16;
-  u8 wordCount = (u8)maxWords;
-  for(u32 i = 0; i < wordCount; i++) {
-    words[i] = rsp.dmem.read<Word>(base + i * 4);
-  }
-
-  cap.push(cycle, cap.frameNumber, overlayId, commandId, wordCount, words);
-
-  // Step mode: flush GPU so framebuffer is current, then spin until UI advances
-  if(cap.stepMode.load(std::memory_order_relaxed)) {
-    vulkan.flush();
-    rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
-    while(!cap.stepPending.load(std::memory_order_acquire)
-          && cap.stepMode.load(std::memory_order_relaxed)) {}
-    cap.stepPending.store(false, std::memory_order_release);
-  }
+  cap.segOverlay = (firstWord >> 28) & 0xF;
+  cap.segCommand = (firstWord >> 24) & 0xF;
+  // We don't know the exact command size at this PC, so read up to the end of
+  // the buffer (capped). Extra trailing words are harmless: the UI only shows
+  // wordCount of them and they belong to following commands.
+  u32 maxWords = (cap.dmemCmdsSize > gp) ? (cap.dmemCmdsSize - gp) / 4 : 0;
+  if(maxWords > RSPCapture::maxCommandWords) maxWords = RSPCapture::maxCommandWords;
+  cap.segWordCount = (u8)maxWords;
+  for(u32 i = 0; i < cap.segWordCount; i++) cap.segWords[i] = rsp.dmem.read<Word>(base + i * 4);
 }
 
-auto RSP::captureCommandHook() -> void {
-  static u64 lastClocks = 0;
-  u64 delta = pipeline.clocksTotal - lastClocks;
-  lastClocks = pipeline.clocksTotal;
-  rspCaptureCommand(delta, ipu.r[28].u32);
+// Called from both the interpreter and the recompiler at every hooked RSPQ
+// dispatch PC. Rather than capturing a command at every hook (which produced
+// duplicates), we model the RSP as moving through a series of timed segments:
+//
+//   RSPQ_Loop --decode--> [load overlay] --> execute_command --run--> RSPQ_Loop
+//
+// Each hook marks a transition: we close the previous segment (emitting a row
+// timestamped with the cycle delta since it began) and open the next one. This
+// yields exactly one row per real command, plus synthetic "overhead" rows for
+// the time spent dispatching in the loop, switching overlays, and refetching
+// the command buffer.
+auto RSP::captureCommandHook(u32 pc) -> void {
+  auto& cap = capture;
+  if(!cap.enabled.load(std::memory_order_relaxed)) {
+    cap.segType = RSPCapture::SegNone;  // re-arm on next enable, avoids a stale delta
+    return;
+  }
+
+  // Classify which segment is *beginning* at this PC.
+  u8 newType;
+  if(pc == cap.pcExecCommand)      newType = RSPCapture::SegCommand;
+  else if(pc == cap.pcLoadOverlay) newType = RSPCapture::SegOverlayLoad;
+  else if(pc == cap.pcFetchBuffer || pc == cap.pcFetchBufferPtr) newType = RSPCapture::SegFetch;
+  else if(pc == cap.pcLoop)        newType = RSPCapture::SegLoop;
+  else return;  // unknown hook, ignore
+
+  // rspq_fetch_buffer falls through into rspq_fetch_buffer_with_ptr, so two
+  // fetch hooks fire back-to-back. Treat a same-type transition as a
+  // continuation of the current segment rather than starting a new row.
+  if(newType == cap.segType) return;
+
+  u64 now = pipeline.clocksTotal;
+
+  // Close the previous segment, emitting its row with the elapsed cycle delta.
+  if(cap.segType != RSPCapture::SegNone) {
+    u64 delta = now - cap.segStart;
+    if(cap.segType == RSPCapture::SegCommand) {
+      cap.push(delta, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords);
+
+      // Step mode: flush GPU so the framebuffer is current, then spin until the
+      // UI advances. Only meaningful at real command boundaries.
+      if(cap.stepMode.load(std::memory_order_relaxed)) {
+        vulkan.flush();
+        rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
+        while(!cap.stepPending.load(std::memory_order_acquire)
+              && cap.stepMode.load(std::memory_order_relaxed)) {}
+        cap.stepPending.store(false, std::memory_order_release);
+      }
+    } else {
+      u8 overhead = cap.segType == RSPCapture::SegLoop        ? RSPCapture::OverheadLoop
+                  : cap.segType == RSPCapture::SegOverlayLoad ? RSPCapture::OverheadOvlLoad
+                  :                                             RSPCapture::OverheadFetch;
+      cap.pushOverhead(delta, overhead);
+    }
+  }
+
+  // Open the new segment.
+  cap.segType = newType;
+  cap.segStart = now;
+  if(newType == RSPCapture::SegCommand) rspReadPendingCommand(*this);
 }

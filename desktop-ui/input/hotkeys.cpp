@@ -100,9 +100,11 @@ auto InputManager::createHotkeys() -> void {
       program.requestFrameAdvance = true;
       break;
     case Program::StepType::RSP:
+      program.stepSequence++;
       ares::Nintendo64::rsp.capture.stepPending.store(true, std::memory_order_release);
       break;
     case Program::StepType::RDP:
+      program.stepSequence++;
       ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
       break;
     default:

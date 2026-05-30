@@ -441,7 +441,7 @@ auto RSP::Recompiler::emit(u12 address, bool callInstructionPrologue) -> Block* 
     // RSP command viewer: per-instruction PC hook (recompiler-safe)
     if(self.capture.configLoaded && self.capture.hasHook(address)) {
       flushDeferredForCallf();
-      callf(&RSP::captureCommandHook);
+      callf(&RSP::captureCommandHook, imm((u32)address));
     }
     if(delaySlot) mov32(BranchReg(nstate), imm(0));
     pipeline.begin();
@@ -468,7 +468,7 @@ auto RSP::Recompiler::emit(u12 address, bool callInstructionPrologue) -> Block* 
         // Hook check for dual-issued second op
         if(self.capture.configLoaded && self.capture.hasHook(address + 4)) {
           flushDeferredForCallf();
-          callf(&RSP::captureCommandHook);
+          callf(&RSP::captureCommandHook, imm((u32)u12(address + 4)));
         }
         checkHalted |= op1.mayHalt();
         address += 4;

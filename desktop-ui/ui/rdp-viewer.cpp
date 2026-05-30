@@ -16,14 +16,6 @@ static auto cmdColor(u8 opcode) -> ImU32 {
   return IM_COL32(128, 128, 128, 255);
 }
 
-static auto isInteresting(u8 opcode) -> bool {
-  return (opcode >= 0x08 && opcode <= 0x0f) || // triangles
-         opcode == 0x24 || opcode == 0x25 ||    // tex rects
-         opcode == 0x29 ||                       // sync full
-         opcode == 0x36 ||                       // fill rect
-         opcode == 0x3f;                         // set color image
-}
-
 auto DrawRdpViewer() -> void {
   if(!showRdpViewer) return;
 
@@ -57,6 +49,7 @@ auto DrawRdpViewer() -> void {
   if(isRdpStep) {
     ImGui::SameLine();
     if(ImGui::Button("Step >")) {
+      program.stepSequence++;
       cap.stepPending.store(true, std::memory_order_release);
     }
     // Hold-to-repeat: 400ms initial delay, then fire every frame
@@ -66,13 +59,17 @@ auto DrawRdpViewer() -> void {
       if(!steppingHeld) { steppingHeld = true; stepHoldStart = std::chrono::steady_clock::now(); }
       auto elapsed = std::chrono::steady_clock::now() - stepHoldStart;
       if(elapsed > std::chrono::milliseconds(400)) {
+        program.stepSequence++;
         cap.stepPending.store(true, std::memory_order_release);
       }
     } else {
       steppingHeld = false;
     }
   }
-  bool sm = isRdpStep;
+  // React to *either* stepper (RDP or RSP): when the other one steps, new rows
+  // may be appended here too, and we want to follow + highlight them just the same.
+  bool anyStep = (program.stepType == Program::StepType::RSP)
+              || (program.stepType == Program::StepType::RDP);
 
   ImGui::Separator();
 
@@ -98,13 +95,21 @@ auto DrawRdpViewer() -> void {
   ImGui::TableSetupScrollFreeze(0, 1);
   ImGui::TableHeadersRow();
 
-  // Pre-find last interesting command for highlight
-  int lastInteresting = -1;
-  if(sm) {
-    for(int r = (int)count - 1; r >= 0; r--) {
-      if(isInteresting(cap.commands[r].opcode)) { lastInteresting = r; break; }
-    }
-  }
+  // Highlight only the rows added by the *most recent* step. We key off the
+  // global step counter (not our own row count) so that a step which adds no RDP
+  // rows still clears the previous highlight. [hlStart, count) is the range
+  // appended since that step — one command for our own stepper, a whole batch
+  // when the other stepper runs, or empty if this step added nothing here.
+  static u32 seenSeq = ~0u, prevCount = 0, hlStart = 0;
+  u32 seq = program.stepSequence;
+  bool stepped = seq != seenSeq;
+  bool countChanged = count != prevCount;
+  if(stepped) { hlStart = prevCount; seenSeq = seq; }
+  if(count < hlStart) hlStart = 0;  // guard against the per-frame count reset
+  // Anchor auto-scroll on the last row (GetScrollMaxY lags a frame).
+  bool needScroll = anyStep && (stepped || countChanged);
+  prevCount = count;
+  u32 lastRow = count ? count - 1 : ~0u;
 
   for(u32 row = 0; row < count; row++) {
     auto& cmd = cap.commands[row];
@@ -114,12 +119,12 @@ auto DrawRdpViewer() -> void {
     int lines = 1;
     for(char c : desc) if(c == '\n') lines++;
 
-    // Highlight the last interesting command (emulator paused here)
-    if(sm && (int)row == lastInteresting) {
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() * lines);
+
+    // Highlight rows added since the last step (the emulator is paused on the last).
+    if(anyStep && row >= hlStart) {
       ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(60, 60, 0, 255));
     }
-
-    ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetTextLineHeight() * lines);
 
     ImGui::TableNextColumn();
     ImGui::Text("%u", row);
@@ -156,13 +161,9 @@ auto DrawRdpViewer() -> void {
 
     ImGui::TableNextColumn();
     ImGui::Text("%016llX", (unsigned long long)cmd.word0);
-  }
 
-  // Auto-scroll to bottom when stepping (only when a step just happened)
-  static u32 lastStepCount = ~0u;
-  if(sm && count != lastStepCount) {
-    ImGui::SetScrollY(ImGui::GetScrollMaxY());
-    lastStepCount = count;
+    // Anchor the auto-scroll on the last row so we reach the very end.
+    if(needScroll && row == lastRow) ImGui::SetScrollHereY(1.0f);
   }
 
   ImGui::EndTable();

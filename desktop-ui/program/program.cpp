@@ -164,11 +164,13 @@ auto Program::main() -> void {
   if(inputManager.stepHotkeyHeld && emulator) {
     auto elapsed = std::chrono::steady_clock::now() - inputManager.stepHotkeyHoldStart;
     if(elapsed > std::chrono::milliseconds(400)) {
-      if(program.stepType == Program::StepType::RSP)
+      if(program.stepType == Program::StepType::RSP) {
+        program.stepSequence++;
         ares::Nintendo64::rsp.capture.stepPending.store(true, std::memory_order_release);
-      else if(program.stepType == Program::StepType::RDP)
+      } else if(program.stepType == Program::StepType::RDP) {
+        program.stepSequence++;
         ares::Nintendo64::rdp.capture.stepPending.store(true, std::memory_order_release);
-      else
+      } else
         program.requestFrameAdvance = true;
     }
   }

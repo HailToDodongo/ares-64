@@ -1,15 +1,29 @@
 //Reality Signal Processor
 
-// Forward declarations for RSP command capture (defined in rsp-commands.cpp)
-auto rspCaptureCommand(u64 cycle, u32 cmdDmemOffset) -> void;
-
 struct RSPCapture {
   static constexpr u32 maxCommands = 65536;
   static constexpr u32 maxCommandWords = 16;
   static constexpr u32 maxHookAddresses = 16;
 
+  // Internal "overhead" categories (rows that are not real commands).
+  enum OverheadType : u8 {
+    OverheadNone    = 0,
+    OverheadLoop    = 1,  // time spent in RSPQ_Loop dispatch, outside of any command
+    OverheadOvlLoad = 2,  // time spent saving/loading overlay ucode + state
+    OverheadFetch   = 3,  // time spent DMAing the next command buffer from RDRAM
+  };
+
+  // What the RSP is currently doing, tracked between hook transitions.
+  enum SegType : u8 {
+    SegNone = 0,
+    SegCommand,      // executing a real command handler
+    SegLoop,         // inside RSPQ_Loop dispatch (decode/idle)
+    SegOverlayLoad,  // saving/loading overlay ucode
+    SegFetch,        // DMAing command buffer from RDRAM
+  };
+
   struct Command {
-    u64 cycle = 0;        // pipeline.clocksTotal at capture time
+    u64 cycle = 0;        // cycle delta to the previous event (time this row took)
     u32 frame = 0;        // frame number
     u16 overlayId = 0;
     u8  commandId = 0;
@@ -29,6 +43,26 @@ struct RSPCapture {
   // Hook addresses from JSON config (IMEM offsets)
   u32 hookAddresses[maxHookAddresses];
   u32 hookCount = 0;
+
+  // Named hook PCs (resolved by key name from the JSON "imem" block). A value of
+  // ~0u means "not configured". These let the capture logic tell apart the
+  // different RSPQ dispatch points so it can emit one row per command plus the
+  // synthetic overhead rows (loop/overlay-load/fetch).
+  u32 pcLoop = ~0u;            // RSPQ_Loop                    (command dispatch loop)
+  u32 pcExecCommand = ~0u;    // rspq_execute_command         (a command is about to run)
+  u32 pcLoadOverlay = ~0u;    // rspq_load_overlay            (overlay ucode save/load)
+  u32 pcFetchBuffer = ~0u;    // rspq_fetch_buffer            (DMA next command buffer)
+  u32 pcFetchBufferPtr = ~0u; // rspq_fetch_buffer_with_ptr   (DMA next command buffer)
+
+  // Segment tracking (written only from the RSP thread). We emit a row when a
+  // segment ends, timestamped with the delta since the segment began.
+  u8  segType = SegNone;
+  u64 segStart = 0;
+  // Pending command descriptor for SegCommand (captured at dispatch time).
+  u16 segOverlay = 0;
+  u8  segCommand = 0;
+  u8  segWordCount = 0;
+  u32 segWords[maxCommandWords] = {};
 
   // DMEM layout from JSON config
   u32 dmemCmdsOffset = 0;
@@ -674,7 +708,7 @@ struct RSP : Thread, Memory::RCP<RSP> {
   template<u8 e> auto VZERO(r128& rd, cr128& vs, cr128& vt) -> void;
 
   //rsp-commands.cpp
-  auto captureCommandHook() -> void;
+  auto captureCommandHook(u32 pc) -> void;
 
   //emux.cpp
   auto XDETECT(r32& rd, u32 code) -> void;

@@ -92,6 +92,9 @@ struct Program : ares::Platform {
 
   enum class StepType : u32 { None, Frame, RSP, RDP };
   StepType stepType = StepType::Frame;
+  // Incremented on every RSP/RDP step the user fires, so both command viewers
+  // can detect "a step happened" even if it added no rows to their own table.
+  u32 stepSequence = 0;
 
   bool paused = false;
   bool fastForwarding = false;
