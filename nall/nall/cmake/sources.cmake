@@ -3,7 +3,6 @@ target_sources(
   PRIVATE
     adaptive-array.hpp
     algorithm.hpp
-    any.hpp
     arguments.hpp
     arithmetic.hpp
     array.hpp
@@ -67,7 +66,6 @@ target_sources(
     thread.hpp
     traits.hpp
     utility.hpp
-    variant.hpp
     varint.hpp
     vfs.hpp
     vector-helpers.hpp

@@ -1,63 +1,46 @@
 #pragma once
 
+#include <optional>
 #include <nall/traits.hpp>
 
 namespace nall {
 
-struct nothing_t {};
-static nothing_t nothing;
+using nothing_t = std::nullopt_t;
+inline constexpr nothing_t nothing = std::nullopt;
 struct else_t {};
 
 template<typename T>
 struct maybe {
-  maybe() {}
-  maybe(nothing_t) {}
-  maybe(const T& source) { operator=(source); }
-  maybe(T&& source) { operator=(std::move(source)); }
-  maybe(const maybe& source) { operator=(source); }
-  maybe(maybe&& source) { operator=(std::move(source)); }
-  ~maybe() { reset(); }
+  maybe() = default;
+  maybe(nothing_t) : _value(std::nullopt) {}
+  maybe(const T& source) : _value(source) {}
+  maybe(T&& source) : _value(std::move(source)) {}
+  maybe(const maybe& source) : _value(source._value) {}
+  maybe(maybe&& source) : _value(std::move(source._value)) {}
+  ~maybe() = default;
 
-  auto operator=(nothing_t) -> maybe& { reset(); return *this; }
-  auto operator=(const T& source) -> maybe& { reset(); _valid = true; new(&_value.t) T(source); return *this; }
-  auto operator=(T&& source) -> maybe& { reset(); _valid = true; new(&_value.t) T(std::move(source)); return *this; }
+  auto operator=(nothing_t) -> maybe& { _value.reset(); return *this; }
+  auto operator=(const T& source) -> maybe& { _value.emplace(source); return *this; }
+  auto operator=(T&& source) -> maybe& { _value.emplace(std::move(source)); return *this; }
+  auto operator=(const maybe& source) -> maybe& { _value = source._value; return *this; }
+  auto operator=(maybe&& source) -> maybe& { _value = std::move(source._value); return *this; }
 
-  auto operator=(const maybe& source) -> maybe& {
-    if(this == &source) return *this;
-    reset();
-    if(_valid = source._valid) new(&_value.t) T(source.get());
-    return *this;
-  }
-
-  auto operator=(maybe&& source) -> maybe& {
-    if(this == &source) return *this;
-    reset();
-    if(_valid = source._valid) new(&_value.t) T(std::move(source.get()));
-    return *this;
-  }
-
-  explicit operator bool() const { return _valid; }
-  auto reset() -> void { if(_valid) { _value.t.~T(); _valid = false; } }
-  auto data() -> T* { return _valid ? &_value.t : nullptr; }
-  auto get() -> T& { assert(_valid); return _value.t; }
-
-  auto data() const -> const T* { return ((maybe*)this)->data(); }
-  auto get() const -> const T& { return ((maybe*)this)->get(); }
+  explicit operator bool() const { return _value.has_value(); }
+  auto reset() -> void { _value.reset(); }
+  auto data() -> T* { return _value.has_value() ? &*_value : nullptr; }
+  auto get() -> T& { return _value.value(); }
+  auto data() const -> const T* { return _value.has_value() ? &*_value : nullptr; }
+  auto get() const -> const T& { return _value.value(); }
   auto operator->() -> T* { return data(); }
   auto operator->() const -> const T* { return data(); }
   auto operator*() -> T& { return get(); }
   auto operator*() const -> const T& { return get(); }
   auto operator()() -> T& { return get(); }
   auto operator()() const -> const T& { return get(); }
-  auto operator()(const T& invalid) const -> const T& { return _valid ? get() : invalid; }
+  auto operator()(const T& invalid) const -> const T& { return _value.has_value() ? get() : invalid; }
 
 private:
-  union U {
-    T t;
-    U() {}
-    ~U() {}
-  } _value;
-  bool _valid = false;
+  std::optional<T> _value;
 };
 
 template<typename T>
@@ -74,10 +57,9 @@ struct maybe<T&> {
   explicit operator bool() const { return _value; }
   auto reset() -> void { _value = nullptr; }
   auto data() -> T* { return _value; }
-  auto get() -> T& { assert(_value); return *_value; }
-
-  auto data() const -> const T* { return ((maybe*)this)->data(); }
-  auto get() const -> const T& { return ((maybe*)this)->get(); }
+  auto get() -> T& { return *_value; }
+  auto data() const -> const T* { return const_cast<maybe*>(this)->data(); }
+  auto get() const -> const T& { return const_cast<maybe*>(this)->get(); }
   auto operator->() -> T* { return data(); }
   auto operator->() const -> const T* { return data(); }
   auto operator*() -> T& { return get(); }

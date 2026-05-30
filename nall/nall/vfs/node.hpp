@@ -20,7 +20,7 @@ struct node {
   template<typename T = string>
   auto attribute(const string& name) const -> T {
     if(auto attribute = _attributes.find(name)) {
-      if(attribute->value.is<T>()) return attribute->value.get<T>();
+      if(attribute->value.type() == typeid(T)) return std::any_cast<T>(attribute->value);
     }
     return {};
   }
@@ -28,7 +28,7 @@ struct node {
   template<typename T = string>
   auto hasAttribute(const string& name) const -> bool {
     if(auto attribute = _attributes.find(name)) {
-      if(attribute->value.is<T>()) return true;
+      if(attribute->value.type() == typeid(T)) return true;
     }
     return false;
   }

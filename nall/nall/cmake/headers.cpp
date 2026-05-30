@@ -5,7 +5,6 @@
 
 #include <nall/platform.hpp>
 #include <nall/algorithm.hpp>
-#include <nall/any.hpp>
 #include <nall/arithmetic.hpp>
 #include <nall/array.hpp>
 #include <nall/atoi.hpp>
@@ -48,7 +47,6 @@
 #include <nall/thread.hpp>
 #include <nall/traits.hpp>
 #include <nall/utility.hpp>
-#include <nall/variant.hpp>
 #include <nall/varint.hpp>
 #include <nall/view.hpp>
 #include <nall/arguments.hpp>

@@ -9,7 +9,6 @@
 
 #include <nall/platform.hpp>
 #include <nall/adaptive-array.hpp>
-#include <nall/any.hpp>
 #include <nall/array.hpp>
 #include <nall/bump-allocator.hpp>
 #include <nall/case-range.hpp>
@@ -30,7 +29,6 @@
 #include <nall/thread.hpp>
 #include <nall/traits.hpp>
 #include <memory>
-#include <nall/variant.hpp>
 #include <nall/vfs.hpp>
 #include <nall/cd.hpp>
 #include <nall/dsp/iir/one-pole.hpp>

@@ -1,3 +1,4 @@
+#include <any>
 //identifier() is static, allowing template<typename T> to access via T::identifier()
 //identity() is virtual, allowing T* to access via T->identity()
 
@@ -153,7 +154,7 @@ struct Object : std::enable_shared_from_this<Object> {
   template<typename T = string>
   auto attribute(const string& name) const -> T {
     if(auto attribute = _attributes.find(name)) {
-      if(attribute->value.is<T>()) return attribute->value.get<T>();
+      if(attribute->value.type() == typeid(T)) return std::any_cast<T>(attribute->value);
     }
     return {};
   }
@@ -161,7 +162,7 @@ struct Object : std::enable_shared_from_this<Object> {
   template<typename T = string>
   auto hasAttribute(const string& name) const -> bool {
     if(auto attribute = _attributes.find(name)) {
-      if(attribute->value.is<T>()) return true;
+      if(attribute->value.type() == typeid(T)) return true;
     }
     return false;
   }
@@ -193,10 +194,10 @@ struct Object : std::enable_shared_from_this<Object> {
     output.append(depth, "node: ", identity(), "\n");
     output.append(depth, "  name: ", _name, "\n");
     for(auto& attribute : _attributes) {
-      if(!attribute.value.is<string>()) continue;
+      if(attribute.value.type() != typeid(string)) continue;
       output.append(depth, "  attribute\n");
       output.append(depth, "    name: ", attribute.name, "\n");
-      output.append(depth, "    value: ", attribute.value.get<string>(), "\n");
+      output.append(depth, "    value: ", std::any_cast<string>(attribute.value), "\n");
     }
     depth.append("  ");
     for(auto& node : _nodes) {
