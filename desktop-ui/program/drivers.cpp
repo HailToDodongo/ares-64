@@ -12,12 +12,8 @@ auto Program::videoDriverUpdate() -> void {
   }
   videoMonitorUpdate();
   videoFormatUpdate();
-  ruby::video.setExclusive(settings.video.exclusive);
   ruby::video.setBlocking(settings.video.blocking);
   ruby::video.setFlush(settings.video.flush);
-  ruby::video.setForceSRGB(settings.video.forceSRGB);
-  ruby::video.setThreadedRenderer(settings.video.threadedRenderer);
-  ruby::video.setNativeFullScreen(settings.video.nativeFullScreen);
 
   if(!ruby::video.ready()) {
     driverInitFailed(settings.video.driver, "video", [&] { driverSettings.videoDriverUpdate(); });
@@ -49,7 +45,7 @@ auto Program::videoFullScreenToggle() -> void {
   if(!ruby::video.fullScreen()) {
     ruby::video.setFullScreen(true);
     if(!ruby::input.acquired()) {
-      if(ruby::video.exclusive() || ruby::video.hasMonitors().size() == 1) {
+      if(ruby::video.hasMonitors().size() == 1) {
         ruby::input.acquire();
       }
     }

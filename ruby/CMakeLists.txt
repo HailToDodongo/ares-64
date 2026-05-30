@@ -1,8 +1,6 @@
 add_library(ruby STATIC)
 add_library(ares::ruby ALIAS ruby)
 
-option(ARES_ENABLE_LIBRASHADER "Configure with librashader and slang shaders" ON)
-
 if(OS_MACOS)
   target_sources(ruby PRIVATE ruby.mm)
 else()

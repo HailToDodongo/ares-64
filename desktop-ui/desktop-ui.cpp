@@ -92,10 +92,6 @@ auto nall::main(Arguments arguments) -> void {
     program.startSystem = system;
   }
 
-  if(string shader; arguments.take("--shader", shader)) {
-    program.startShader = shader;
-  }
-
   if(arguments.take("--no-file-prompt")) {
     program.noFilePrompt = true;
   }
@@ -167,7 +163,6 @@ auto nall::main(Arguments arguments) -> void {
     print("  --pseudofullscreen    Start in psuedo full screen mode\n");
     print("  --kiosk               Start in minimal UI mode (implies --no-file-prompt)\n");
     print("  --system name         Specify the system name\n");
-    print("  --shader name         Specify the name of the shader to use\n");
     print("  --setting name=value  Specify a value for a setting\n");
     print("  --dump-all-settings   Show a list of all existing settings and exit\n");
     print("  --no-file-prompt      Do not prompt to load (optional) additional roms (eg: 64DD)\n");

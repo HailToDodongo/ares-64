@@ -17,13 +17,8 @@ struct Settings : Markup::Node {
     string driver;
     string monitor;
     string format;
-    bool exclusive = false;
     bool blocking = false;
-    bool forceSRGB = false;
-    bool threadedRenderer = true;
-    bool nativeFullScreen = false;
     bool flush = false;
-    string shader = "None";
     u32 windowWidth = 800;
     u32 windowHeight = 576;
     string output = "Scale";

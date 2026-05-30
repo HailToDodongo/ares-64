@@ -44,13 +44,8 @@ auto Settings::process(bool load) -> void {
   bind(string,  "Video/Driver", video.driver);
   bind(string,  "Video/Monitor", video.monitor);
   bind(string,  "Video/Format", video.format);
-  bind(boolean, "Video/Exclusive", video.exclusive);
   bind(boolean, "Video/Blocking", video.blocking);
-  bind(boolean, "Video/PresentSRGB", video.forceSRGB);
-  bind(boolean, "Video/ThreadedRenderer", video.threadedRenderer);
-  bind(boolean, "Video/NativeFullScreen", video.nativeFullScreen);
   bind(boolean, "Video/Flush", video.flush);
-  bind(string,  "Video/Shader", video.shader);
   bind(natural, "Video/WindowWidth", video.windowWidth);
   bind(natural, "Video/WindowHeight", video.windowHeight);
   bind(string,  "Video/Output", video.output);

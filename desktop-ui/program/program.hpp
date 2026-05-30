@@ -26,7 +26,6 @@ struct Program : ares::Platform {
   auto log(ares::Node::Debugger::Tracer::Tracer tracer, string_view message) -> void override;
   auto status(string_view message) -> void override;
   auto video(ares::Node::Video::Screen, const u32* data, u32 pitch, u32 width, u32 height) -> void override;
-  auto refreshRateHint(double refreshRate) -> void override;
   auto audio(ares::Node::Audio::Stream) -> void override;
   auto input(ares::Node::Input::Input) -> void override;
   auto cheat(u32 address) -> maybe<u32> override;
@@ -85,7 +84,6 @@ struct Program : ares::Platform {
   bool toolsWindowConstructed = false;
 
   string startSystem;
-  string startShader;
   string startSaveStateSlot;
 
   AudioCapture audioCapture;
