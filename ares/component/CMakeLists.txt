@@ -132,24 +132,6 @@ component_sources(
 
 component_sources(
   COMPONENT
-    arm7tdmi
-  PRIMARY
-    processor/arm7tdmi/arm7tdmi.cpp
-  INCLUDED
-    processor/arm7tdmi/algorithms.cpp
-    processor/arm7tdmi/arm7tdmi.hpp
-    processor/arm7tdmi/coprocessor.cpp
-    processor/arm7tdmi/disassembler.cpp
-    processor/arm7tdmi/instruction.cpp
-    processor/arm7tdmi/instructions-arm.cpp
-    processor/arm7tdmi/instructions-thumb.cpp
-    processor/arm7tdmi/memory.cpp
-    processor/arm7tdmi/registers.cpp
-    processor/arm7tdmi/serialization.cpp
-)
-
-component_sources(
-  COMPONENT
     gsu
   PRIMARY
     processor/gsu/gsu.cpp
@@ -193,21 +175,6 @@ component_sources(
 
 component_sources(
   COMPONENT
-    i8080
-  PRIMARY
-    processor/i8080/i8080.cpp
-  INCLUDED
-    processor/i8080/algorithms.cpp
-    processor/i8080/disassembler.cpp
-    processor/i8080/i8080.hpp
-    processor/i8080/instruction.cpp
-    processor/i8080/instructions.cpp
-    processor/i8080/memory.cpp
-    processor/i8080/registers.hpp
-    processor/i8080/serialization.cpp
-)
-component_sources(
-  COMPONENT
     m68hc05
   PRIMARY
     processor/m68hc05/m68hc05.cpp
@@ -219,25 +186,6 @@ component_sources(
     processor/m68hc05/m68hc05.hpp
     processor/m68hc05/memory.cpp
     processor/m68hc05/serialization.cpp
-)
-
-component_sources(
-  COMPONENT
-    m68000
-  PRIMARY
-    processor/m68000/m68000.cpp
-  INCLUDED
-    processor/m68000/algorithms.cpp
-    processor/m68000/conditions.cpp
-    processor/m68000/disassembler.cpp
-    processor/m68000/effective-address.cpp
-    processor/m68000/instruction.cpp
-    processor/m68000/instructions.cpp
-    processor/m68000/m68000.hpp
-    processor/m68000/memory.cpp
-    processor/m68000/registers.cpp
-    processor/m68000/serialization.cpp
-    processor/m68000/traits.cpp
 )
 
 component_sources(

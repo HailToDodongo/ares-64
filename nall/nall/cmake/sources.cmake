@@ -31,17 +31,13 @@ target_sources(
     inode.cpp
     inode.hpp
     instance.hpp
-    instruction-set.cpp
-    instruction-set.hpp
     interpolation.hpp
     intrinsics.hpp
     ips.hpp
     iterator.hpp
     literals.hpp
-    locale.hpp
     location.hpp
     main.hpp
-    map.hpp
     matrix-multiply.hpp
     matrix.hpp
     maybe.hpp
@@ -53,7 +49,6 @@ target_sources(
     path.hpp
     platform.cpp
     platform.hpp
-    pointer.hpp
     primitives.hpp
     priority-queue.hpp
     queue.hpp
@@ -63,11 +58,8 @@ target_sources(
     reed-solomon.hpp
     run.cpp
     run.hpp
-    serial.hpp
     serializer.hpp
     set.hpp
-    smtp.cpp
-    smtp.hpp
     span-helpers.hpp
     stdint.hpp
     string.hpp
@@ -118,13 +110,6 @@ target_sources(
 
 target_sources(
   nall
-  PRIVATE #
-    database/odbc.hpp
-    database/sqlite3.hpp
-)
-
-target_sources(
-  nall
   PRIVATE
     decode/base.hpp
     decode/base64.hpp
@@ -151,13 +136,6 @@ target_sources(
     dsp/iir/dc-removal.hpp
     dsp/iir/one-pole.hpp
     dsp/resampler/cubic.hpp
-)
-
-target_sources(
-  nall
-  PRIVATE #
-    elliptic-curve/curve25519.hpp
-    elliptic-curve/ed25519.hpp
 )
 
 target_sources(
@@ -197,18 +175,6 @@ target_sources(
     hash/sha256.hpp
     hash/sha384.hpp
     hash/sha512.hpp
-)
-
-
-target_sources(
-  nall
-  PRIVATE #
-    http/message.hpp
-    http/server.cpp
-    http/server.hpp
-    http/response.hpp
-    http/request.hpp
-    http/role.hpp
 )
 
 target_sources(

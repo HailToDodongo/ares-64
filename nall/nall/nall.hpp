@@ -29,15 +29,12 @@
 #include <nall/intrinsics.hpp>
 #include <nall/iterator.hpp>
 #include <nall/literals.hpp>
-#include <nall/locale.hpp>
 #include <nall/location.hpp>
-#include <nall/map.hpp>
 #include <nall/matrix.hpp>
 #include <nall/matrix-multiply.hpp>
 #include <nall/maybe.hpp>
 #include <nall/memory.hpp>
 #include <nall/path.hpp>
-#include <nall/pointer.hpp>
 #include <nall/primitives.hpp>
 #include <nall/priority-queue.hpp>
 #include <nall/queue.hpp>
@@ -82,6 +79,3 @@
   #include <nall/windows/utf8.hpp>
 #endif
 
-#if defined(API_POSIX)
-  #include <nall/serial.hpp>
-#endif

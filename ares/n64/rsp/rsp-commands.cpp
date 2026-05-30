@@ -72,7 +72,7 @@ static auto elfTryReadSymbol(const string& elfPath, const string& symName, u64& 
   if(elfClass != 1 && elfClass != 2) return false;
 
   bool is64 = (elfClass == 2);
-
+  
   // Read section header info (different layout for ELF32 vs ELF64)
   u64 shoff;
   u32 shentsize, shnum, shstrndx;
