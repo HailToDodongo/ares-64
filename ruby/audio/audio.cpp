@@ -1,5 +1,9 @@
+#include <ruby/ruby.hpp>
 #include <SDL3/SDL.h>
-#include "audio.hpp"
+
+using namespace nall;
+
+namespace ruby {
 
 auto Audio::create() -> bool {
   SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
@@ -102,3 +106,5 @@ auto Audio::terminate() -> void {
   }
   SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }
+
+} // namespace ruby

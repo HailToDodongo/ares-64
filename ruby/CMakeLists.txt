@@ -1,12 +1,6 @@
 add_library(ruby STATIC)
 add_library(ares::ruby ALIAS ruby)
 
-if(OS_MACOS)
-  target_sources(ruby PRIVATE ruby.mm)
-else()
-  target_sources(ruby PRIVATE ruby.cpp)
-endif()
-
 target_sources(ruby PRIVATE ruby.hpp)
 
 target_sources(ruby PRIVATE audio/audio.cpp audio/audio.hpp)
@@ -15,13 +9,7 @@ target_sources(ruby PRIVATE input/input.cpp input/input.hpp)
 
 target_include_directories(ruby PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty)
 
-target_sources(
-  ruby
-  PRIVATE
-    video/video.cpp
-    video/video.hpp
-    video/sdl3.cpp
-)
+target_sources(ruby PRIVATE video/video.cpp video/video.hpp)
 
 if(OS_WINDOWS)
   include(cmake/os-windows.cmake)
@@ -43,10 +31,6 @@ get_target_property(ruby_SOURCES ruby SOURCES)
 
 set_source_files_properties(ruby ${ruby_SOURCES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
-if(${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
-  set_source_files_properties(ruby ruby.mm PROPERTIES HEADER_FILE_ONLY FALSE)
-else()
-  set_source_files_properties(ruby ruby.cpp PROPERTIES HEADER_FILE_ONLY FALSE)
-endif()
+set_source_files_properties(ruby audio/audio.cpp input/input.cpp video/video.cpp PROPERTIES HEADER_FILE_ONLY FALSE)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ruby_SOURCES})

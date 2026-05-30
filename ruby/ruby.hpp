@@ -31,6 +31,9 @@ using nall::recursive_mutex;
 using nall::string;
 using nall::tuple;
 
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_gpu.h>
+
 namespace ruby {
 
 #include <ruby/video/video.hpp>

@@ -1,6 +1,11 @@
+#include <ruby/ruby.hpp>
 #include <SDL3/SDL.h>
 #include <nall/hid.hpp>
 #include "input.hpp"
+
+using namespace nall;
+
+namespace ruby {
 
 // SDL3 scancode to ares key name mapping
 static const struct { SDL_Scancode sc; const char* name; } sdlKeys[] = {
@@ -203,3 +208,5 @@ auto Input::enumerateJoypads() -> void {
   }
   SDL_free(joysticks);
 }
+
+} // namespace ruby
