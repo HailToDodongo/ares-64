@@ -110,7 +110,6 @@ target_sources(
     decode/html.hpp
     decode/huffman.hpp
     decode/inflate.hpp
-    decode/mmi.hpp
     decode/mtf.hpp
     decode/png.hpp
     decode/rle.hpp
@@ -240,20 +239,9 @@ target_sources(
     string/utility.hpp
     string/view.hpp
     string/allocator/adaptive.hpp
-    string/allocator/copy-on-write.hpp
-    string/allocator/small-string-optimization.hpp
-    string/allocator/vector.hpp
-    string/eval/evaluator.hpp
-    string/eval/literal.hpp
-    string/eval/node.hpp
-    string/eval/parser.hpp
     string/markup/bml.hpp
     string/markup/find.hpp
-    string/markup/json.hpp
     string/markup/node.hpp
-    string/markup/xml.hpp
-    string/transform/dml.hpp
-    string/transform/cml.hpp
 )
 
 target_sources(

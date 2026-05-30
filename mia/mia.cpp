@@ -86,42 +86,8 @@ auto construct() -> void {
   if(initialized) return;
   initialized = true;
 
-  media.push_back("Atari 2600");
-  media.push_back("BS Memory");
-  media.push_back("ColecoVision");
-  media.push_back("MyVision");
-  media.push_back("Famicom");
-  media.push_back("Famicom Disk System");
-  media.push_back("Game Boy");
-  media.push_back("Game Boy Color");
-  media.push_back("Game Boy Advance");
-  media.push_back("Game Gear");
-  media.push_back("Master System");
-  media.push_back("Mega Drive");
-  media.push_back("Mega 32X");
-  media.push_back("Mega CD");
-  media.push_back("Mega LD");  
-  media.push_back("MSX");
-  media.push_back("MSX2");
-  media.push_back("Neo Geo");
-  media.push_back("Neo Geo Pocket");
-  media.push_back("Neo Geo Pocket Color");
   media.push_back("Nintendo 64");
   media.push_back("Nintendo 64DD");
-  media.push_back("PC Engine");
-  media.push_back("PC Engine CD");
-  media.push_back("PC Engine LD");
-  media.push_back("PlayStation");
-  media.push_back("Pocket Challenge V2");
-  media.push_back("Saturn");
-  media.push_back("SC-3000");
-  media.push_back("SG-1000");
-  media.push_back("Sufami Turbo");
-  media.push_back("Super Famicom");
-  media.push_back("SuperGrafx");
-  media.push_back("WonderSwan");
-  media.push_back("WonderSwan Color");
-  media.push_back("ZX Spectrum");
 }
 
   auto identify(const string& filename) -> std::vector<string> {

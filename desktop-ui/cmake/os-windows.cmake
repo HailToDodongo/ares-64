@@ -24,14 +24,3 @@ if(ARES_ENABLE_LIBRASHADER)
   endif()
 endif()
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/mia/Database")
-  add_custom_command(
-    TARGET desktop-ui
-    POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${ARES_EXECUTABLE_DESTINATION}/desktop-ui/rundir/Database/"
-    COMMAND
-      "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/mia/Database/"
-      "${ARES_EXECUTABLE_DESTINATION}/desktop-ui/rundir/Database/"
-    COMMENT "Copying mia database to rundir"
-  )
-endif()

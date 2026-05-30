@@ -31,18 +31,10 @@ endif()
 add_custom_command(
   TARGET desktop-ui
   POST_BUILD
-  COMMAND "${CMAKE_COMMAND}" -E make_directory "${ARES_BUILD_OUTPUT_DIR}/${ARES_INSTALL_DATA_DESTINATION}/Database"
   COMMAND
-    cp -R "${CMAKE_SOURCE_DIR}/mia/Database/." "${ARES_BUILD_OUTPUT_DIR}/${ARES_INSTALL_DATA_DESTINATION}/Database/"
   COMMENT "Copying mia database to staging directory"
 )
 
-install(
-  DIRECTORY "${CMAKE_SOURCE_DIR}/mia/Database/"
-  DESTINATION "${ARES_INSTALL_DATA_DESTINATION}/Database"
-  USE_SOURCE_PERMISSIONS
-  COMPONENT desktop-ui
-)
 
 # Stage and install icon, .desktop file
 add_custom_command(

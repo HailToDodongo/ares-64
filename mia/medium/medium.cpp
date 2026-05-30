@@ -1,99 +1,19 @@
 namespace Media {
   std::vector<Database> databases;
-  #include "mame.cpp"
-  #include "arcade.cpp"
-  #include "atari-2600.cpp"
-  #include "colecovision.cpp"
-  #include "myvision.cpp"
-  #include "famicom.cpp"
-  #include "famicom-disk-system.cpp"
-  #include "game-boy.cpp"
-  #include "game-boy-color.cpp"
-  #include "game-boy-advance.cpp"
-  #include "master-system.cpp"
-  #include "game-gear.cpp"
-  #include "mega-drive.cpp"
-  #include "mega-32x.cpp"
-  #include "mega-cd.cpp"
-  #include "mega-ld.cpp"
-  #include "msx.cpp"
-  #include "msx2.cpp"
-  #include "neo-geo.cpp"
-  #include "neo-geo-pocket.cpp"
-  #include "neo-geo-pocket-color.cpp"
   #include "nintendo-64.cpp"
   #include "nintendo-64dd.cpp"
-  #include "pc-engine.cpp"
-  #include "pc-engine-cd.cpp"
-  #include "pc-engine-ld.cpp"
-  #include "saturn.cpp"
-  #include "supergrafx.cpp"
-  #include "playstation.cpp"
-  #include "sg-1000.cpp"
-  #include "sc-3000.cpp"
-  #include "super-famicom.cpp"
-  #include "bs-memory.cpp"
-  #include "sufami-turbo.cpp"
-  #include "wonderswan.cpp"
-  #include "wonderswan-color.cpp"
-  #include "pocket-challenge-v2.cpp"
-  #include "zx-spectrum.cpp"
 }
 
-//auto Medium::construct() -> void {
-//  database = BML::unserialize(file::read(locate({"Database/", name(), ".bml"})));
-//  pathname = {Path::user(), "Emulation/", name(), "/"};
-//}
-
 auto Medium::create(string name) -> std::shared_ptr<Pak> {
-  if(name == "Arcade") return std::make_shared<Media::Arcade>();
-  if(name == "Atari 2600") return std::make_shared<Media::Atari2600>();
-  if(name == "ColecoVision") return std::make_shared<Media::ColecoVision>();
-  if(name == "MyVision") return std::make_shared<Media::MyVision>();
-  if(name == "Famicom") return std::make_shared<Media::Famicom>();
-  if(name == "Famicom Disk System") return std::make_shared<Media::FamicomDiskSystem>();
-  if(name == "Game Boy") return std::make_shared<Media::GameBoy>();
-  if(name == "Game Boy Color") return std::make_shared<Media::GameBoyColor>();
-  if(name == "Game Boy Advance") return std::make_shared<Media::GameBoyAdvance>();
-  if(name == "Master System") return std::make_shared<Media::MasterSystem>();
-  if(name == "Game Gear") return std::make_shared<Media::GameGear>();
-  if(name == "Mega Drive") return std::make_shared<Media::MegaDrive>();
-  if(name == "Mega 32X") return std::make_shared<Media::Mega32X>();
-  if(name == "Mega CD") return std::make_shared<Media::MegaCD>();
-  if(name == "Mega LD") return std::make_shared<Media::MegaLD>();
-  if(name == "MSX") return std::make_shared<Media::MSX>();
-  if(name == "MSX2") return std::make_shared<Media::MSX2>();
-  if(name == "Neo Geo") return std::make_shared<Media::NeoGeo>();
-  if(name == "Neo Geo Pocket") return std::make_shared<Media::NeoGeoPocket>();
-  if(name == "Neo Geo Pocket Color") return std::make_shared<Media::NeoGeoPocketColor>();
   if(name == "Nintendo 64") return std::make_shared<Media::Nintendo64>();
   if(name == "Nintendo 64DD") return std::make_shared<Media::Nintendo64DD>();
-  if(name == "PC Engine") return std::make_shared<Media::PCEngine>();
-  if(name == "PC Engine CD") return std::make_shared<Media::PCEngineCD>();
-  if(name == "PC Engine LD") return std::make_shared<Media::PCEngineLD>();
-  if(name == "Saturn") return std::make_shared<Media::Saturn>();
-  if(name == "SuperGrafx") return std::make_shared<Media::SuperGrafx>();
-  if(name == "PlayStation") return std::make_shared<Media::PlayStation>();
-  if(name == "SG-1000") return std::make_shared<Media::SG1000>();
-  if(name == "SC-3000") return std::make_shared<Media::SC3000>();
-  if(name == "SC-3000 Tape") return std::make_shared<Media::SC3000Tape>();
-  if(name == "Super Famicom") return std::make_shared<Media::SuperFamicom>();
-  if(name == "BS Memory") return std::make_shared<Media::BSMemory>();
-  if(name == "Sufami Turbo") return std::make_shared<Media::SufamiTurbo>();
-  if(name == "WonderSwan") return std::make_shared<Media::WonderSwan>();
-  if(name == "WonderSwan Color") return std::make_shared<Media::WonderSwanColor>();
-  if(name == "Pocket Challenge V2") return std::make_shared<Media::PocketChallengeV2>();
-  if(name == "ZX Spectrum") return std::make_shared<Media::ZXSpectrum>();
-  if(name == "Tape") return std::make_shared<Tape>();
   return {};
 }
 
 auto Medium::loadDatabase() -> bool {
-  //load the database on the first time it's needed for a given media type
   for(auto& database : Media::databases) {
     if(database.name == name()) return true;
   }
-
   Database database;
   database.name = name();
   auto databaseFile = locate({"Database/", name(), ".bml"});
@@ -102,29 +22,19 @@ auto Medium::loadDatabase() -> bool {
     Media::databases.push_back(std::move(database));
     return true;
   }
-
   return false;
 }
 
-//Retrieve all entries in game database
 auto Medium::database() -> Database {
   loadDatabase();
-
-  //search the database for a given sha256 game entry
   for(auto& database : Media::databases) {
-    if (database.name == name()) {
-      return database;
-    }
+    if (database.name == name()) return database;
   }
-
   return {};
 }
 
-//search game database for manifest, if one exists
 auto Medium::manifestDatabase(string sha256) -> string {
   loadDatabase();
-
-  //search the database for a given sha256 game entry
   for(auto& database : Media::databases) {
     if(database.name == name()) {
       for(auto node : database.list) {
@@ -134,16 +44,11 @@ auto Medium::manifestDatabase(string sha256) -> string {
       }
     }
   }
-
-  //database or game entry not found
   return {};
 }
 
-//search game database for manifest, if one exists
 auto Medium::manifestDatabaseArcade(string rom) -> string {
   loadDatabase();
-
-  //search the database for a given named game entry
   for(auto& database : Media::databases) {
     if(database.name == name()) {
       for(auto node : database.list) {
@@ -153,284 +58,5 @@ auto Medium::manifestDatabaseArcade(string rom) -> string {
       }
     }
   }
-
-  //database or game entry not found
   return {};
-}
-
-//
-
-//audio CD fallback
-auto CompactDisc::manifestAudio(string location) -> string {
-  string manifest;
-  manifest += "game\n";
-  manifest +={"  name:  ", Medium::name(location), "\n"};
-  manifest +={"  title: ", Medium::name(location), "\n"};
-  manifest +=   "  region: NTSC, NTSC-J, NTSC-U, PAL\n"; // We need a region to bootstrap
-  manifest += "  audio\n";
-  return manifest;
-}
-
-auto CompactDisc::isAudioCd(string pathname) -> bool {
-  auto fp = file::open({pathname, "cd.rom"}, file::mode::read);
-  if(!fp) return {};
-
-  std::vector<u8> toc;
-  toc.resize(96 * 7500);
-  for(u32 sector : range(7500)) {
-    fp.read({toc.data() + 96 * sector, 96});
-  }
-  CD::Session session;
-  session.decode(toc, 96);
-
-  //If the disc contains no data tracks, we are an audio cd
-  for(u32 trackID : range(100)) {
-    if(auto& track = session.tracks[trackID]) {
-      if(track.isData()) return false;
-    }
-  }
-
-  return true;
-}
-
-auto CompactDisc::readDataSector(string pathname, u32 sectorID) -> std::vector<u8> {
-  if(pathname.iendsWith(".bcd")) {
-    return readDataSectorBCD(pathname, sectorID);
-  }
-  if(pathname.iendsWith(".cue")) {
-    return readDataSectorCUE(pathname, sectorID);
-  }
-#if defined(ARES_ENABLE_CHD)
-  if(pathname.iendsWith(".chd")) {
-    return readDataSectorCHD(pathname, sectorID);
-  }
-#endif
-  return {};
-}
-
-auto CompactDisc::readDataSectorBCD(string pathname, u32 sectorID) -> std::vector<u8> {
-  auto fp = file::open({pathname, "cd.rom"}, file::mode::read);
-  if(!fp) return {};
-
-  std::vector<u8> toc;
-  toc.resize(96 * 7500);
-  for(u32 sector : range(7500)) {
-    fp.read({toc.data() + 96 * sector, 96});
-  }
-  CD::Session session;
-  session.decode(toc, 96);
-
-  for(u32 trackID : range(100)) {
-    if(auto& track = session.tracks[trackID]) {
-      if(!track.isData()) continue;
-      if(auto index = track.index(1)) {
-        std::vector<u8> sector;
-        sector.resize(2448);
-        fp.seek(2448 * (abs(session.leadIn.lba) + index->lba + sectorID) + 16);
-        fp.read({sector.data(), 2448});
-        return sector;
-      }
-    }
-  }
-
-  return {};
-}
-
-auto CompactDisc::readDataSectorCUE(string filename, u32 sectorID) -> std::vector<u8> {
-  Decode::CUE cuesheet;
-  if(!cuesheet.load(filename, nullptr, nullptr)) return {};
-
-  for(auto& file : cuesheet.files) {
-    u64 offset = 0;
-    auto location = string{Location::path(filename), file.name};
-
-    if(file.type == "binary") {
-      auto binary = file::open(location, nall::file::mode::read);
-      if(!binary) continue;
-      for(auto& track : file.tracks) {
-        for(auto& index : track.indices) {
-          u32 sectorSize = 0;
-          if(track.type == "mode1/2048") sectorSize = 2048;
-          if(track.type == "mode1/2352") sectorSize = 2352;
-          if(track.type == "mode2/2352") sectorSize = 2352;
-          if(sectorSize && index.number == 1) {
-            binary.seek(offset + (sectorSize * sectorID) + (sectorSize == 2352 ? 16 : 0));
-            std::vector<u8> sector;
-            sector.resize(2048);
-            binary.read({sector.data(), sector.size()});
-            return sector;
-          }
-          offset += track.sectorSize() * index.sectorCount();
-        }
-      }
-    }
-
-    if(file.type == "wave") {
-      Decode::WAV wave;
-      if(!wave.open(location)) continue;
-      offset += wave.headerSize;
-      for(auto& track : file.tracks) {
-        auto length = track.sectorSize();
-        for(auto& index : track.indices) {
-          offset += track.sectorSize() * index.sectorCount();
-        }
-      }
-    }
-  }
-
-  return {};
-}
-
-#if defined(ARES_ENABLE_CHD)
-auto CompactDisc::readDataSectorCHD(string filename, u32 sectorID) -> std::vector<u8> {
-  Decode::CHD chd;
-  if(!chd.load(filename)) return {};
-
-  // Find the first data track within the chd
-  for (auto& track : chd.tracks) {
-    if(track.type == "AUDIO") continue;
-    for(auto& index : track.indices) {
-      if (index.number != 1) continue;
-
-      // Read the sector from CHD and extract the user data portion (2048 bytes)
-      auto sector = chd.read(index.lba + sectorID);
-      std::vector<u8> output;
-      output.resize(2048);
-
-      if (sector.size() == 2048) {
-        memory::copy(output.data(), output.size(), sector.data(), output.size());
-        return output;
-      }
-
-      memory::copy(output.data(), output.size(), sector.data() + 16, output.size());
-      return output;
-    }
-  }
-
-  return {};
-}
-#endif
-
-auto LaserDisc::readDataSector(string mmiPath, string cuePath, u32 sectorID) -> std::vector<u8> {
-  std::unique_ptr<Decode::ZIP> archive = std::make_unique<Decode::ZIP>();
-  if (!archive->open(mmiPath)) return {};
-  Decode::CUE cuesheet;
-  if(!cuesheet.load(mmiPath, archive.get(), &archive->findFile(cuePath).get())) return {};
-
-  for(auto& file : cuesheet.files) {
-    u64 offset = 0;
-    if(file.type == "binary") {
-      auto filePathInArchive = file.archiveFolder;
-      filePathInArchive.append(file.name);
-      auto fileEntry = archive->findFile(filePathInArchive);
-      if(!fileEntry) continue;
-      std::span<const u8> rawDataView;
-      std::vector<u8> rawDataBuffer;
-      if (archive->isDataUncompressed(*fileEntry)) {
-        rawDataView = archive->dataViewIfUncompressed(*fileEntry);
-      } else {
-        auto tmp = archive->extract(*fileEntry);
-        rawDataBuffer.resize(tmp.size());
-        if(!tmp.empty()) memcpy(rawDataBuffer.data(), tmp.data(), tmp.size());
-        rawDataView = {rawDataBuffer.data(), rawDataBuffer.size()};
-      }
-      for(auto& track : file.tracks) {
-        for(auto& index : track.indices) {
-          u32 sectorSize = 0;
-          if(track.type == "mode1/2048") sectorSize = 2048;
-          if(track.type == "mode1/2352") sectorSize = 2352;
-          if(track.type == "mode2/2352") sectorSize = 2352;
-          if(sectorSize && index.number == 1) {
-            size_t readPos = offset + (sectorSize * sectorID) + (sectorSize == 2352 ? 16 : 0);
-            std::vector<u8> sector;
-            sector.resize(2048);
-            memcpy(sector.data(), rawDataView.data() + readPos, sector.size());
-            return sector;
-          }
-          offset += track.sectorSize() * index.sectorCount();
-        }
-      }
-    }
-  }
-
-  return {};
-}
-
-auto Tape::load(string location) -> LoadResult {
-  if(!inode::exists(location)) return romNotFound;
-
-  this->location = location;
-  this->manifest = analyze(location);
-  auto document = BML::unserialize(manifest);
-  if (!document) return couldNotParseManifest;
-
-  pak = std::make_shared<vfs::directory>();
-  pak->setAttribute("title",      document["game/title"].string());
-  pak->setAttribute("region",     document["game/region"].string());
-  pak->setAttribute("range",      document["game/range"].natural());
-  pak->setAttribute("frequency",  document["game/frequency"].natural());
-  pak->setAttribute("length",     document["game/length"].natural());
-  pak->setAttribute("tape", true);
-  pak->append("manifest.bml", manifest);
-
-  if (directory::exists(location)) {
-    pak->append("program.tape", vfs::disk::open({location, "program.tape"}, vfs::read));
-  } else if (file::exists(location)) {
-    if(location.iendsWith(".wav")) {
-      Decode::WAV wav;
-      if (wav.open(location)) {
-        std::vector <u8> data;
-        for (int i = 0; i < wav.sample_length(); i++) {
-          u64 sample = wav.read();
-
-          for (int byte = 0; byte < sizeof(u64); byte++) {
-            data.push_back((sample & (0xff << (byte * 8))) >> (byte * 8));
-          }
-        }
-        pak->append("program.tape", data);
-      }
-    }
-  }
-
-  return successful;
-}
-
-auto Tape::save(string location) -> bool {
-  auto document = BML::unserialize(manifest);
-  if (directory::exists(location)) {
-    Pak::save("program.tape", ".sav");
-  } else if (file::exists(location)) {
-    std::vector<s16> data;
-    auto fd = pak->read("program.tape");
-    for (u32 i = 0; i < fd->size() / sizeof(u64); i++) {
-      data.push_back((s16)fd->readl(8));
-    }
-    fd.reset();
-    Encode::WAV::mono<s16>(
-      location,
-      data,
-      pak->attribute("frequency").natural());
-  }
-
-  return true;
-}
-
-auto Tape::analyze(string location) -> string {
-  string s;
-  s += "game\n";
-  s +={"  name:   ", Medium::name(location), "\n"};
-  s +={"  title:  ", Medium::name(location), "\n"};
-  s += "  region: NTSC\n";  //database required to detect region
-
-  if (location.iendsWith(".wav")) {
-    Decode::WAV wav;
-    if (wav.open(location)) {
-      s +={"  range:     ", ((1 << wav.bitrate) - 1), "\n"};
-      s +={"  frequency: ", wav.frequency, "\n"};
-      s +={"  length:    ", wav.sample_length(), "\n"};
-      wav.close();
-    }
-  }
-
-  return s;
 }

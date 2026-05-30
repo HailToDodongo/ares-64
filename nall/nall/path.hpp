@@ -1,5 +1,6 @@
 #pragma once
 
+#include <nall/location.hpp>
 #include <nall/string.hpp>
 
 namespace nall::Path {

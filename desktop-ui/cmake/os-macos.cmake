@@ -48,21 +48,6 @@ endfunction()
 
 function(target_install_database target)
   message(DEBUG "Installing shaders for target ${target}...")
-  if(EXISTS "${CMAKE_SOURCE_DIR}/mia/Database")
-    file(GLOB_RECURSE data_files "${CMAKE_SOURCE_DIR}/mia/Database/*")
-    foreach(data_file IN LISTS data_files)
-      cmake_path(
-        RELATIVE_PATH
-        data_file
-        BASE_DIRECTORY "${CMAKE_SOURCE_DIR}/mia/Database/"
-        OUTPUT_VARIABLE relative_path
-      )
-      cmake_path(GET relative_path PARENT_PATH relative_path)
-      target_sources(${target} PRIVATE "${data_file}")
-      set_property(SOURCE "${data_file}" PROPERTY MACOSX_PACKAGE_LOCATION "Resources/Database/${relative_path}")
-      source_group("Resources/Database/${relative_path}" FILES "${data_file}")
-    endforeach()
-  endif()
 endfunction()
 
 # Add slang-shaders as a post-build script so we don't have an exceedingly long "Copy Files" phase

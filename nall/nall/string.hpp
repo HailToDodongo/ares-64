@@ -317,15 +317,8 @@ inline auto operator"" _s(const char* value, std::size_t) -> string { return {va
 #include <nall/string/utf8.hpp>
 #include <nall/string/utility.hpp>
 
-#include <nall/string/eval/node.hpp>
-#include <nall/string/eval/literal.hpp>
-#include <nall/string/eval/parser.hpp>
-#include <nall/string/eval/evaluator.hpp>
 
 #include <nall/string/markup/node.hpp>
 #include <nall/string/markup/find.hpp>
 #include <nall/string/markup/bml.hpp>
-#include <nall/string/markup/xml.hpp>
 
-#include <nall/string/transform/cml.hpp>
-#include <nall/string/transform/dml.hpp>
