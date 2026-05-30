@@ -152,7 +152,6 @@ else()
   disable_core("Nintendo 64")
 endif()
 
-add_subdirectory(component)
 
 foreach(c IN LISTS ARES_CORES)
   # target_enable_feature(ares "${c} core" CORE_$<UPPER_CASE:${c}>)

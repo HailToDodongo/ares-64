@@ -1,4 +1,3 @@
-ares_components(sm5k)
 
 ares_add_sources(
   CORE #

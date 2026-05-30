@@ -9,7 +9,6 @@
 #include <nall/hashset.hpp>
 #include <nall/queue.hpp>
 #include <nall/recompiler/generic/generic.hpp>
-#include <component/processor/sm5k/sm5k.hpp>
 #include <functional>
 #include <span>
 #include <vector>
