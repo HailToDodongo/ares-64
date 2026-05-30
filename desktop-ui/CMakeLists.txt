@@ -13,7 +13,6 @@ add_executable(
   ui/framebuffer-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
-  resource/resource.cpp
   input/input.cpp
   emulator/emulator.cpp
   program/program.cpp
@@ -43,7 +42,6 @@ set_source_files_properties(
   ui/framebuffer-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
-  resource/resource.cpp
   input/input.cpp
   emulator/emulator.cpp
   program/program.cpp
@@ -77,8 +75,6 @@ set_target_properties(desktop-ui PROPERTIES OUTPUT_NAME ares)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${desktop-ui_SOURCES})
 
-add_sourcery_command(desktop-ui resource)
-
 ares_configure_executable(desktop-ui)
 
 # Copy font and RSP config to build output
@@ -89,4 +85,15 @@ add_custom_command(TARGET desktop-ui POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/rspq-libdragon.json"
     "$<TARGET_FILE_DIR:desktop-ui>/rspq-libdragon.json"
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.ntsc.rom"
+    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.ntsc.rom"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.pal.rom"
+    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.pal.rom"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.sm5.rom"
+    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.sm5.rom"
 )

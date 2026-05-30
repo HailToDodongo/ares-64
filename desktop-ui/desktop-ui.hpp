@@ -3,7 +3,6 @@
 
 #include "compat/compat.hpp"
 #include <ares/ares.hpp>
-#include <ares/resource/resource.hpp>
 #include <nall/gdb/server.hpp>
 #include <mia/mia.hpp>
 
@@ -18,7 +17,6 @@ namespace ruby {
   extern Input input;
 }
 
-#include "resource/resource.hpp"
 #include "application/application.hpp"
 #include "ui/filedialog.hpp"
 #include "input/input.hpp"

@@ -22,7 +22,6 @@ target_sources(
     program/utility.cpp
 )
 
-target_sources(desktop-ui PRIVATE resource/resource.cpp resource/resource.hpp)
 
 target_sources(
   desktop-ui

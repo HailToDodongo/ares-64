@@ -26,7 +26,6 @@ add_subdirectory(ares)
 add_subdirectory(mia)
 add_subdirectory(desktop-ui)
 
-add_subdirectory(tools/sourcery)
 
 message_configuration()
 

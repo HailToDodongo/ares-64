@@ -1,7 +1,5 @@
-add_library(mia STATIC mia.cpp mia.hpp resource/resource.cpp)
+add_library(mia STATIC mia.cpp mia.hpp)
 add_library(ares::mia ALIAS mia)
-
-add_sourcery_command(mia resource)
 
 if(ARES_ENABLE_CHD)
   target_compile_definitions(mia PUBLIC ARES_ENABLE_CHD)
@@ -13,7 +11,6 @@ endif()
 target_sources(
   mia
   PRIVATE
-    resource/resource.hpp
     medium/medium.cpp
     medium/medium.hpp
     medium/nintendo-64.cpp
@@ -55,7 +52,7 @@ target_include_directories(mia PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty)
 target_link_libraries(mia PRIVATE ares::ares ares::nall::headers tzxfile $<$<BOOL:${ARES_ENABLE_CHD}>:chdr-static>)
 
 if(ARES_BUILD_OPTIONAL_TARGETS)
-  add_executable(mia-ui mia.cpp resource/resource.cpp)
+  add_executable(mia-ui mia.cpp)
   target_include_directories(mia-ui PRIVATE ${CMAKE_SOURCE_DIR})
   target_link_libraries(
     mia-ui PRIVATE ares::hiro ares::ares ares::nall tzxfile
@@ -91,5 +88,5 @@ endif()
 
 get_target_property(mia_SOURCES mia SOURCES)
 set_source_files_properties(mia ${mia_SOURCES} PROPERTIES HEADER_FILE_ONLY TRUE)
-set_source_files_properties(mia mia.cpp resource/resource.cpp PROPERTIES HEADER_FILE_ONLY FALSE)
+set_source_files_properties(mia mia.cpp PROPERTIES HEADER_FILE_ONLY FALSE)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${mia_SOURCES})

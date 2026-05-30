@@ -15,8 +15,6 @@ increases performance.
   OFF
 )
 
-add_sourcery_command(ares ares/resource)
-
 if(ARES_PRECOMPILE_HEADERS)
   target_precompile_headers(ares PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:ares/ares.hpp>")
 endif()

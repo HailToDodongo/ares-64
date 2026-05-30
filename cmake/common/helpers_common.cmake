@@ -2,21 +2,6 @@
 
 include_guard(GLOBAL)
 
-function(add_sourcery_command target subdir)
-  add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/resource.cpp ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/resource.hpp
-    COMMAND sourcery resource.bml resource.cpp resource.hpp
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/resource.bml
-    VERBATIM
-  )
-  add_custom_target(
-    ${target}-resource
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/resource.cpp ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/resource.hpp
-  )
-  add_dependencies(${target} ${target}-resource)
-  set_target_properties(${target}-resource PROPERTIES FOLDER "generated" PREFIX "")
-endfunction()
 
 # message_configuration: Function to print configuration outcome
 function(message_configuration)
