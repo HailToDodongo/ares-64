@@ -2,12 +2,13 @@
 
 #include <nall/string.hpp>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_gpu.h>
 #include <imgui.h>
 #include <functional>
 
 struct SDL3VideoContext {
   SDL_Window* window = nullptr;
-  SDL_GLContext glContext = nullptr;
+  SDL_GPUDevice* gpu = nullptr;
 };
 
 struct AresApp {
@@ -19,7 +20,7 @@ struct AresApp {
   static auto focused() -> bool;
 
   static inline SDL_Window* window = nullptr;
-  static inline SDL_GLContext glContext = nullptr;
+  static inline SDL_GPUDevice* gpu = nullptr;
   static inline SDL3VideoContext videoContext;
   static inline bool running = false;
   static inline std::function<void()> onMain;

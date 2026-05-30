@@ -199,16 +199,6 @@ auto InputManager::createHotkeys() -> void {
     if(settings.audio.volume >= (f64)(0.1)) settings.audio.volume -= (f64)(0.1);
   }));
 
-  hotkeys.push_back(InputHotkey("Toggle Shader Display").onPress([&] {
-    if(!emulator) return;
-    if(!settings.video.shader.imatch("None")) {
-      if(ruby::video.shader().imatch("None")) {
-        ruby::video.setShader({locate("Shaders/"), settings.video.shader});
-      } else {
-        ruby::video.setShader("None");
-      }
-    }
-  }));
 }
 
 	auto InputManager::pollHotkeys() -> void {

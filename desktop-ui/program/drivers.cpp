@@ -1,5 +1,9 @@
 auto Program::videoDriverUpdate() -> void {
   Program::Guard guard;
+  //Reset stale/unknown driver names (e.g. configs from the old OpenGL backend).
+  if(!ruby::Video::hasDriver(settings.video.driver)) {
+    settings.video.driver = ruby::Video::optimalDriver();
+  }
   ruby::video.create(settings.video.driver);
   if(_imguiMode) {
     ruby::video.setContext(_videoContext);
@@ -11,7 +15,6 @@ auto Program::videoDriverUpdate() -> void {
   ruby::video.setExclusive(settings.video.exclusive);
   ruby::video.setBlocking(settings.video.blocking);
   ruby::video.setFlush(settings.video.flush);
-  ruby::video.setShader(settings.video.shader);
   ruby::video.setForceSRGB(settings.video.forceSRGB);
   ruby::video.setThreadedRenderer(settings.video.threadedRenderer);
   ruby::video.setNativeFullScreen(settings.video.nativeFullScreen);
@@ -20,42 +23,6 @@ auto Program::videoDriverUpdate() -> void {
     driverInitFailed(settings.video.driver, "video", [&] { driverSettings.videoDriverUpdate(); });
     return;
   }
-
-  if(startShader && !Presentation::shaderArgApplied) {
-    Presentation::shaderArgApplied = true;
-    string location = locate("Shaders/");
-    #if defined(PLATFORM_LINUX) || defined(PLATFORM_BSD)
-    if(!inode::exists(location)) location = locate("../libretro/shaders/shaders_slang/");
-    #endif
-
-    string existingShader = settings.video.shader;
-    startShader.transform("\\", "/");
-    if(!startShader.imatch("None")) {
-      settings.video.shader = {startShader, ".slangp"};
-    } else {
-      settings.video.shader = startShader;
-    }
-
-    if(inode::exists({location, settings.video.shader})) {
-      ruby::video.setShader({location, settings.video.shader});
-    } else if(settings.video.shader.imatch("None")) {
-      ruby::video.setShader("None");
-    } else {
-      if(kiosk || _imguiMode) {
-        showMessage({"Requested shader not found: ", location, settings.video.shader, ". Using existing shader."});
-      } else {
-        hiro::MessageDialog()
-          .setTitle("Warning")
-          .setAlignment(hiro::Alignment::Center)
-          .setText({"Requested shader not found: ", location, settings.video.shader,
-            "\nUsing existing defined shader: ", location, existingShader})
-          .warning();
-      }
-      settings.video.shader = existingShader;
-    }
-  }
-
-  if(!kiosk && !_imguiMode) presentation.loadShaders();
 }
 
 auto Program::videoMonitorUpdate() -> void {

@@ -117,8 +117,6 @@ set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
 set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
 add_subdirectory(SDL)
 
-find_package(OpenGL REQUIRED)
-
 add_library(
   imgui
   STATIC
@@ -127,11 +125,11 @@ add_library(
   imgui/imgui_tables.cpp
   imgui/imgui_widgets.cpp
   imgui/backends/imgui_impl_sdl3.cpp
-  imgui/backends/imgui_impl_opengl3.cpp
+  imgui/backends/imgui_impl_sdlgpu3.cpp
 )
 
 target_include_directories(imgui PUBLIC imgui imgui/backends)
-target_link_libraries(imgui PUBLIC SDL3::SDL3 OpenGL::OpenGL)
+target_link_libraries(imgui PUBLIC SDL3::SDL3)
 
 add_library(ares::imgui ALIAS imgui)
 set_target_properties(imgui PROPERTIES FOLDER thirdparty PREFIX "")

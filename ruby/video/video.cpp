@@ -193,7 +193,7 @@ auto Video::create(string driver) -> bool {
   #endif
 
   #if defined(VIDEO_SDL3)
-  if(driver == "OpenGL 3.3 (SDL3)") self.instance = std::make_unique<VideoSDL3>(*this);
+  if(driver == "SDL3 GPU") self.instance = std::make_unique<VideoSDL3>(*this);
   #endif
 
   if(!self.instance) self.instance = std::make_unique<VideoDriver>(*this);
@@ -217,7 +217,7 @@ auto Video::hasDrivers() -> std::vector<string> {
   #endif
 
   #if defined(VIDEO_SDL3)
-  "OpenGL 3.3 (SDL3)",
+  "SDL3 GPU",
   #endif
 
   #if defined(VIDEO_METAL)
@@ -229,7 +229,7 @@ auto Video::hasDrivers() -> std::vector<string> {
 
 auto Video::optimalDriver() -> string {
   #if defined(VIDEO_SDL3)
-  return "OpenGL 3.3 (SDL3)";
+  return "SDL3 GPU";
   #elif defined(VIDEO_METAL)
   return "Metal";
   #elif defined(VIDEO_WGL)
@@ -245,7 +245,7 @@ auto Video::optimalDriver() -> string {
 
 auto Video::safestDriver() -> string {
   #if defined(VIDEO_SDL3)
-  return "OpenGL 3.3 (SDL3)";
+  return "SDL3 GPU";
   #elif defined(VIDEO_METAL)
   return "Metal";
   #elif defined(VIDEO_DIRECT3D9)

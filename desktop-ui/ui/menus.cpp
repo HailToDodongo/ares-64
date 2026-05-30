@@ -164,15 +164,6 @@ static void DrawSettingsMenu() {
     ImGui::EndMenu();
   }
 
-  // Shader submenu
-  if(ImGui::BeginMenu("Shader")) {
-    if(ImGui::MenuItem("None", nullptr, settings.video.shader == "None")) {
-      ruby::video.setShader("None");
-      settings.video.shader = "None";
-    }
-    // Shaders are loaded dynamically; for now show None + placeholder
-    ImGui::EndMenu();
-  }
 
   // Boot Options submenu
   if(ImGui::BeginMenu("Boot Options")) {

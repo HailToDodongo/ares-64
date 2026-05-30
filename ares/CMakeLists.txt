@@ -112,11 +112,13 @@ target_sources(
 )
 
 if(OS_WINDOWS)
-  include(cmake/os-windows.cmake)
+  target_link_libraries(
+    ares
+    PRIVATE uuid kernel32 user32 gdi32 comctl32 comdlg32 shell32
+  )
 elseif(OS_MACOS)
-  include(cmake/os-macos.cmake)
 elseif(OS_LINUX OR OS_FREEBSD OR OS_OPENBSD)
-  include(cmake/os-linux.cmake)
+  target_link_options(ares PRIVATE LINKER:-export-dynamic)
 endif()
 
 macro(ares_components)
@@ -187,8 +189,6 @@ set_source_files_properties(
   n64/vulkan/parallel-rdp/util/timer.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
-
-target_sources(ares PRIVATE cmake/os-macos.cmake cmake/os-windows.cmake cmake/os-linux.cmake)
 
 set_source_files_properties(ares ${ARES_HEADER_SOURCES} PROPERTIES HEADER_FILE_ONLY TRUE)
 

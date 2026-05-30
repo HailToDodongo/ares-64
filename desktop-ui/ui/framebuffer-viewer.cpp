@@ -1,17 +1,69 @@
 #include "ui.hpp"
 
 #include "../desktop-ui.hpp"
+#include "../application/application.hpp"
 #include <n64/n64.hpp>
-#include <SDL3/SDL_opengl.h>
+#include <SDL3/SDL_gpu.h>
 
 namespace ares::ui {
 
 bool showFramebufferViewer = false;
 
-static GLuint fbTex = 0;
+static SDL_GPUTexture* fbTex = nullptr;
+static SDL_GPUTransferBuffer* fbXfer = nullptr;
 static u32  fbTexW = 0, fbTexH = 0;
 static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth
 static int  fbScaleMode = 1; // 0=Integer, 1=Linear
+
+// Upload an RGBA8 buffer into a persistent SDL_GPU texture, recreating it on resize.
+static auto fbUpload(const u32* pixels, u32 w, u32 h) -> SDL_GPUTexture* {
+  SDL_GPUDevice* gpu = AresApp::gpu;
+  if(!gpu || w == 0 || h == 0) return nullptr;
+
+  if(!fbTex || fbTexW != w || fbTexH != h) {
+    if(fbXfer) { SDL_ReleaseGPUTransferBuffer(gpu, fbXfer); fbXfer = nullptr; }
+    if(fbTex) { SDL_ReleaseGPUTexture(gpu, fbTex); fbTex = nullptr; }
+
+    SDL_GPUTextureCreateInfo texInfo = {};
+    texInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    texInfo.width = w;
+    texInfo.height = h;
+    texInfo.layer_count_or_depth = 1;
+    texInfo.num_levels = 1;
+    texInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    fbTex = SDL_CreateGPUTexture(gpu, &texInfo);
+    if(!fbTex) return nullptr;
+
+    SDL_GPUTransferBufferCreateInfo xferInfo = {};
+    xferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    xferInfo.size = w * h * sizeof(u32);
+    fbXfer = SDL_CreateGPUTransferBuffer(gpu, &xferInfo);
+    if(!fbXfer) { SDL_ReleaseGPUTexture(gpu, fbTex); fbTex = nullptr; return nullptr; }
+
+    fbTexW = w; fbTexH = h;
+  }
+
+  void* mapped = SDL_MapGPUTransferBuffer(gpu, fbXfer, true);
+  if(!mapped) return nullptr;
+  memcpy(mapped, pixels, w * h * sizeof(u32));
+  SDL_UnmapGPUTransferBuffer(gpu, fbXfer);
+
+  SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu);
+  SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmd);
+  SDL_GPUTextureTransferInfo src = {};
+  src.transfer_buffer = fbXfer;
+  src.pixels_per_row = w;
+  src.rows_per_layer = h;
+  SDL_GPUTextureRegion dst = {};
+  dst.texture = fbTex;
+  dst.w = w; dst.h = h; dst.d = 1;
+  SDL_UploadToGPUTexture(copyPass, &src, &dst, true);
+  SDL_EndGPUCopyPass(copyPass);
+  SDL_SubmitGPUCommandBuffer(cmd);
+  return fbTex;
+}
 
 static auto n64ToRGBA32(u32* dst, const u8* src, u32 w, u32 h, u8 format, u8 size) -> void {
   u32 pixels = w * h;
@@ -251,12 +303,7 @@ auto DrawFramebufferViewer() -> void {
   }
 
   // Upload texture
-  if(fbTex == 0) glGenTextures(1, &fbTex);
-  glBindTexture(GL_TEXTURE_2D, fbTex);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixelBuf.data());
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, fbScaleMode == 0 ? GL_NEAREST : GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, fbScaleMode == 0 ? GL_NEAREST : GL_LINEAR);
-  glBindTexture(GL_TEXTURE_2D, 0);
+  SDL_GPUTexture* tex = fbUpload(pixelBuf.data(), w, h);
 
   const char* modeTxt = fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
   ImGui::Text("%s  addr=0x%06X  %ux%u  fmt=%u sz=%u", modeTxt, readAddr, w, h, fmt, sz);
@@ -276,7 +323,7 @@ auto DrawFramebufferViewer() -> void {
   // Center image in available space
   if(avail.x > imgSize.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - imgSize.x) * 0.5f);
   if(avail.y > imgSize.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - imgSize.y) * 0.5f);
-  ImGui::Image((ImTextureID)(intptr_t)fbTex, imgSize);
+  if(tex) ImGui::Image((ImTextureID)(intptr_t)tex, imgSize);
 
   ImGui::End();
   settings.general.showFramebufferViewer = true;

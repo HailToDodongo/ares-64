@@ -22,12 +22,7 @@ target_sources(
   PRIVATE
     video/video.cpp
     video/video.hpp
-    video/opengl/bind.hpp
-    video/opengl/main.hpp
-    video/opengl/opengl.hpp
-    video/opengl/surface.hpp
-    video/opengl/texture.hpp
-    video/opengl/utility.hpp
+    video/sdl3.cpp
 )
 
 if(OS_WINDOWS)

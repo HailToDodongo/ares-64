@@ -2,8 +2,7 @@
 #include "../ui/log.hpp"
 
 #include <imgui_impl_sdl3.h>
-#include <imgui_impl_opengl3.h>
-#include <SDL3/SDL_opengl.h>
+#include <imgui_impl_sdlgpu3.h>
 
 #include <cstdio>
 
@@ -15,31 +14,35 @@ auto AresApp::initialize() -> bool {
 
   SDL_DisableScreenSaver();
 
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
   window = SDL_CreateWindow("ares", 1024, 768,
-                            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
-                            SDL_WINDOW_HIGH_PIXEL_DENSITY);
+                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!window) {
     fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
     SDL_Quit();
     return false;
   }
 
-  glContext = SDL_GL_CreateContext(window);
-  if (!glContext) {
-    fprintf(stderr, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+  gpu = SDL_CreateGPUDevice(
+    SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL,
+    false, nullptr);
+  if (!gpu) {
+    fprintf(stderr, "SDL_CreateGPUDevice failed: %s\n", SDL_GetError());
     SDL_DestroyWindow(window);
     SDL_Quit();
     return false;
   }
 
-  SDL_GL_SetSwapInterval(1);
+  if (!SDL_ClaimWindowForGPUDevice(gpu, window)) {
+    fprintf(stderr, "SDL_ClaimWindowForGPUDevice failed: %s\n", SDL_GetError());
+    SDL_DestroyGPUDevice(gpu);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return false;
+  }
+
+  // Default to vsync; the video driver may switch this via setBlocking().
+  SDL_SetGPUSwapchainParameters(gpu, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                SDL_GPU_PRESENTMODE_VSYNC);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -119,20 +122,26 @@ auto AresApp::initialize() -> bool {
   style.ScaleAllSizes(dpiScale);
   io.FontGlobalScale = 1.0f;  // font loaded with DPI-aware size below
 
-  if (!ImGui_ImplSDL3_InitForOpenGL(window, glContext)) {
-    fprintf(stderr, "ImGui_ImplSDL3_InitForOpenGL failed\n");
+  if (!ImGui_ImplSDL3_InitForSDLGPU(window)) {
+    fprintf(stderr, "ImGui_ImplSDL3_InitForSDLGPU failed\n");
     ImGui::DestroyContext();
-    SDL_GL_DestroyContext(glContext);
+    SDL_DestroyGPUDevice(gpu);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return false;
   }
 
-  // Compatibility profile context: use GLSL 3.30 with compatibility syntax
-  if (!ImGui_ImplOpenGL3_Init("#version 330")) {
+  ImGui_ImplSDLGPU3_InitInfo initInfo = {};
+  initInfo.Device = gpu;
+  initInfo.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(gpu, window);
+  initInfo.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+  initInfo.SwapchainComposition = SDL_GPU_SWAPCHAINCOMPOSITION_SDR;
+  initInfo.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
+  if (!ImGui_ImplSDLGPU3_Init(&initInfo)) {
+    fprintf(stderr, "ImGui_ImplSDLGPU3_Init failed\n");
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
-    SDL_GL_DestroyContext(glContext);
+    SDL_DestroyGPUDevice(gpu);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return false;
@@ -151,6 +160,7 @@ auto AresApp::initialize() -> bool {
 }
 
 auto AresApp::run() -> void {
+  Uint64 lastPresentNs = 0;
   while (running) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -182,10 +192,7 @@ auto AresApp::run() -> void {
 
     if (!running) break;
 
-    glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
@@ -215,12 +222,52 @@ auto AresApp::run() -> void {
     }
 
     ImGui::Render();
-    int displayW, displayH;
-    SDL_GetWindowSizeInPixels(window, &displayW, &displayH);
-    glViewport(0, 0, displayW, displayH);
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    SDL_GL_SwapWindow(window);
+    // Frame pacing: sleep on the CPU until the next display refresh before the
+    // vsync present. Without this, SDL_WaitAndAcquireGPUSwapchainTexture blocks the
+    // main thread *on the GPU* for the whole vsync interval, and that GPU-held wait
+    // contends with the emulator's own Vulkan renderer (parallel-RDP) on the worker
+    // thread, dropping it below full speed (e.g. 56 instead of 60 fps). Yielding on
+    // the CPU first means we reach the present right at the vblank, so the swapchain
+    // image is already available and the GPU wait is negligible. (SDL_DelayNS never
+    // under-sleeps, so we never wake early and re-introduce the GPU stall.)
+    {
+      float hz = 60.0f;
+      if (auto* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window))) {
+        if (mode->refresh_rate > 1.0f) hz = mode->refresh_rate;
+      }
+      Uint64 frameNs = (Uint64)(1.0e9f / hz);
+      Uint64 now = SDL_GetTicksNS();
+      if (lastPresentNs != 0) {
+        Uint64 target = lastPresentNs + frameNs;
+        if (now < target) SDL_DelayNS(target - now);
+      }
+    }
+
+    ImDrawData* drawData = ImGui::GetDrawData();
+    bool minimized = drawData->DisplaySize.x <= 0.0f || drawData->DisplaySize.y <= 0.0f;
+
+    SDL_GPUCommandBuffer* commandBuffer = SDL_AcquireGPUCommandBuffer(gpu);
+    SDL_GPUTexture* swapchainTexture = nullptr;
+    SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, window, &swapchainTexture, nullptr, nullptr);
+
+    if (swapchainTexture && !minimized) {
+      // Upload ImGui vertex/index data before the render pass (mandatory for this backend).
+      ImGui_ImplSDLGPU3_PrepareDrawData(drawData, commandBuffer);
+
+      SDL_GPUColorTargetInfo targetInfo = {};
+      targetInfo.texture = swapchainTexture;
+      targetInfo.clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
+      targetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+      targetInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+      SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &targetInfo, 1, nullptr);
+      ImGui_ImplSDLGPU3_RenderDrawData(drawData, commandBuffer, renderPass);
+      SDL_EndGPURenderPass(renderPass);
+    }
+
+    SDL_SubmitGPUCommandBuffer(commandBuffer);
+    lastPresentNs = SDL_GetTicksNS();
   }
 
   // Shutdown is handled separately via AresApp::shutdown()
@@ -228,11 +275,13 @@ auto AresApp::run() -> void {
 }
 
 auto AresApp::shutdown() -> void {
-  ImGui_ImplOpenGL3_Shutdown();
+  SDL_WaitForGPUIdle(gpu);
+  ImGui_ImplSDLGPU3_Shutdown();
   ImGui_ImplSDL3_Shutdown();
   ImGui::DestroyContext();
 
-  SDL_GL_DestroyContext(glContext);
+  SDL_ReleaseWindowFromGPUDevice(gpu, window);
+  SDL_DestroyGPUDevice(gpu);
   SDL_DestroyWindow(window);
   SDL_Quit();
 }

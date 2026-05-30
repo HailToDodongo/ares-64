@@ -242,7 +242,7 @@ auto nall::main(Arguments arguments) -> void {
     return;
   }
 
-  AresApp::videoContext = {AresApp::window, AresApp::glContext};
+  AresApp::videoContext = {AresApp::window, AresApp::gpu};
 
   program._videoContext = (uintptr)&AresApp::videoContext;
   program.create();

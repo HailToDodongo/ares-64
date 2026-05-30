@@ -31,21 +31,12 @@ target_sources(
 )
 
 find_package(X11 REQUIRED)
-find_package(OpenGL REQUIRED)
 
-target_link_libraries(ruby PRIVATE X11::Xrandr OpenGL::GLX)
+target_link_libraries(ruby PRIVATE X11::Xrandr)
 
-target_enable_feature(ruby "SDL3 OpenGL video driver" VIDEO_SDL3)
+target_enable_feature(ruby "SDL3 GPU video driver" VIDEO_SDL3)
 target_enable_feature(ruby "SDL3 input driver" INPUT_SDL3)
 target_enable_feature(ruby "Xlib input driver" INPUT_XLIB)
-
-find_package(librashader)
-if(librashader_FOUND AND ARES_ENABLE_LIBRASHADER)
-  target_enable_feature(ruby "librashader OpenGL runtime" LIBRA_RUNTIME_OPENGL)
-else()
-  # continue to define the runtime so openGL compiles
-  target_compile_definitions(ruby PRIVATE LIBRA_RUNTIME_OPENGL)
-endif()
 
 option(ARES_ENABLE_OPENAL "Enable the OpenAL audio driver" ON)
 if(ARES_ENABLE_OPENAL)
@@ -134,7 +125,6 @@ target_link_libraries(
   PRIVATE
     $<$<BOOL:${SDL_FOUND}>:SDL::SDL>
     $<$<BOOL:${OpenAL_FOUND}>:OpenAL::OpenAL>
-    $<$<BOOL:TRUE>:librashader::librashader>
     $<$<BOOL:${OSS_FOUND}>:OSS::OSS>
     $<$<BOOL:${ALSA_FOUND}>:ALSA::ALSA>
     $<$<BOOL:${PulseAudio_FOUND}>:PulseAudio::PulseAudio>
