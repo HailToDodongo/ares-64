@@ -52,8 +52,6 @@ target_sources(
     primitives.hpp
     priority-queue.hpp
     queue.hpp
-    random.cpp
-    random.hpp
     range.hpp
     reed-solomon.hpp
     run.cpp
@@ -100,12 +98,6 @@ target_sources(
     cd/scrambler.hpp
     cd/session.hpp
     cd/sync.hpp
-)
-
-target_sources(
-  nall
-  PRIVATE #
-    cipher/chacha20.hpp
 )
 
 target_sources(

@@ -1,4 +1,6 @@
 #pragma once
+#include <nall/chrono.hpp>
+
 
 /**
  * Opens a TCP server with callbacks to send and receive data.
