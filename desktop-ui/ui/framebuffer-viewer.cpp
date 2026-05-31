@@ -326,10 +326,14 @@ auto DrawFramebufferViewer() -> void {
     auto& cmd = cap.commands[i - 1];
     if(cmd.opcode == 0x3f) {
       u64 w0 = cmd.word0;
+      u32 newAddr = w0 & 0x3FFFFFF;
+      // libdragon may "unset" the colour image by writing zero; skip those
+      // and keep the last valid address / format / size.
+      if(newAddr == 0) continue;
       stickyFmt = (w0 >> 53) & 7;
       stickySz  = (w0 >> 51) & 3;
       stickyW   = ((w0 >> 32) & 0x3FF) + 1;
-      stickyAddr = w0 & 0x3FFFFFF;
+      stickyAddr = newAddr;
       stickyColorPos = i - 1;
       break;
     }
@@ -337,7 +341,9 @@ auto DrawFramebufferViewer() -> void {
 
   for(u32 i = committed; i > 0; i--) {
     if(cap.commands[i - 1].opcode == 0x3e) {
-      stickyDepth = cap.commands[i - 1].word0 & 0x3FFFFFF;
+      u32 newDepth = cap.commands[i - 1].word0 & 0x3FFFFFF;
+      if(newDepth == 0) continue;
+      stickyDepth = newDepth;
       break;
     }
   }
