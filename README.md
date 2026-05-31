@@ -1,87 +1,86 @@
-<img src="https://github.com/ares-emulator/ares/blob/master/ares/ares/resource/logo@2x.png" width="350"/>
+# Ares 64
 
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://github.com/higan-emu/ares/blob/master/LICENSE)
 
-**ares** is a multi-system emulator that began development on October 14th, 2004.
-It is a descendant of [higan](https://github.com/higan-emu/higan) and [bsnes](https://github.com/bsnes-emu/bsnes/), and focuses on accuracy and preservation.
+<img src="desktop-ui/resource/screenshot00.png" width="420px">
 
-It's worth noting that ares takes some uncommon design approaches that essentially trade speed for code clarity. We avoid state machines and bitmasks (when possible). Most cores end up being half the amount of code, but slower. The code is clearer and less spaghettified, especially for systems with lots of processors. C bitfields being non-portable incurs a speedhit. Windows also has a speedhit over Linux due to its ABI needing more instructions to switch contexts.
+Original Repo: https://github.com/ares-emulator/ares
 
-Official Releases
------------------
+This is a special version of ares only containing the N64 core, with additional features geared towards developers.
 
-Official releases are available from
-[the ares website](https://ares-emu.net).
+If you plan on just playing games, please use the original repo.
+If you want to improve accuracy or make changes to the N64 core itself, please also contribute upstream.
 
-Nightly Builds
---------------
+# Features
 
-Automated, untested builds of ares are available for Windows and macOS as a [pre-release](https://github.com/ares-emulator/ares/releases/tag/nightly). 
-Only the latest nightly build is kept.
+Additional features include:
 
-Building ares
--------------
+- Framebuffer viewer that updates in realtime
+  - Color / Coverage / Depth
+  - Depth range can be tuned
+  - Depth Histogram
+- RDP logging + single stepping
+  - stepping updates the framebuffer in realtime
+- RSP logging + single stepping (libdragon only)
+  - stepping updates the framebuffer in realtime
+  - supported commands can be decoded into readable arguments
+  - metrics to measure RSP times
+- Memory viewer and editor
+- Audio visualizer
 
-ares supports building on Windows, macOS, and various Linux/BSD distributions. See build instructions for:
+# Internal changes
 
-* [Windows](https://github.com/ares-emulator/ares/wiki/Build-Instructions-For-Windows)
-* [macOS](https://github.com/ares-emulator/ares/wiki/Build-Instructions-For-macOS)
-* [Linux](https://github.com/ares-emulator/ares/wiki/Build-Instructions-For-Linux)
-* [BSD](https://github.com/ares-emulator/ares/wiki/Build-Instructions-For-BSD)
+If you are familiar with the original code of ares, some larger changes where made in this version.
 
-Command-line options
---------------------
+All cores except N64 are gone.<br>
+For the window itself, rendering, audio as well as input, SDL3 is now used.<br>
+This means no more drivers and driver settings.<br>
+For anything UI, imgui is used, so native UI toolkits are no longer needed.
 
-When started from the command-line, ares accepts a few options.
+The `hiro` code is completely deleted, `ruby` is only a few small wrappers around SDL3.<br>
+In general, large portions of now unused code have been removed.
 
+# Build
+
+Please make sure to also checkout all submodules via git.
+
+## Requirements
+
+- **CMake** 3.28 or later
+- **C++23** compiler
+- **SDL3** is bundled in `thirdparty/`, no system install needed
+
+### CMake
+
+```sh
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target desktop-ui -j8
 ```
-Usage: ./ares [options] game(s)
 
-  --help                 Displays available options and exit
-  --version              Displays the version string of the application
-  --terminal             Create new terminal window (Windows only)
-  --fullscreen           Start in full screen mode
-  --pseudofullscreen     Start in pseudo full screen mode
-  --kiosk                Start in minimal UI mode (implies --no-file-prompt)
-  --system system        Specify the system name
-  --shader shader        Specify a slang shader to load (requires OpenGL or Metal)
-  --setting name=value   Specify a value for a setting
-  --dump-all-settings    Show a list of all existing settings and exit
-  --no-file-prompt       Do not prompt to load (optional) additional roms (eg: 64DD)
-  --settings-file path   Specify a settings file override (settings.bml)
-  --save-state slot      Specify a save state slot to load (1-9)
+The binary will be at `build/desktop-ui/ares`.
+
+For faster iterative builds, use:
+```sh
+cmake -S . -B build -DENABLE_IPO=OFF -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
 ```
 
-The --system option is useful when the system type cannot be auto-detected.
---fullscreen will only have an effect if a game is also passed in argument.
+## Running
 
-Example:
-`ares --system MSX examples.rom --fullscreen`
+Start ares while having the working directory in this repo.<br>
+You can pass the ROM as the argument:
+```sh
+./build/desktop-ui/ares /path/to/game.z64
+```
 
-Specifying multiple games allows for multi-cart support.  For example, to load
-the Super GameBoy BIOS and a game in one command (to avoid a file prompt), you 
-can do:
+For any commercial games that will be enough to get all features except RSP commands working.<br>
+For libdragon ROMs, you can make sure to keep the `.elf` file around.<br>
+Either next to the ROM, or in a `build` directory next to it.<br>
+This will enable fetching labels used to figure out the overlay setup.<br>
 
-`ares "Super GameBoy.sfc" "Super Mario Land.gb"`
+# Adapting overlays
 
-The --no-file-prompt option is useful if you wish to launch a game from CLI
-without being prompted to load additional roms. For example, some Nintendo 64 
-games optionally support 64DD expansion disks, so this option can be used to
-suppress the "64DD Disk" file dialog, and assume any secondary content is 
-disconnected.
+Some data that can't be fetched form the `.elf` will be loaded from a JSON file.<br>
+To change this data checkout [rspq-libdragon.json](./desktop-ui/ui/rsp-overlays/rspq-libdragon.json).
+After making changes, just rebuild ares.
 
-High-level Components
----------------------
-
-* __ares__:       emulator cores and component implementations
-* __desktop-ui__: main GUI implementation for this project
-* __hiro__:       cross-platform GUI toolkit that utilizes native APIs on supported platforms
-* __nall__:       Near's alternative to the C++ standard library
-* __ruby__:       interface between a hiro application and platform-specific APIs for emulator video, audio, and input
-* __mia__:        internal ROM database and ROM/image loader
-* __libco__:      cooperative multithreading library
-
-Contributing
-------------
-
-Please join our discord to chat with other ares developers: https://discord.com/invite/gz2quhk2kv
+For per-ROM changes, place this JSON next to the `.elf` file.
