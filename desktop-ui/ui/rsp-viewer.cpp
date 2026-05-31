@@ -46,15 +46,16 @@ auto DrawRspViewer() -> void {
     cap.enabled.store(enabled, std::memory_order_relaxed);
   }
 
-  // Toggle for the synthetic internal rows (RSPQ Loop / Ucode Load / Buf Fetch)
+  // Toggle the synthetic internal rows (RSPQ Loop / Ucode Load / Buf Fetch)
   static bool showInternal = true;
   ImGui::SameLine();
   ImGui::Checkbox("Internal", &showInternal);
 
-  // Toggle the timing column between raw ticks and microseconds.
-  static bool showMicros = false;
+  // Timing unit selector: microseconds (us) or raw RCP master-clock ticks.
+  static int timeUnit = 0;  // 0 = us (default)
   ImGui::SameLine();
-  ImGui::Checkbox("us", &showMicros);
+  ImGui::SetNextItemWidth(70);
+  ImGui::Combo("##timeUnit", &timeUnit, "us\0Cycles\0");
 
   // Config status
   ImGui::SameLine();
@@ -135,13 +136,18 @@ auto DrawRspViewer() -> void {
     settings.general.showRspViewer = true;
     return;
   }
+
+  float rowX0 = ImGui::GetCursorScreenPos().x;
+  float rowW  = ImGui::GetContentRegionAvail().x;
+
   ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 45);
-  ImGui::TableSetupColumn(showMicros ? "us" : "Cycles", ImGuiTableColumnFlags_WidthFixed, 60);
+  ImGui::TableSetupColumn(timeUnit == 0 ? "us" : "Cycles", ImGuiTableColumnFlags_WidthFixed, 60);
   ImGui::TableSetupColumn("Ovl", ImGuiTableColumnFlags_WidthFixed, 35);
   ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthFixed, 140);
   ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_WidthStretch);
   ImGui::TableSetupScrollFreeze(0, 1);
   ImGui::TableHeadersRow();
+
 
   // Highlight only the rows added by the *most recent* step. We key off the
   // global step counter (not our own row count) so that a step which adds no RSP
@@ -164,17 +170,31 @@ auto DrawRspViewer() -> void {
     if(showInternal || !cap.commands[r].isOverhead) { lastVisibleRow = (u32)r; break; }
   }
 
+  bool pendingSeparator = false;
+
   for(u32 row = 0; row < displayCount; row++) {
     auto& cmd = cap.commands[row];
-    if(!showInternal && cmd.isOverhead) continue;
+    bool hidden = !showInternal && cmd.isOverhead;
 
-    ImGui::TableNextRow();
+    if(hidden) {
+      if(cmd.isOverhead && cmd.overheadType == 2) pendingSeparator = true;
+      continue;
+    }
 
-    // Highlight rows added since the last step (the emulator is paused on the
-    // last of these). Same look as the RDP viewer.
+    // Insert a 2px orange separator row between overlay blocks.
+    if(pendingSeparator) {
+      pendingSeparator = false;
+      ImGui::TableNextRow(ImGuiTableRowFlags_None, 2.0f);
+      ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(0x77, 0x77, 0x77, 0xFF));
+      for(int c = 1; c < 6; c++) ImGui::TableNextColumn();
+    }
+
+    // Highlight rows added since the last step.
     if(anyStep && row >= hlStart) {
       ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(60, 60, 0, 255));
     }
+
+    ImGui::TableNextRow();
 
     ImGui::TableNextColumn();
     ImGui::Text("%u", row);
@@ -185,29 +205,37 @@ auto DrawRspViewer() -> void {
     // 93.75 MHz CPU) and the RSP runs at 62.5 MHz (libdragon RCP_FREQUENCY = 2/3
     // CPU). Hence 1 us = 187.5 ticks.
     static constexpr f64 ticksPerMicrosecond = 187.5;
-    if(showMicros) {
+    char timeBuf[32];
+    if(timeUnit == 0) {
       f64 us = (f64)cmd.cycle / ticksPerMicrosecond;
-      if(cmd.isOverhead) ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "(%.2f)", us);
-      else               ImGui::Text("%.2f", us);
+      snprintf(timeBuf, sizeof(timeBuf), "%.2f", us);
     } else {
-      if(cmd.isOverhead) ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "(%llu)", (unsigned long long)cmd.cycle);
-      else               ImGui::Text("%llu", (unsigned long long)cmd.cycle);
+      snprintf(timeBuf, sizeof(timeBuf), "%llu", (unsigned long long)cmd.cycle);
     }
+    // Right-align within the column (monospaced digits for clean numeric display).
+    float colW = ImGui::GetColumnWidth();
+    ImVec2 textSz = ImGui::CalcTextSize(timeBuf);
+    float pad = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + colW - textSz.x - pad);
+    if(cmd.isOverhead)
+      ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "%s", timeBuf);
+    else
+      ImGui::Text("%s", timeBuf);
 
     // Internal/overhead rows (loop dispatch, overlay load, buffer fetch) are not
     // real commands, so don't decode them as ovl 0 / cmd 0.
-    static const char* overheadNames[] = {"?", "RSPQ_Loop", "ucode DMA", "queue DMA"};
+    static const char* overheadNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};
     static const char* overheadDesc[] = {
       "",
-      "time in RSPQ_Loop dispatch (outside commands)",
-      "time saving/loading overlay ucode + state",
-      "time DMAing next command buffer from RDRAM",
+      "RSPQ_Loop / command overhead",
+      "Load/Save ucode + state",
+      "DMA new commands",
     };
     const ImVec4 overheadCol(0.55f, 0.55f, 0.55f, 1);
 
     ImGui::TableNextColumn();
     if(cmd.isOverhead) {
-      ImGui::TextColored(overheadCol, "<internal>");
+      ImGui::TextColored(overheadCol, "RSPQ");
     } else {
       auto& ovlName = cap.overlayNameMap[cmd.overlayId];
       if(ovlName) {
@@ -238,17 +266,23 @@ auto DrawRspViewer() -> void {
       ImGui::TextColored(overheadCol, "%s",
         overheadDesc[cmd.overheadType < 4 ? cmd.overheadType : 0]);
     } else {
-      string desc = {"ovl:", hex(cmd.overlayId, 1L), " cmd:", hex(cmd.commandId, 2L)};
-      if(cmd.wordCount > 0) {
-        desc.append(" args: ");
-        for(u32 i = 0; i < min<u32>(cmd.wordCount, 4); i++) {
-          if(i > 0) desc.append(", ");
+      // Custom per-command argument text from the JSON descriptor, if any.
+      string desc = cap.formatArgs(cmd.overlayId, cmd.commandId, cmd.words, cmd.wordCount);
+      if(!desc) {
+        // No descriptor: fall back to raw hex words, shown dimmed.
+        for(u32 i = 0; i < min<u32>(cmd.wordCount, 6); i++) {
+          if(i > 0) desc.append(" ");
           desc.append(hex(cmd.words[i], 8L));
         }
-        if(cmd.wordCount > 4) desc.append(", ...");
+        if(cmd.wordCount > 6) desc.append(" ...");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "%s", desc.data());
+      } else {
+        ImGui::TextUnformatted(desc.data());
       }
-      ImGui::TextUnformatted(desc.data());
     }
+
+    // If this row is a ucode switch, insert an orange separator after it.
+    if(cmd.isOverhead && cmd.overheadType == 2) pendingSeparator = true;
 
     // Anchor the auto-scroll on the last visible row so we reach the very end.
     if(needScroll && row == lastVisibleRow) ImGui::SetScrollHereY(1.0f);

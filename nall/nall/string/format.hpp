@@ -99,7 +99,7 @@ template<typename T> inline auto hex(T value, long precision, char padchar) -> s
   u32 size = 0;
   do {
     u32 n = value & 15;
-    p[size++] = n < 10 ? '0' + n : 'a' + n - 10;
+    p[size++] = n < 10 ? '0' + n : 'A' + n - 10;
     value = value >> 4 & mask;
   } while(value);
   buffer.resize(size);

@@ -166,6 +166,49 @@ static auto elfTryReadSymbol(const string& elfPath, const string& symName, u64& 
   return false;
 }
 
+// Parse one command's optional "args" + "fmt" into a descriptor. JSON shape:
+//   "0x02": { "name": "Matrix Stack", "fmt": "{mul?mul:set} advance {advance}", "args": [
+//     { "name":"mul", "word":0, "bits":[0,0], "type":"bool" },
+//     { "name":"advance", "word":0, "bits":[8,23], "signed":true },
+//     { "name":"matrix", "word":1, "type":"addr" }
+//   ]}
+// Supported per-field keys: word, bits[hi,lo], signed, mul, div, add, enum{value:label}.
+// A "type" shortcut sets bits/format conventions (bool, addr, hex, rgba, uint, int).
+static auto parseArgsJson(const nlohmann::json& cmdData, RSPCapture::CmdArgInfo& out) -> void {
+  if(cmdData.contains("fmt")) out.fmt = cmdData["fmt"].get<std::string>().c_str();
+  if(!cmdData.contains("args") || !cmdData["args"].is_array()) return;
+
+  for(auto& a : cmdData["args"]) {
+    RSPCapture::ArgField f;
+    f.name = a.value("name", std::string{}).c_str();
+    f.word = (u8)a.value("word", 0);
+    // Default bit range: word 0 carries the command id in its top byte, so its
+    // argument payload is bits [0..23]; other words use the whole 32 bits.
+    f.loBit = 0;
+    f.hiBit = f.word == 0 ? 23 : 31;
+    if(a.contains("bits") && a["bits"].is_array() && a["bits"].size() == 2) {
+      f.hiBit = (u8)a["bits"][0].get<int>();
+      f.loBit = (u8)a["bits"][1].get<int>();
+    }
+    f.isSigned = a.value("signed", false);
+    f.mul = a.value("mul", (s64)1);
+    f.div = a.value("div", (s64)1);
+    f.add = a.value("add", (s64)0);
+    if(f.div == 0) f.div = 1;
+    // Fixed-point display: "fdiv" divides, "fmul"/"fscale" multiplies, to render
+    // the integer value as a float. Any of them flips the field into float mode.
+    if(a.contains("fdiv"))   f.fscale = 1.0 / a["fdiv"].get<double>();
+    if(a.contains("fmul"))   f.fscale = (f.fscale != 0.0 ? f.fscale : 1.0) * a["fmul"].get<double>();
+    if(a.contains("fscale")) f.fscale = a["fscale"].get<double>();
+    if(a.contains("enum") && a["enum"].is_object()) {
+      for(auto& [k, v] : a["enum"].items()) {
+        f.enums.push_back({(s64)std::strtoll(k.c_str(), nullptr, 0), v.get<std::string>().c_str()});
+      }
+    }
+    out.fields.push_back(f);
+  }
+}
+
 } // anonymous namespace
 
 auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
@@ -242,6 +285,7 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
               if(cmdData.contains("name")) {
                 jd.commandNames[cmdId] = cmdData["name"].get<std::string>().c_str();
               }
+              parseArgsJson(cmdData, jd.commandArgs[cmdId]);
             }
           }
         }
@@ -255,6 +299,7 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
               if(cmdData.contains("name")) {
                 commandNameMap[ovlId][cmdId] = cmdData["name"].get<std::string>().c_str();
               }
+              parseArgsJson(cmdData, cmdArgs[ovlId][cmdId]);
             }
           }
         }
@@ -412,12 +457,15 @@ auto RSPCapture::refreshOverlayNames() -> void {
 
         overlayNameMap[slot] = finalName;
         if(tries == 1) print("RSP: overlay ", slot, " = '", finalName, "'\n");
-        // Populate command names from JSON, shifted by cmdOffset
+        // Populate command names + arg descriptors from JSON, shifted by cmdOffset
         for(u32 j = 0; j < jsonOvlDataCount; j++) {
           if(jsonOvlData[j].name == finalName) {
             for(u32 c = 0; c < 256; c++) {
               if(c >= cmdOffset && jsonOvlData[j].commandNames[c]) {
                 commandNameMap[slot][c - cmdOffset] = jsonOvlData[j].commandNames[c];
+              }
+              if(c >= cmdOffset && jsonOvlData[j].commandArgs[c].valid()) {
+                cmdArgs[slot][c - cmdOffset] = jsonOvlData[j].commandArgs[c];
               }
             }
             break;
@@ -432,6 +480,94 @@ auto RSPCapture::refreshOverlayNames() -> void {
 auto RSPCapture::detectRspq() -> bool {
   if(!configLoaded) return false;
   return true;
+}
+
+// Extract a single field's value from the command words: mask the bit range,
+// optionally sign-extend, then apply the mul/div/add transform.
+static auto rspExtractField(const RSPCapture::ArgField& f, const u32* words, u8 wc) -> s64 {
+  u32 raw = (f.word < wc) ? words[f.word] : 0u;
+  u32 width = (u32)f.hiBit - (u32)f.loBit + 1;
+  if(width == 0 || width > 32) width = 32;
+  u32 mask = (width >= 32) ? 0xFFFFFFFFu : ((1u << width) - 1u);
+  u32 bits = (raw >> f.loBit) & mask;
+  s64 v = (s64)bits;
+  if(f.isSigned && width < 32 && (bits & (1u << (width - 1)))) {
+    v = (s64)bits - ((s64)1 << width);
+  } else if(f.isSigned && width == 32) {
+    v = (s32)bits;
+  }
+  return v * f.mul / f.div + f.add;
+}
+
+auto RSPCapture::formatArgs(u16 overlayId, u8 commandId, const u32* words, u8 wordCount) const -> string {
+  if(overlayId >= 16 || commandId >= 256) return {};
+  auto& info = cmdArgs[overlayId][commandId];
+  if(!info.valid()) return {};
+
+  auto valueText = [&](const ArgField& f, char spec) -> std::string {
+    s64 v = rspExtractField(f, words, wordCount);
+    char buf[32];
+    if(spec == 'x') {
+      snprintf(buf, sizeof(buf), "0x%llX", (unsigned long long)(v & 0xFFFFFFFFull));
+      return buf;
+    }
+    // Fixed-point/float display: "{name:f}" forces it, or a field with fscale set
+    // defaults to it. Trailing zeros trimmed via %g.
+    if(spec == 'f' || (spec == 0 && f.fscale != 0.0)) {
+      double fv = (double)v * (f.fscale != 0.0 ? f.fscale : 1.0);
+      snprintf(buf, sizeof(buf), "%.4g", fv);
+      return buf;
+    }
+    if(spec != 'd') {  // allow an enum label unless decimal was explicitly requested
+      for(auto& e : f.enums) if(e.value == v) return std::string(e.label.data());
+    }
+    snprintf(buf, sizeof(buf), "%lld", (long long)v);
+    return buf;
+  };
+
+  std::string out;
+
+  // No template: auto-list the fields as "name=value".
+  if(!info.fmt) {
+    for(auto& f : info.fields) {
+      if(!out.empty()) out += ' ';
+      out += std::string(f.name.data()) + "=" + valueText(f, 0);
+    }
+    return string{out.c_str()};
+  }
+
+  // Template: substitute {name}, {name:x} (hex), {name:d} (force decimal).
+  std::string t(info.fmt.data());
+  for(size_t i = 0; i < t.size();) {
+    if(t[i] != '{') { out += t[i++]; continue; }
+    size_t j = t.find('}', i);
+    if(j == std::string::npos) { out += t[i++]; continue; }
+    std::string tok = t.substr(i + 1, j - i - 1);
+    i = j + 1;
+    std::string spec;
+    size_t colon = tok.find(':');
+    if(colon != std::string::npos) {
+      spec = tok.substr(colon + 1);
+      tok = tok.substr(0, colon);
+    }
+    // Special placeholder "{rdp:XX}" reuses the RDP command-log decoder (the same
+    // code the RDP viewer uses) to render an RDP command (e.g. the color combiner
+    // 0x3C). The 56-bit RDP payload is reconstructed: word0 holds payload[55:32],
+    // word1 holds payload[31:0].
+    if(tok == "rdp") {
+      u8 op = (u8)strtol(spec.c_str(), nullptr, 16);
+      u64 w0 = ((u64)(words[0] & 0xFFFFFF) << 32) | (wordCount > 1 ? (u64)words[1] : 0);
+      std::string d = rdpCommandDescription(op, w0).data();
+      for(char& c : d) if(c == '\n') c = ' ';  // keep the cell single-line
+      out += d;
+      continue;
+    }
+    const ArgField* field = nullptr;
+    for(auto& f : info.fields) if(f.name == tok.c_str()) { field = &f; break; }
+    if(field) out += valueText(*field, spec.empty() ? 0 : spec[0]);
+    else { out += '{'; out += tok; out += '}'; }  // unknown name: leave visible
+  }
+  return string{out.c_str()};
 }
 
 // Read the command currently pointed to by gp (rspq_dmem_buf_ptr) into the
@@ -449,12 +585,16 @@ static auto rspReadPendingCommand(RSP& rsp) -> void {
   u32 firstWord = rsp.dmem.read<Word>(base);
   cap.segOverlay = (firstWord >> 28) & 0xF;
   cap.segCommand = (firstWord >> 24) & 0xF;
-  // We don't know the exact command size at this PC, so read up to the end of
-  // the buffer (capped). Extra trailing words are harmless: the UI only shows
-  // wordCount of them and they belong to following commands.
-  u32 maxWords = (cap.dmemCmdsSize > gp) ? (cap.dmemCmdsSize - gp) / 4 : 0;
-  if(maxWords > RSPCapture::maxCommandWords) maxWords = RSPCapture::maxCommandWords;
-  cap.segWordCount = (u8)maxWords;
+  // The real command size lives in the descriptor (t6/$14) the dispatcher just
+  // loaded: bits 8.. hold the size in bytes (masked by RSPQ_DESCRIPTOR_SIZE_MASK).
+  // Use it so we capture exactly the words this command uses, not the buffer max.
+  u32 cmdDesc = rsp.ipu.r[14].u32;
+  u32 words = ((cmdDesc >> 8) & 0xFC) / 4;       // 0xFC = RSPQ_DESCRIPTOR_SIZE_MASK
+  if(words == 0) words = 1;                       // always include the command word
+  u32 avail = (cap.dmemCmdsSize > gp) ? (cap.dmemCmdsSize - gp) / 4 : words;
+  if(avail && words > avail) words = avail;
+  if(words > RSPCapture::maxCommandWords) words = RSPCapture::maxCommandWords;
+  cap.segWordCount = (u8)words;
   for(u32 i = 0; i < cap.segWordCount; i++) cap.segWords[i] = rsp.dmem.read<Word>(base + i * 4);
 }
 
@@ -503,7 +643,9 @@ auto RSP::captureCommandHook(u32 pc) -> void {
         vulkan.flush();
         rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
         while(!cap.stepPending.load(std::memory_order_acquire)
-              && cap.stepMode.load(std::memory_order_relaxed)) {}
+              && cap.stepMode.load(std::memory_order_relaxed)) {
+          usleep(1000);
+        }
         cap.stepPending.store(false, std::memory_order_release);
       }
     } else {

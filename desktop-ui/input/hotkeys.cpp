@@ -41,6 +41,20 @@ auto InputManager::createHotkeys() -> void {
       ruby::audio.setBlocking(false);
       ruby::audio.setDynamic(false);
     }
+
+    // Also break any active RSP/RDP step spin so the worker doesn't stay stuck.
+    if(emulator->name == "Nintendo 64") {
+      auto& rspCap = ares::Nintendo64::rsp.capture;
+      auto& rdpCap = ares::Nintendo64::rdp.capture;
+      if(rspCap.stepMode.load(std::memory_order_relaxed)) {
+        rspCap.stepMode.store(false, std::memory_order_release);
+        rspCap.stepPending.store(true, std::memory_order_release);
+      }
+      if(rdpCap.stepMode.load(std::memory_order_relaxed)) {
+        rdpCap.stepMode.store(false, std::memory_order_release);
+        rdpCap.stepPending.store(true, std::memory_order_release);
+      }
+    }
   }).onRelease([&] {
     Program::Guard guard;
     if(!emulator) return;
@@ -65,13 +79,27 @@ auto InputManager::createHotkeys() -> void {
       ruby::video.setBlocking(false);
       ruby::audio.setBlocking(false);
       ruby::audio.setDynamic(false);
-      return;
-    } 
+    } else {
+      toggleFastForwardState = false;
+      ruby::video.setBlocking(fastForwardVideoBlocking);
+      ruby::audio.setBlocking(fastForwardAudioBlocking);
+      ruby::audio.setDynamic(fastForwardAudioDynamic);
+    }
 
-    toggleFastForwardState = false;
-    ruby::video.setBlocking(fastForwardVideoBlocking);
-    ruby::audio.setBlocking(fastForwardAudioBlocking);
-    ruby::audio.setDynamic(fastForwardAudioDynamic);
+    // When toggling fast-forward, also break any active RSP/RDP step spin
+    // so the worker doesn't stay stuck waiting for a step that won't come.
+    if(emulator->name == "Nintendo 64") {
+      auto& rspCap = ares::Nintendo64::rsp.capture;
+      auto& rdpCap = ares::Nintendo64::rdp.capture;
+      if(rspCap.stepMode.load(std::memory_order_relaxed)) {
+        rspCap.stepMode.store(false, std::memory_order_release);
+        rspCap.stepPending.store(true, std::memory_order_release);
+      }
+      if(rdpCap.stepMode.load(std::memory_order_relaxed)) {
+        rdpCap.stepMode.store(false, std::memory_order_release);
+        rdpCap.stepPending.store(true, std::memory_order_release);
+      }
+    }
   }));
 
   hotkeys.push_back(InputHotkey("Rewind").onPress([&] {

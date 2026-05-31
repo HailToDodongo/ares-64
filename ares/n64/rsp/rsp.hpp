@@ -74,8 +74,33 @@ struct RSPCapture {
   // RSPQ banner for validation (from JSON)
   string banner;
 
+  // Argument descriptors: a command extracts named fields from its words, then a
+  // free-text "fmt" template composes a custom human-readable string from them
+  // (e.g. "Load {count} verts"). All of this comes from the JSON; ares stays a
+  // generic viewer. A command with no descriptor just shows raw hex.
+  struct ArgField {
+    string name;
+    u8  word = 0;          // word index (0-based)
+    u8  loBit = 0, hiBit = 31;  // inclusive bit range within that word
+    bool isSigned = false; // sign-extend from (hiBit-loBit+1) bits
+    s64 mul = 1, div = 1, add = 0;  // value = extracted*mul/div + add
+    // optional fixed-point: when fscale != 0 the field is shown as a float,
+    // value_f = intValue * fscale (e.g. fscale = 1/65535 for a 0..0xFFFF fraction)
+    f64 fscale = 0.0;
+    // optional enum: maps a computed value to a label
+    struct EnumEntry { s64 value; string label; };
+    std::vector<EnumEntry> enums;
+  };
+  struct CmdArgInfo {
+    std::vector<ArgField> fields;
+    string fmt;            // template; empty => auto "name=value" list
+    bool valid() const { return !fields.empty() || (bool)fmt; }
+  };
+
   // Command name lookup: commandNameMap[overlayId][commandId]
   string commandNameMap[16][256];
+  // Argument descriptor lookup: cmdArgs[overlayId][commandId]
+  CmdArgInfo cmdArgs[16][256];
   // Overlay name lookup: overlayNameMap[overlayId]
   string overlayNameMap[16];
 
@@ -83,6 +108,7 @@ struct RSPCapture {
   struct JsonOvlData {
     string name;
     string commandNames[256];
+    CmdArgInfo commandArgs[256];
   };
   JsonOvlData jsonOvlData[16];
   u32 jsonOvlDataCount = 0;
@@ -134,6 +160,10 @@ struct RSPCapture {
   auto autoDetect(const string& romPath) -> bool;
   auto detectRspq() -> bool;
   auto refreshOverlayNames() -> void;
+
+  // Compose the human-readable argument string for a captured command, using the
+  // JSON descriptor. Returns {} if the command has no descriptor.
+  auto formatArgs(u16 overlayId, u8 commandId, const u32* words, u8 wordCount) const -> string;
 
   // RDRAM address of the rspq_overlay_ucodes array (found via ELF)
   u64 ovlUcodesAddr = 0;

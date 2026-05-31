@@ -77,14 +77,11 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${desktop-ui_SOURCES})
 
 ares_configure_executable(desktop-ui)
 
-# Copy font and RSP config to build output
+# Copy font and firmware to build output
 add_custom_command(TARGET desktop-ui POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/resource/Altinn-DINExp.ttf"
     "$<TARGET_FILE_DIR:desktop-ui>/Altinn-DINExp.ttf"
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/rspq-libdragon.json"
-    "$<TARGET_FILE_DIR:desktop-ui>/rspq-libdragon.json"
   COMMAND ${CMAKE_COMMAND} -E make_directory
     "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -97,3 +94,15 @@ add_custom_command(TARGET desktop-ui POST_BUILD
     "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.sm5.rom"
     "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.sm5.rom"
 )
+
+# Auto-copy the RSP overlay config whenever it is edited (not only on relink).
+# This target always runs as a prerequisite of desktop-ui; copy_if_different is a
+# no-op unless the JSON actually changed, so an edit alone makes `make` sync it.
+add_custom_target(desktop-ui-rspq-config
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/rspq-libdragon.json"
+    "$<TARGET_FILE_DIR:desktop-ui>/rspq-libdragon.json"
+  COMMENT "Syncing rspq-libdragon.json to build output"
+  VERBATIM
+)
+add_dependencies(desktop-ui desktop-ui-rspq-config)
