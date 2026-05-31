@@ -142,10 +142,16 @@ while IFS= read -r file; do
       git rm -f "$file" 2>/dev/null && RESOLVED+=("$file") && continue 2
     fi
   done
-  # 2) Ours-dirs: keep our version, discard upstream's.
+  # 2) Ours-dirs: keep our version, discard upstream's.  Content conflicts
+  #    are resolved with --ours; modify/delete conflicts (we deleted the
+  #    file) are resolved by keeping the deletion.
   for dir in "${OURS[@]}"; do
     if [[ "$file" == "$dir" || "$file" == "$dir"/* ]]; then
-      git checkout --ours -- "$file" 2>/dev/null && git add "$file" && RESOLVED+=("$file") && continue 2
+      if git checkout --ours -- "$file" 2>/dev/null; then
+        git add "$file" && RESOLVED+=("$file") && continue 2
+      elif git rm -f "$file" 2>/dev/null; then
+        RESOLVED+=("$file") && continue 2
+      fi
     fi
   done
 done < <(git diff --name-only --diff-filter=U)
