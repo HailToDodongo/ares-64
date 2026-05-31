@@ -70,13 +70,6 @@ auto DrawRspViewer() -> void {
     ImGui::TextColored(ImVec4(0, 1, 0, 1), "Ready");
   }
 
-  // Command count
-  ImGui::SameLine();
-  u32 liveCount = cap.writePos.load(std::memory_order_acquire);
-  u32 committed = cap.committedCount.load(std::memory_order_acquire);
-  if(liveCount > cap.maxCommands) liveCount = cap.maxCommands;
-  ImGui::Text("Live: %u  |  Frame: %u", liveCount, committed);
-
   // Step button — shown when RSP stepping is the active mode
   bool isRspStep = (program.stepType == Program::StepType::RSP);
   if(isRspStep) {
@@ -113,7 +106,7 @@ auto DrawRspViewer() -> void {
     static u32 autoRunStartRdpPos = 0;
     static u32 autoRunViCount = 0;
     static u32 autoRunLastViAddr = 0;
-    if(ImGui::Button(autoRun ? "Stop" : "Run >|")) {
+    if(ImGui::Button(autoRun ? "Stop" : "Auto-Step")) {
       if(autoRun) {
         autoRun = false;
       } else {
@@ -148,6 +141,14 @@ auto DrawRspViewer() -> void {
       }
     }
   }
+
+  // Command count
+  ImGui::SameLine();
+  u32 liveCount = cap.writePos.load(std::memory_order_acquire);
+  u32 committed = cap.committedCount.load(std::memory_order_acquire);
+  if(liveCount > cap.maxCommands) liveCount = cap.maxCommands;
+  ImGui::Text("Live: %u  |  Frame: %u", liveCount, committed);
+
 
   // Step mode indicator for display logic. We react to *either* stepper (RSP or
   // RDP): when the other one steps, new rows may be appended here too, and we
@@ -354,12 +355,26 @@ auto DrawRspViewer() -> void {
   if(showStats) {
     static constexpr f64 ticksPerMicrosecond = 187.5;
 
-    static u64 ovlTime[16]; static u32 ovlCnt[16];
-    static u64 cmdTime[16][256]; static u32 cmdCnt[16][256];
-    static u64 ohTime[4]; static u32 ohCnt[4];
-    memset(ovlTime, 0, sizeof(ovlTime)); memset(ovlCnt, 0, sizeof(ovlCnt));
-    memset(cmdTime, 0, sizeof(cmdTime)); memset(cmdCnt, 0, sizeof(cmdCnt));
-    memset(ohTime, 0, sizeof(ohTime)); memset(ohCnt, 0, sizeof(ohCnt));
+    // Group by resolved overlay name — slots sharing the same name (e.g.
+    // rdpq across slots 12–15) are merged into one row.
+    struct OvlKey {
+      string name; u8 slot;
+      bool operator==(const OvlKey& o) const { return name == o.name; }
+    };
+    struct OvlKeyHash { u64 operator()(const OvlKey& k) const {
+      u64 h = 0; for(char c : (string)k.name) h = h * 31 + c; return h; }};
+    struct CmdKey {
+      OvlKey ovl; string cmd; u8 cmdId;
+      bool operator==(const CmdKey& o) const { return ovl.name == o.ovl.name && cmd == o.cmd; }
+    };
+    struct CmdKeyHash { u64 operator()(const CmdKey& k) const {
+      u64 h = OvlKeyHash{}(k.ovl); for(char c : (string)k.cmd) h = h * 31 + c; return h; }};
+
+    std::unordered_map<OvlKey, u64, OvlKeyHash> ovlTime;
+    std::unordered_map<OvlKey, u32, OvlKeyHash> ovlCnt;
+    std::unordered_map<CmdKey, u64, CmdKeyHash> cmdTime;
+    std::unordered_map<CmdKey, u32, CmdKeyHash> cmdCnt;
+    u64 ohTime[4] = {}; u32 ohCnt[4] = {};
 
     u64 totalTime = 0;
     for(u32 i = 0; i < displayCount; i++) {
@@ -369,9 +384,13 @@ auto DrawRspViewer() -> void {
         u8 t = c.overheadType < 4 ? c.overheadType : 0;
         ohTime[t] += c.cycle; ohCnt[t]++;
       } else {
-        u16 o = c.overlayId & 15; u8 cm = c.commandId;
-        ovlTime[o] += c.cycle; ovlCnt[o]++;
-        cmdTime[o][cm] += c.cycle; cmdCnt[o][cm]++;
+        u8 slot = c.overlayId & 15;
+        auto& nm = cap.overlayNameMap[slot];
+        OvlKey ok{nm ? string{nm} : string{hex(slot)}, slot};
+        ovlTime[ok] += c.cycle; ovlCnt[ok]++;
+        auto& cn = cap.commandNameMap[slot][c.commandId];
+        CmdKey ck{ok, cn ? string{cn} : string{hex(c.commandId, 2L)}, c.commandId};
+        cmdTime[ck] += c.cycle; cmdCnt[ck]++;
       }
     }
 
@@ -399,10 +418,8 @@ auto DrawRspViewer() -> void {
       if(ImGui::BeginTabItem("By Overlay")) {
         struct Row { string label; ImU32 color; u32 count; u64 time; };
         std::vector<Row> rows;
-        for(u32 o = 0; o < 16; o++) {
-          if(!ovlCnt[o]) continue;
-          string lbl = cap.overlayNameMap[o] ? cap.overlayNameMap[o] : string{hex(o)};
-          rows.push_back({lbl, overlayColor(o), ovlCnt[o], ovlTime[o]});
+        for(auto& [ok, t] : ovlTime) {
+          rows.push_back({ok.name, overlayColor(ok.slot), ovlCnt[ok], t});
         }
         for(u32 t = 1; t < 4; t++) {
           if(!ohCnt[t]) continue;
@@ -442,13 +459,8 @@ auto DrawRspViewer() -> void {
       if(ImGui::BeginTabItem("By Command")) {
         struct Row { string ovl; ImU32 color; string cmd; u32 count; u64 time; };
         std::vector<Row> rows;
-        for(u32 o = 0; o < 16; o++) {
-          for(u32 cm = 0; cm < 256; cm++) {
-            if(!cmdCnt[o][cm]) continue;
-            string ovl = cap.overlayNameMap[o] ? cap.overlayNameMap[o] : string{hex(o)};
-            string cmd = cap.commandNameMap[o][cm] ? cap.commandNameMap[o][cm] : string{hex(cm, 2L)};
-            rows.push_back({ovl, overlayColor(o), cmd, cmdCnt[o][cm], cmdTime[o][cm]});
-          }
+        for(auto& [ck, t] : cmdTime) {
+          rows.push_back({ck.ovl.name, overlayColor(ck.ovl.slot), ck.cmd, cmdCnt[ck], t});
         }
         std::sort(rows.begin(), rows.end(), [](auto& a, auto& b) { return a.time > b.time; });
 

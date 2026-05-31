@@ -39,16 +39,11 @@ auto DrawRdpViewer() -> void {
     cap.enabled.store(enabled, std::memory_order_relaxed);
   }
 
-  ImGui::SameLine();
-  u32 count = cap.committedCount.load(std::memory_order_acquire);
-  if(count > cap.maxCommands) count = cap.maxCommands;
-  ImGui::Text("Commands: %u", count);
-
-  // Step button — shown when RDP stepping is the active mode
+    // Step button — shown when RDP stepping is the active mode
   bool isRdpStep = (program.stepType == Program::StepType::RDP);
   if(isRdpStep) {
     ImGui::SameLine();
-    if(ImGui::Button("Step >")) {
+    if(ImGui::Button("Step")) {
       program.stepSequence++;
       cap.stepPending.store(true, std::memory_order_release);
     }
@@ -66,6 +61,12 @@ auto DrawRdpViewer() -> void {
       steppingHeld = false;
     }
   }
+
+  ImGui::SameLine();
+  u32 count = cap.committedCount.load(std::memory_order_acquire);
+  if(count > cap.maxCommands) count = cap.maxCommands;
+  ImGui::Text("Commands: %u", count);
+
   // React to *either* stepper (RDP or RSP): when the other one steps, new rows
   // may be appended here too, and we want to follow + highlight them just the same.
   bool anyStep = (program.stepType == Program::StepType::RSP)

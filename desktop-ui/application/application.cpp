@@ -148,11 +148,12 @@ auto AresApp::initialize() -> bool {
   }
 
   // Load font after backend init (relative to binary)
-  float fontSize = 15.0f * dpiScale;
+  float fontSize = 14.5f * dpiScale;
   const char* basePath = SDL_GetBasePath();
   if(basePath) {
     nall::string fontPath = {basePath, "Altinn-DINExp.ttf"};
-    io.Fonts->AddFontFromFileTTF(fontPath.data(), fontSize);
+    auto imguiFont = io.Fonts->AddFontFromFileTTF(fontPath.data(), fontSize);
+    assert(imguiFont);
   }
 
   running = true;
