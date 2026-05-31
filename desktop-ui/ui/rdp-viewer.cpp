@@ -69,8 +69,8 @@ auto DrawRdpViewer() -> void {
 
   // React to *either* stepper (RDP or RSP): when the other one steps, new rows
   // may be appended here too, and we want to follow + highlight them just the same.
-  bool anyStep = (program.stepType == Program::StepType::RSP)
-              || (program.stepType == Program::StepType::RDP);
+  bool anyStep = (ares::Nintendo64::rsp.capture.stepMode.load(std::memory_order_relaxed)
+               || cap.stepMode.load(std::memory_order_relaxed));
 
   ImGui::Separator();
 

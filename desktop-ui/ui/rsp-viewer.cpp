@@ -153,12 +153,13 @@ auto DrawRspViewer() -> void {
   // Step mode indicator for display logic. We react to *either* stepper (RSP or
   // RDP): when the other one steps, new rows may be appended here too, and we
   // want to follow + highlight them just the same.
-  bool anyStep = (program.stepType == Program::StepType::RSP)
-              || (program.stepType == Program::StepType::RDP);
+  // Only highlight when actually stepping (paused), not when the game
+  // is running freely with RSP/RDP selected as the step type.
+  bool anyStep = (cap.stepMode.load(std::memory_order_relaxed)
+               || ares::Nintendo64::rdp.capture.stepMode.load(std::memory_order_relaxed));
 
   ImGui::Separator();
 
-  // Always show live data — writePos is the authoritative count
   u32 displayCount = liveCount;
   if(displayCount > cap.maxCommands) displayCount = cap.maxCommands;
   if(displayCount == 0 && committed > 0) displayCount = committed;
