@@ -12,8 +12,10 @@ bool showFramebufferViewer = false;
 static SDL_GPUTexture* fbTex = nullptr;
 static SDL_GPUTransferBuffer* fbXfer = nullptr;
 static u32  fbTexW = 0, fbTexH = 0;
-static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth
+static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth, 3=D-Delta
 static int  fbScaleMode = 1; // 0=Integer, 1=Linear
+static float fbDepthMin = 0.0f, fbDepthMax = 100.0f; // range for depth view
+static int  fbDeltaMul = 8; // multiplier for D-Delta mode (percent)
 
 // Upload an RGBA8 buffer into a persistent SDL_GPU texture, recreating it on resize.
 static auto fbUpload(const u32* pixels, u32 w, u32 h) -> SDL_GPUTexture* {
@@ -143,37 +145,92 @@ static auto zDecompress(u16 z) -> u32 {
   return (mantissa << shift) + base; // 0x00000..0x3FFFF
 }
 
-// Show depth buffer: decompress 14-bit Z + 4-bit dz from hidden RDRAM
-static auto depthToGray(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
-                        u32 w, u32 h, u32 rdramAddr) -> void {
+// Depth delta: R=|Z(x)-Z(x+1)|, G=|Z(x)-Z(x+1)|
+// Decompresses the raw depth buffer, computes horizontal/vertical absolute
+// differences, then normalises to 0..255.
+static auto depthDelta(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
+                       u32 w, u32 h, u32 rdramAddr) -> void {
   u32 pixels = w * h;
-  u64 zMax = 1;
+  std::vector<u64> zVals(pixels);
+
+  // Decompress all Z values first.
+  for(u32 i = 0; i < pixels; i++) {
+    u32 byteOff = i * 2;
+    u16 word = (src[byteOff] << 8) | src[byteOff + 1];
+    u32 d = word >> 2;
+    u32 hi = (rdramAddr + byteOff) / 2;
+    u8 dzLo = 0;
+    if(hidden && hi < hdrSize) dzLo = hidden[hi] & 3;
+    u32 dz = dzLo | ((word & 3) << 2);
+    zVals[i] = ((u64)zDecompress((u16)d) << 4) | dz;
+  }
+
+  // Compute deltas and find max (first pass).
+  u64 dMax = 1;
+  for(u32 y = 0; y < h; y++) {
+    for(u32 x = 0; x < w; x++) {
+      u32 idx = y*w + x;
+      u64 cur = zVals[idx];
+      u64 dh = (x + 1 < w) ? (cur > zVals[idx + 1] ? cur - zVals[idx + 1] : zVals[idx + 1] - cur) : 0;
+      u64 dv = (y + 1 < h) ? (cur > zVals[idx + w] ? cur - zVals[idx + w] : zVals[idx + w] - cur) : 0;
+      if(dh > dMax) dMax = dh;
+      if(dv > dMax) dMax = dv;
+    }
+  }
+
+  // Second pass: normalise to 0..255 and output R/G.
+  float s = dMax ? (255.0f / (float)dMax) : 1.0f;
+  for(u32 y = 0; y < h; y++) {
+    for(u32 x = 0; x < w; x++) {
+      u32 idx = y*w + x;
+      u64 cur = zVals[idx];
+      u64 dh = (x + 1 < w) ? (cur > zVals[idx + 1] ? cur - zVals[idx + 1] : zVals[idx + 1] - cur) : 0;
+      u64 dv = (y + 1 < h) ? (cur > zVals[idx + w] ? cur - zVals[idx + w] : zVals[idx + w] - cur) : 0;
+      u32 r = (u32)((float)dh * s * fbDeltaMul); if(r > 255) r = 255;
+      u32 g = (u32)((float)dv * s * fbDeltaMul); if(g > 255) g = 255;
+      dst[idx] = 0xFF000000 | (r << 16) | (g << 8);
+    }
+  }
+}
+
+// Show depth buffer: decompress 14-bit Z + 4-bit dz from hidden RDRAM.
+
+// Show depth buffer: decompress 14-bit Z + 4-bit dz from hidden RDRAM.
+// zMin/zMax (0..1) select a sub-range of the depth: values outside that
+// slice are drawn black; values inside are colour-mapped relative to it.
+static auto depthToGray(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
+                        u32 w, u32 h, u32 rdramAddr, float zMin, float zMax) -> void {
+  u32 pixels = w * h;
+  u64 absMax = 1;
 
   for(u32 i = 0; i < pixels; i++) {
     u32 byteOff = i * 2;
     u16 word = (src[byteOff] << 8) | src[byteOff + 1];
-    u32 depth = word >> 2; // 14-bit compressed Z
+    u32 d = word >> 2;
 
-    // dz: 2 bits from visible word (bits 1:0) + 2 bits from hidden RDRAM
     u32 hi = (rdramAddr + byteOff) / 2;
-    u8 dzLow = 0;
-    if(hidden && hi < hdrSize) dzLow = hidden[hi] & 3;
-    u32 dz = dzLow | ((word & 3) << 2); // 4-bit dz
+    u8 dzLo = 0;
+    if(hidden && hi < hdrSize) dzLo = hidden[hi] & 3;
+    u32 dz = dzLo | ((word & 3) << 2);
 
-    u64 val = ((u64)zDecompress((u16)depth) << 4) | dz;
-    if(val > zMax) zMax = val;
+    u64 val = ((u64)zDecompress((u16)d) << 4) | dz;
+    if(val > absMax) absMax = val;
     dst[i] = (u32)val;
   }
 
+  float rangeLo = zMin * (float)absMax;
+  float rangeHi = zMax * (float)absMax;
+  float rangeScale = (rangeHi > rangeLo) ? 1.0f / (rangeHi - rangeLo) : 1.0f;
+
   for(u32 i = 0; i < pixels; i++) {
-    f32 t = 1.0f - ((f32)dst[i] / (f32)zMax); // 0..1
+    float v = (float)dst[i];
+    if(v < rangeLo || v > rangeHi || v == 0) { dst[i] = 0xFF000000; continue; }
+    float t = 1.0f - (v - rangeLo) * rangeScale; // 0 (near)..1 (far) within slice
     u8 r, g, b;
-    if      (t < 0.25f) { f32 s = t * 4.0f;       r = 0;           g = 0;           b = (u8)(64 + s * 191); }
-    else if (t < 0.50f) { f32 s = (t - 0.25f) * 4.0f; r = 0;           g = (u8)(s * 255);    b = (u8)(255 - s * 255); }
-    else if (t < 0.75f) { f32 s = (t - 0.50f) * 4.0f; r = (u8)(s * 255);    g = 255;         b = 0; }
-    else                 { f32 s = (t - 0.75f) * 4.0f; r = 255;         g = (u8)(255 - s * 255); b = 0; }
-    // 0 = zero (far), apply color
-    if(dst[i] == 0) { r = g = b = 0; } // true zero = black
+    if      (t < 0.25f) { float s = t * 4.0f;        r = 0;           g = 0;           b = (u8)(64 + s * 191); }
+    else if (t < 0.50f) { float s = (t - 0.25f)*4.0f; r = 0;           g = (u8)(s * 255);  b = (u8)(255 - s * 255); }
+    else if (t < 0.75f) { float s = (t - 0.50f)*4.0f; r = (u8)(s * 255);    g = 255;          b = 0; }
+    else                  { float s = (t - 0.75f)*4.0f; r = 255;          g = (u8)(255 - s * 255); b = 0; }
     dst[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
   }
 }
@@ -228,20 +285,37 @@ auto DrawFramebufferViewer() -> void {
 
   // View mode selector
   ImGui::SetNextItemWidth(80);
-  const char* modes[] = {"Color", "Coverage", "Depth"};
-  ImGui::Combo("##fbmode", &fbViewMode, modes, 3);
+  const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta"};
+  ImGui::Combo("##fbmode", &fbViewMode, modes, 4);
   ImGui::SameLine();
   // Scale mode selector
   ImGui::SetNextItemWidth(100);
   const char* scales[] = {"Integer", "Linear"};
   ImGui::Combo("##fbscale", &fbScaleMode, scales, 2);
+
+  // Depth range sliders — visible only in depth mode.
+  if(fbViewMode == 2) {
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200);
+    ImGui::DragFloatRange2("##depthRange", &fbDepthMin, &fbDepthMax, 0.1f, 0.0f, 100.0f,
+                           "%.2f%%", "%.2f%%", ImGuiSliderFlags_AlwaysClamp);
+    if(fbDepthMin < 0.0f)   fbDepthMin = 0.0f;
+    if(fbDepthMax > 100.0f) fbDepthMax = 100.0f;
+    if(fbDepthMin > fbDepthMax) { float t = fbDepthMin; fbDepthMin = fbDepthMax; fbDepthMax = t; }
+  }
+  // Delta multiplier — visible only in D-Delta mode.
+  if(fbViewMode == 3) {
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    ImGui::SliderInt("##deltaMul", &fbDeltaMul, 1, 128, "x%d");
+  }
   ImGui::SameLine();
 
   u32 readAddr = addr;
-  if(fbViewMode == 2) readAddr = depthAddr;
+  if(fbViewMode == 2 || fbViewMode == 3) readAddr = depthAddr;
 
   if(readAddr == 0) {
-    ImGui::TextUnformatted(fbViewMode == 2 ? "No depth buffer configured." : "No framebuffer configured.");
+    ImGui::TextUnformatted((fbViewMode == 2 || fbViewMode == 3) ? "No depth buffer configured." : "No framebuffer configured.");
     ImGui::End();
     settings.general.showFramebufferViewer = true;
     return;
@@ -254,7 +328,7 @@ auto DrawFramebufferViewer() -> void {
     return;
   }
 
-  u32 bpp = (fbViewMode == 2) ? 2 : (sz == 3) ? 4 : (sz == 2) ? 2 : (sz == 1) ? 1 : 0;
+  u32 bpp = (fbViewMode == 2 || fbViewMode == 3) ? 2 : (sz == 3) ? 4 : (sz == 2) ? 2 : (sz == 1) ? 1 : 0;
   if(bpp == 0) {
     ImGui::TextUnformatted("Unsupported pixel size.");
     ImGui::End();
@@ -296,7 +370,13 @@ auto DrawFramebufferViewer() -> void {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
     ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
-    depthToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr);
+    depthToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, fbDepthMin * 0.01f, fbDepthMax * 0.01f);
+    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+  } else if(fbViewMode == 3) {
+    const u8* hidden = nullptr;
+    u32 hdrSize = 0;
+    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+    depthDelta(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr);
     ares::Nintendo64::vulkan.unmapHiddenRDRAM();
   } else {
     n64ToRGBA32(pixelBuf.data(), rawBuf.data(), w, h, fmt, sz);
@@ -305,7 +385,7 @@ auto DrawFramebufferViewer() -> void {
   // Upload texture
   SDL_GPUTexture* tex = fbUpload(pixelBuf.data(), w, h);
 
-  const char* modeTxt = fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
+  const char* modeTxt = fbViewMode == 3 ? "D-Delta" : fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
   ImGui::Text("%s  addr=0x%06X  %ux%u  fmt=%u sz=%u", modeTxt, readAddr, w, h, fmt, sz);
 
   auto avail = ImGui::GetContentRegionAvail();
