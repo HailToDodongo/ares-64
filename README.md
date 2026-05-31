@@ -55,7 +55,7 @@ Only vulkan remains as a requirement due to ParallelRDP.
 
 The general code stripping is both due to reducing complexity, build size and compilation times.<br>
 
-With other projects of mine (Pyrite64), i may also use this as a base for future "PC versions" of games.<br>
+With other projects of mine ([Pyrite64](https://github.com/HailToDodongo/pyrite64)), i may also use this as a base for future "PC versions" of games.<br>
 Where ROMs can be bundled with ares, and potentially include extended features / rendering.<br>
 In which case a simpler version without driver settings becomes easier to manage.
 
