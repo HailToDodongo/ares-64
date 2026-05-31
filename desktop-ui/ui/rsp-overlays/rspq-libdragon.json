@@ -349,5 +349,26 @@
         ]}
       }
     }
+,
+    {
+      "name": "magma",
+      "commands": {
+        "0x00": {"name": "Set Byte",   "fmt": "state[{offset:x}] = {value:x}",          "args": [{"name": "offset", "word": 0}, {"name": "value", "word": 1}]},
+        "0x01": {"name": "Set Short",  "fmt": "state[{offset:x}] = {value:x}",          "args": [{"name": "offset", "word": 0}, {"name": "value", "word": 1}]},
+        "0x02": {"name": "Set Word",   "fmt": "state[{offset:x}] = {value:x}",          "args": [{"name": "offset", "word": 0}, {"name": "value", "word": 1}]},
+        "0x03": {"name": "Set Quad",   "fmt": "state[{offset:x}] = {v0:x} {v1:x} {v2:x} {v3:x}", "args": [{"name": "offset", "word": 0}, {"name": "v0", "word": 1}, {"name": "v1", "word": 2}, {"name": "v2", "word": 3}, {"name": "v3", "word": 4}]},
+        "0x04": {"name": "Set Shader", "fmt": "code {code:x}  size {size}B",             "args": [{"name": "code", "word": 0}, {"name": "size", "word": 1}]},
+        "0x05": {"name": "Load Vertices", "fmt": "buf {buffer}  cache {cache}  count {count}", "args": [{"name": "buffer", "word": 0}, {"name": "cache", "word": 1, "bits": [31, 16]}, {"name": "count", "word": 1, "bits": [15, 0]}]},
+        "0x06": {"name": "Draw Indices", "fmt": "tri {i0} {i1} {i2}",                    "args": [{"name": "i0", "word": 0}, {"name": "i1", "word": 1, "bits": [31, 16]}, {"name": "i2", "word": 1, "bits": [15, 0]}]},
+        "0x07": {"name": "Draw End"},
+        "0x08": {"name": "Load Uniform", "fmt": "addr {addr:x}  off {offset}  size {size}B", "args": [{"name": "addr", "word": 0}, {"name": "size", "word": 1, "bits": [31, 16], "add": 1}, {"name": "offset", "word": 1, "bits": [15, 0]}]},
+        "0x09": {"name": "Inline Uniform 8"},
+        "0x0A": {"name": "Inline Uniform 16"},
+        "0x0B": {"name": "Inline Uniform 32"},
+        "0x0C": {"name": "Inline Uniform 64"},
+        "0x0D": {"name": "Inline Uniform 128"},
+        "0x0E": {"name": "Inline Uniform Max"}
+      }
+    }
   ]
 }

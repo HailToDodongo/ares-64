@@ -90,6 +90,9 @@ struct Program : ares::Platform {
   std::vector<ares::Node::Video::Screen> screens;
   std::vector<ares::Node::Audio::Stream> streams;
 
+  // "Frame" advances whole frames until the VI framebuffer origin (dramAddress)
+  // is swapped to a different buffer — a real new presented frame — bounded by a
+  // frame cap so a static screen can't hang the step. RSP/RDP step on commands.
   enum class StepType : u32 { None, Frame, RSP, RDP };
   StepType stepType = StepType::Frame;
   // Incremented on every RSP/RDP step the user fires, so both command viewers

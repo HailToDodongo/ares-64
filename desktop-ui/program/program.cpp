@@ -101,33 +101,60 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
 
     nall::GDB::server.updateLoop();
 
+    bool didFrameAdvance = program.requestFrameAdvance;
     program.requestFrameAdvance = false;
-    if(!runAhead || fastForwarding || rewinding) {
-      emulator->root->run();
-    } else {
-      ares::setRunAhead(true);
-      emulator->root->run();
-      auto state = emulator->root->serialize(false);
-      ares::setRunAhead(false);
-      emulator->root->run();
-      state.setReading();
-      emulator->root->unserialize(state);
-    }
 
-    if(emulator && emulator->name == "Nintendo 64") {
-      auto& vi = ares::Nintendo64::vi;
-      static u32 lastViAddr = 0;
-      u32 viAddr = vi.io.dramAddress;
-      if(viAddr != 0 && viAddr != lastViAddr) {
-        lastViAddr = viAddr;
+    // Advances exactly one frame, then runs the N64 RSP/RDP capture
+    // frame-boundary bookkeeping. Factored out so the "Buffer" step type can
+    // drive several frames in a row.
+    auto runOneFrame = [&] {
+      if(!runAhead || fastForwarding || rewinding) {
+        emulator->root->run();
+      } else {
+        ares::setRunAhead(true);
+        emulator->root->run();
+        auto state = emulator->root->serialize(false);
+        ares::setRunAhead(false);
+        emulator->root->run();
+        state.setReading();
+        emulator->root->unserialize(state);
+      }
+
+      if(emulator && emulator->name == "Nintendo 64") {
+        auto& vi = ares::Nintendo64::vi;
         auto& cap = ares::Nintendo64::rdp.capture;
-        cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
-        cap.writePos.store(0, std::memory_order_release);
         auto& rspCap = ares::Nintendo64::rsp.capture;
-        rspCap.committedCount.store(rspCap.writePos.load(std::memory_order_acquire), std::memory_order_release);
-        rspCap.writePos.store(0, std::memory_order_release);
-        rspCap.frameNumber++;
-        rspCap.refreshOverlayNames();
+
+        // Commit + clear the RSP/RDP command buffers on a framebuffer swap (the VI
+        // origin changing to a different buffer), not on every VI. Each swap marks
+        // a presented frame: publish the finished frame to the committed-count
+        // viewers, then reset the live write cursor so the next frame starts fresh.
+        static u32 lastViAddr = 0;
+        u32 viAddr = vi.io.dramAddress;
+        if(viAddr != 0 && viAddr != lastViAddr) {
+          lastViAddr = viAddr;
+          cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
+          rspCap.committedCount.store(rspCap.writePos.load(std::memory_order_acquire), std::memory_order_release);
+          cap.writePos.store(0, std::memory_order_release);
+          rspCap.writePos.store(0, std::memory_order_release);
+          rspCap.frameNumber++;
+          rspCap.refreshOverlayNames();
+        }
+      }
+    };
+
+    // "Frame" step: on N64 a single step advances whole frames until the VI
+    // framebuffer origin is swapped to a different buffer (a real presented frame),
+    // bounded to 100 frames so a static screen can't freeze the step. Other systems
+    // (and normal play) just advance one frame.
+    bool n64FrameStep = didFrameAdvance
+                     && program.stepType == Program::StepType::Frame
+                     && emulator && emulator->name == "Nintendo 64";
+    u32 stepStartAddr = n64FrameStep ? (u32)ares::Nintendo64::vi.io.dramAddress : 0;
+    runOneFrame();
+    if(n64FrameStep) {
+      for(u32 i = 1; i < 100 && (u32)ares::Nintendo64::vi.io.dramAddress == stepStartAddr; i++) {
+        runOneFrame();
       }
     }
 

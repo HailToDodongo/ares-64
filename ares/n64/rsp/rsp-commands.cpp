@@ -278,6 +278,49 @@ static auto parseArgsJson(const nlohmann::json& cmdData, RSPCapture::CmdArgInfo&
     return out;
   }
 
+  // Map a KSEG0 vaddr to a pointer into the ELF image (via section headers),
+  // returning the number of readable bytes available. Returns nullptr if the
+  // address isn't backed by file data (e.g. .bss / out of range).
+  static auto elfPtrAtVaddr(const u8* data, u32 size, u32 vaddr, u32& avail) -> const u8* {
+    avail = 0;
+    if(!data || size < 64) return nullptr;
+    if(data[0]!=0x7f||data[1]!='E'||data[2]!='L'||data[3]!='F') return nullptr;
+    if(data[5] != 2) return nullptr;
+    bool is64 = (data[4] == 2);
+    u64 shoff = 0; u32 shentsize = 0, shnum = 0, shdrSize = 0, shOffOff = 0, shSizeOff = 0, shAddrOff = 0;
+    if(is64) { shoff=elfRead64BE(data,40); shentsize=elfRead16BE(data,58); shnum=elfRead16BE(data,60);
+               shdrSize=64; shOffOff=24; shSizeOff=32; shAddrOff=16; }
+    else     { shoff=elfRead32BE(data,32); shentsize=elfRead16BE(data,46); shnum=elfRead16BE(data,48);
+               shdrSize=40; shOffOff=16; shSizeOff=20; shAddrOff=12; }
+    if(!shoff || !shnum) return nullptr;
+    for(u32 i = 0; i < shnum; i++) {
+      u32 hdrOff = shoff + i * shentsize;
+      if(hdrOff + shdrSize > size) break;
+      u32 type = elfRead32BE(data, hdrOff + 4);
+      if(type == 8) continue;
+      u64 secAddr = is64 ? elfRead64BE(data, hdrOff+shAddrOff) : elfRead32BE(data, hdrOff+shAddrOff);
+      if(!secAddr) continue;
+      u64 secOff  = is64 ? elfRead64BE(data, hdrOff+shOffOff)  : elfRead32BE(data, hdrOff+shOffOff);
+      u64 secSize = is64 ? elfRead64BE(data, hdrOff+shSizeOff) : elfRead32BE(data, hdrOff+shSizeOff);
+      if(vaddr >= secAddr && vaddr < secAddr + secSize) {
+        u64 fo = secOff + (vaddr - secAddr);
+        if(fo >= size) return nullptr;
+        avail = (u32)min<u64>(secAddr + secSize - vaddr, (u64)size - fo);
+        return data + fo;
+      }
+    }
+    return nullptr;
+  }
+
+  // Read a big-endian u32 from the ELF image at a KSEG0 vaddr.
+  static auto elfReadWordAtVaddr(const u8* data, u32 size, u32 vaddr, u32& out) -> bool {
+    u32 avail = 0;
+    const u8* p = elfPtrAtVaddr(data, size, vaddr, avail);
+    if(!p || avail < 4) return false;
+    out = (p[0]<<24) | (p[1]<<16) | (p[2]<<8) | p[3];
+    return true;
+  }
+
 } // anonymous namespace
 
 auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
@@ -481,44 +524,45 @@ auto RSPCapture::refreshOverlayNames() -> void {
     const u8* elfData = (const u8*)cachedElfData.data();
     u32 elfDataSize = cachedElfData.size();
     auto& r = ares::Nintendo64::rsp;
-    auto rdPhys = [](u32 phys) -> u32 {
-      return (u32)Nintendo64::rdram.ram.read<Word>(phys, RBusDevice::ARES_DEBUGGER);
-    };
-    // Read rspq_data_size from ELF: DMEM offset to add to overlay data pointers
-    u64 rspqDataSizeVal = 0;
-    if(!elfTryReadSymbolFrom(elfData, elfDataSize, "rsp_queue_data_size", rspqDataSizeVal)) return;
-    u32 rspqDataSize = (u32)rspqDataSizeVal;
-    // For each non-zero DMEM overlay entry, find matching ELF symbol
+    // Collect the rsp_* symbols once (rsp_ucode_t struct pointers + labels).
+    static std::vector<RspElfSymbol> rspSymbols;
+    static bool symbolsBuilt = false;
+    if(!symbolsBuilt) { rspSymbols = elfCollectRspSymbols(elfData, elfDataSize); symbolsBuilt = true; }
+
+    // For each non-zero DMEM overlay-table entry (the RDRAM address rspq DMAs the
+    // overlay's data from), find the ucode whose data section contains it.
     for(u32 slot = 0; slot < 16; slot++) {
       u32 entry = r.dmem.read<Word>(dmemOvlTableOffset + slot * 4);
       u32 dataPhys = entry & 0x00FFFFFF;
       if(!dataPhys) continue;
-      // Collect all rsp_* symbols from the cached ELF — no hardcoded list.
-      static std::vector<RspElfSymbol> rspSymbols;
-      static bool symbolsBuilt = false;
-      if(!symbolsBuilt) { rspSymbols = elfCollectRspSymbols(elfData, elfDataSize); symbolsBuilt = true; }
+
       for(auto& sym : rspSymbols) {
-        u64 addr = sym.value;
-        u32 physBase = (u32)addr - 0x80000000u;
-        u32 dataPtr = rdPhys(physBase + 8);
-        u32 namePtr = rdPhys(physBase + 24);
-        if(!dataPtr || !namePtr) continue;
-        u32 elfDataPhys = (dataPtr + rspqDataSize) - 0x80000000u;
-        if(elfDataPhys != dataPhys) continue;
-        // Match! Read name
-        u32 namePhys = namePtr - 0x80000000u;
+        // Read the rsp_ucode_t fields straight from the ELF image: data (+8),
+        // data_end (+12), name (+24). Reading from RDRAM is unreliable — the
+        // structs are often still dirty in the CPU cache.
+        u32 dataStart = 0, dataEnd = 0, namePtr = 0;
+        if(!elfReadWordAtVaddr(elfData, elfDataSize, (u32)sym.value + 8,  dataStart)) continue;
+        if(!elfReadWordAtVaddr(elfData, elfDataSize, (u32)sym.value + 12, dataEnd))  continue;
+        if(!elfReadWordAtVaddr(elfData, elfDataSize, (u32)sym.value + 24, namePtr))  continue;
+        // Both must be KSEG0 data pointers forming a forward range.
+        if((dataStart >> 24) != 0x80 || (dataEnd >> 24) != 0x80) continue;
+        u32 dsPhys = dataStart & 0x00FFFFFF;
+        u32 dePhys = dataEnd   & 0x00FFFFFF;
+        if(dsPhys >= dePhys) continue;
+        if(dataPhys < dsPhys || dataPhys >= dePhys) continue;  // not this overlay's data
+
+        // Read the name string from the ELF; require an "rsp_" prefix.
+        u32 avail = 0;
+        const u8* np = elfPtrAtVaddr(elfData, elfDataSize, namePtr, avail);
+        if(!np || avail == 0) continue;
         char buf[64] = {};
-        for(u32 j = 0; j < 63; j++) {
-          buf[j] = (char)Nintendo64::rdram.ram.read<Byte>(namePhys + j, RBusDevice::ARES_DEBUGGER);
-          if(!buf[j]) break;
-        }
-        // Strip "rsp_" prefix and resolve
+        for(u32 j = 0; j < 63 && j < avail; j++) { buf[j] = (char)np[j]; if(!buf[j]) break; }
         nall::string finalName{buf};
-        if(finalName.beginsWith("rsp_")) {
-          nall::string stripped;
+        if(!finalName.beginsWith("rsp_")) continue;
+        { nall::string stripped;
           for(u32 c = 4; c < finalName.size(); c++) stripped.append(finalName[c]);
-          finalName = stripped;
-        }
+          finalName = stripped; }
+
         // Read idmap to determine which command block this slot covers
         // idmap[slot] = base_id << 2; command offset = (slot - base_id) * 16
         u8 idmapEntry = r.dmem.read<Byte>(dmemOvlIdmapOffset + slot);
