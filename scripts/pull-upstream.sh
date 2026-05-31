@@ -112,6 +112,7 @@ DELETED=(
   desktop-ui/emulator/wonderswan-color.cpp
   desktop-ui/emulator/zx-spectrum.cpp
   desktop-ui/emulator/zx-spectrum-128.cpp
+  desktop-ui/presentation/presentation.hpp
 )
 
 REMOTE="${1:-origin}"
@@ -130,6 +131,7 @@ fi
 # Everything under ruby/ is our own SDL3 wrappers,upstream changes are ignored.
 OURS=(
   ruby
+  desktop-ui/presentation
 )
 
 echo "Merge conflicts: auto-resolving known deletions and ours-dirs..."
