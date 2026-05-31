@@ -112,7 +112,7 @@ DELETED=(
   desktop-ui/emulator/wonderswan-color.cpp
   desktop-ui/emulator/zx-spectrum.cpp
   desktop-ui/emulator/zx-spectrum-128.cpp
-  desktop-ui/presentation/presentation.hpp
+  desktop-ui/presentation/presentation.cpp
 )
 
 REMOTE="${1:-origin}"
