@@ -32,6 +32,51 @@ Additional features include (checkout the 'tools' menu):
 For single stepping, use the hotkey for frame-advance after pausing emulation.<br>
 In the top-right you are also given the option what stepping mode is currently active.
 
+# Build
+
+Please make sure to also checkout all submodules via git.
+
+## Requirements
+
+- **CMake** 3.28 or later
+- **C++23** compiler
+- **SDL3** is bundled in `thirdparty/`, no system install needed
+
+### CMake
+
+```sh
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target desktop-ui -j8
+```
+
+The binary will be at `build/desktop-ui/ares`.
+
+For faster iterative builds, use:
+```sh
+cmake -S . -B build -DENABLE_IPO=OFF -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
+```
+
+# Running
+
+Start ares while having the working directory in this repo.<br>
+You can pass the ROM as the argument:
+```sh
+./build/desktop-ui/ares /path/to/game.z64
+```
+
+For any commercial games that will be enough to get all features except RSP commands working.<br>
+For libdragon ROMs, you can make sure to keep the `.elf` file around.<br>
+Either next to the ROM, or in a `build` directory next to it.<br>
+This will enable fetching labels used to figure out the overlay setup.<br>
+
+## Adapting overlays
+
+Some data that can't be fetched form the `.elf` will be loaded from a JSON file.<br>
+To change this data checkout [rspq-libdragon.json](./desktop-ui/ui/rsp-overlays/rspq-libdragon.json).
+After making changes, just rebuild ares.
+
+For per-ROM changes, place this JSON next to the `.elf` file.
+
 # Internal changes
 
 If you are familiar with the original code of ares, some larger changes where made in this version.
@@ -62,47 +107,19 @@ In which case a simpler version without driver settings becomes easier to manage
 The exception to this is the N64 core, besides hooks to make certain features work.<br>
 Emulation itself is not touched, and should only be changed upstream.
 
-# Build
+## Updating from upstream
 
-Please make sure to also checkout all submodules via git.
+Due to the deletions, merge conflicts **will** happen.<br>
+However they are easy to solve, for that reason a script is included to help with that.<br>
+This will auto accept deleted files on our end, as well as completely changed files that only share the name still.<br>
 
-## Requirements
+Anything left are true conflicts independent of any refactors.<br>
+Those can happen if changes near the added hooks where made.<br>
+Always prefer the upstream code as close as possible, and adapt hooks and changes around it.
 
-- **CMake** 3.28 or later
-- **C++23** compiler
-- **SDL3** is bundled in `thirdparty/`, no system install needed
+Before running the script, make sure you are on the `imgui` branch.<br>
+The upstream remote must be setup and be called `origin`, this repo here must be a different remote name.
 
-### CMake
+After that just run: `./scripts/pull-upstream.sh`.<br>
+On either success or conflict, it will give further logging.
 
-```sh
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target desktop-ui -j8
-```
-
-The binary will be at `build/desktop-ui/ares`.
-
-For faster iterative builds, use:
-```sh
-cmake -S . -B build -DENABLE_IPO=OFF -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
-```
-
-## Running
-
-Start ares while having the working directory in this repo.<br>
-You can pass the ROM as the argument:
-```sh
-./build/desktop-ui/ares /path/to/game.z64
-```
-
-For any commercial games that will be enough to get all features except RSP commands working.<br>
-For libdragon ROMs, you can make sure to keep the `.elf` file around.<br>
-Either next to the ROM, or in a `build` directory next to it.<br>
-This will enable fetching labels used to figure out the overlay setup.<br>
-
-# Adapting overlays
-
-Some data that can't be fetched form the `.elf` will be loaded from a JSON file.<br>
-To change this data checkout [rspq-libdragon.json](./desktop-ui/ui/rsp-overlays/rspq-libdragon.json).
-After making changes, just rebuild ares.
-
-For per-ROM changes, place this JSON next to the `.elf` file.
