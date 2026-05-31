@@ -15,6 +15,7 @@ auto DrawTracerViewer() -> void;
 auto DrawRdpViewer() -> void;
 auto DrawRspViewer() -> void;
 auto DrawFramebufferViewer() -> void;
+auto DrawMemoryViewer() -> void;
 auto DrawAudioViewer() -> void;
 auto DrawStatusBar() -> void;
 
@@ -28,6 +29,7 @@ extern bool showTracerViewer;
 extern bool showRdpViewer;
 extern bool showRspViewer;
 extern bool showFramebufferViewer;
+extern bool showMemoryViewer;
 extern bool showAudioViewer;
 extern bool showAboutDialog;
 

@@ -11,6 +11,7 @@ add_executable(
   ui/rdp-viewer.cpp
   ui/rsp-viewer.cpp
   ui/framebuffer-viewer.cpp
+  ui/memory-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   input/input.cpp
@@ -40,6 +41,7 @@ set_source_files_properties(
   ui/rdp-viewer.cpp
   ui/rsp-viewer.cpp
   ui/framebuffer-viewer.cpp
+  ui/memory-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   input/input.cpp

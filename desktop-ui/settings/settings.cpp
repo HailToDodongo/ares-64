@@ -99,6 +99,7 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowRdpViewer", general.showRdpViewer);
   bind(boolean, "General/ShowRspViewer", general.showRspViewer);
   bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
+  bind(boolean, "General/ShowMemoryViewer", general.showMemoryViewer);
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);

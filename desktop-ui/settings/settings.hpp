@@ -83,6 +83,7 @@ struct Settings : Markup::Node {
     bool showRdpViewer = false;
     bool showRspViewer = false;
     bool showFramebufferViewer = false;
+    bool showMemoryViewer = false;
   } general;
 
   struct Rewind {
