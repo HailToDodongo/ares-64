@@ -51,6 +51,11 @@ auto DrawRspViewer() -> void {
   ImGui::SameLine();
   ImGui::Checkbox("Internal", &showInternal);
 
+  // Toggle the statistics panel below the command table.
+  static bool showStats = true;
+  ImGui::SameLine();
+  ImGui::Checkbox("Stats", &showStats);
+
   // Timing unit selector: microseconds (us) or raw RCP master-clock ticks.
   static int timeUnit = 0;  // 0 = us (default)
   ImGui::SameLine();
@@ -128,10 +133,16 @@ auto DrawRspViewer() -> void {
     return;
   }
 
+  // Reserve room at the bottom for the statistics panel (when enabled).
+  float statsH = 0.0f;
+  if(showStats) {
+    statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.34f, 140.0f, 320.0f);
+  }
+
   if(!ImGui::BeginTable("rsp_cmds", 5,
        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
-       ImVec2(0, 0))) {
+       ImVec2(0, showStats ? -statsH : 0))) {
     ImGui::End();
     settings.general.showRspViewer = true;
     return;
@@ -289,6 +300,139 @@ auto DrawRspViewer() -> void {
   }
 
   ImGui::EndTable();
+
+  // ---- Statistics panel ------------------------------------------------------
+  if(showStats) {
+    static constexpr f64 ticksPerMicrosecond = 187.5;
+
+    static u64 ovlTime[16]; static u32 ovlCnt[16];
+    static u64 cmdTime[16][256]; static u32 cmdCnt[16][256];
+    static u64 ohTime[4]; static u32 ohCnt[4];
+    memset(ovlTime, 0, sizeof(ovlTime)); memset(ovlCnt, 0, sizeof(ovlCnt));
+    memset(cmdTime, 0, sizeof(cmdTime)); memset(cmdCnt, 0, sizeof(cmdCnt));
+    memset(ohTime, 0, sizeof(ohTime)); memset(ohCnt, 0, sizeof(ohCnt));
+
+    u64 totalTime = 0;
+    for(u32 i = 0; i < displayCount; i++) {
+      auto& c = cap.commands[i];
+      totalTime += c.cycle;
+      if(c.isOverhead) {
+        u8 t = c.overheadType < 4 ? c.overheadType : 0;
+        ohTime[t] += c.cycle; ohCnt[t]++;
+      } else {
+        u16 o = c.overlayId & 15; u8 cm = c.commandId;
+        ovlTime[o] += c.cycle; ovlCnt[o]++;
+        cmdTime[o][cm] += c.cycle; cmdCnt[o][cm]++;
+      }
+    }
+
+    auto fmtTime = [&](u64 cyc, char* buf, size_t n) {
+      if(timeUnit == 0) snprintf(buf, n, "%.2f", (f64)cyc / ticksPerMicrosecond);
+      else              snprintf(buf, n, "%llu", (unsigned long long)cyc);
+    };
+    f64 invTotal = totalTime ? 100.0 / (f64)totalTime : 0.0;
+
+    auto numCell = [&](const char* text) {
+      float colW = ImGui::GetColumnWidth();
+      float tw = ImGui::CalcTextSize(text).x;
+      float pad = ImGui::GetStyle().ItemSpacing.x;
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + colW - tw - pad);
+      ImGui::TextUnformatted(text);
+    };
+
+    static const char* ohNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};
+    const char* timeHdr = timeUnit == 0 ? "us" : "Cycles";
+
+    ImGui::BeginChild("##stats", ImVec2(0, 0), ImGuiChildFlags_None);
+    if(ImGui::BeginTabBar("##statTabs")) {
+
+      // --- By Overlay ------------------------------------------------------
+      if(ImGui::BeginTabItem("By Overlay")) {
+        struct Row { string label; ImU32 color; u32 count; u64 time; };
+        std::vector<Row> rows;
+        for(u32 o = 0; o < 16; o++) {
+          if(!ovlCnt[o]) continue;
+          string lbl = cap.overlayNameMap[o] ? cap.overlayNameMap[o] : string{hex(o)};
+          rows.push_back({lbl, overlayColor(o), ovlCnt[o], ovlTime[o]});
+        }
+        for(u32 t = 1; t < 4; t++) {
+          if(!ohCnt[t]) continue;
+          rows.push_back({string{ohNames[t]}, IM_COL32(150, 150, 150, 255), ohCnt[t], ohTime[t]});
+        }
+        std::sort(rows.begin(), rows.end(), [](auto& a, auto& b) { return a.time > b.time; });
+
+        if(ImGui::BeginTable("##ovlStats", 4,
+             ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+          ImGui::TableSetupColumn("Overlay", ImGuiTableColumnFlags_WidthStretch);
+          ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 60);
+          ImGui::TableSetupColumn(timeHdr, ImGuiTableColumnFlags_WidthFixed, 80);
+          ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 55);
+          ImGui::TableSetupScrollFreeze(0, 1);
+          ImGui::TableHeadersRow();
+
+          char buf[32];
+          for(auto& r : rows) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(r.color), "%s", r.label.data());
+            ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%u", r.count); numCell(buf);
+            ImGui::TableNextColumn(); fmtTime(r.time, buf, sizeof(buf)); numCell(buf);
+            ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)r.time * invTotal); numCell(buf);
+          }
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn(); ImGui::TextDisabled("Total");
+          ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%u", displayCount); numCell(buf);
+          ImGui::TableNextColumn(); fmtTime(totalTime, buf, sizeof(buf)); numCell(buf);
+          ImGui::TableNextColumn(); numCell("100.0");
+          ImGui::EndTable();
+        }
+        ImGui::EndTabItem();
+      }
+
+      // --- By Command -------------------------------------------------------
+      if(ImGui::BeginTabItem("By Command")) {
+        struct Row { string ovl; ImU32 color; string cmd; u32 count; u64 time; };
+        std::vector<Row> rows;
+        for(u32 o = 0; o < 16; o++) {
+          for(u32 cm = 0; cm < 256; cm++) {
+            if(!cmdCnt[o][cm]) continue;
+            string ovl = cap.overlayNameMap[o] ? cap.overlayNameMap[o] : string{hex(o)};
+            string cmd = cap.commandNameMap[o][cm] ? cap.commandNameMap[o][cm] : string{hex(cm, 2L)};
+            rows.push_back({ovl, overlayColor(o), cmd, cmdCnt[o][cm], cmdTime[o][cm]});
+          }
+        }
+        std::sort(rows.begin(), rows.end(), [](auto& a, auto& b) { return a.time > b.time; });
+
+        if(ImGui::BeginTable("##cmdStats", 5,
+             ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+          ImGui::TableSetupColumn("Overlay", ImGuiTableColumnFlags_WidthFixed, 90);
+          ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthStretch);
+          ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 60);
+          ImGui::TableSetupColumn(timeHdr, ImGuiTableColumnFlags_WidthFixed, 80);
+          ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 55);
+          ImGui::TableSetupScrollFreeze(0, 1);
+          ImGui::TableHeadersRow();
+
+          char buf[32];
+          for(auto& r : rows) {
+            ImVec4 col = ImGui::ColorConvertU32ToFloat4(r.color);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::TextColored(col, "%s", r.ovl.data());
+            ImGui::TableNextColumn(); ImGui::TextColored(col, "%s", r.cmd.data());
+            ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%u", r.count); numCell(buf);
+            ImGui::TableNextColumn(); fmtTime(r.time, buf, sizeof(buf)); numCell(buf);
+            ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)r.time * invTotal); numCell(buf);
+          }
+          ImGui::EndTable();
+        }
+        ImGui::EndTabItem();
+      }
+
+      ImGui::EndTabBar();
+    }
+    ImGui::EndChild();
+  }
+
   ImGui::End();
   settings.general.showRspViewer = true;
 }
