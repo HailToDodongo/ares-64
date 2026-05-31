@@ -56,13 +56,10 @@ static auto elfRead16BE(const u8* data, u32 offset) -> u16 {
   return (u16(data[offset]) << 8) | u16(data[offset+1]);
 }
 
-// Try to read a symbol's value from an ELF file. Handles both ELF32 and ELF64 big-endian.
-static auto elfTryReadSymbol(const string& elfPath, const string& symName, u64& value) -> bool {
-  string elfData = string::read(elfPath);
-  if(!elfData || elfData.size() < 64) return false;
-
-  const u8* data = (const u8*)elfData.data();
-  u32 size = elfData.size();
+// Try to read a symbol's value from a pre-loaded ELF data buffer.
+// Handles both ELF32 and ELF64 big-endian.
+static auto elfTryReadSymbolFrom(const u8* data, u32 size, const string& symName, u64& value) -> bool {
+  if(!data || size < 64) return false;
 
   // Validate ELF magic
   if(data[0] != 0x7f || data[1] != 'E' || data[2] != 'L' || data[3] != 'F') return false;
@@ -208,6 +205,78 @@ static auto parseArgsJson(const nlohmann::json& cmdData, RSPCapture::CmdArgInfo&
     out.fields.push_back(f);
   }
 }
+
+  // Collect all rsp_* symbols from the ELF whose value falls in the KSEG0
+  // range (0x80000000–0x81000000) — these are rsp_ucode_t struct pointers.
+  struct RspElfSymbol { string name; u64 value; };
+  static auto elfCollectRspSymbols(const u8* data, u32 size) -> std::vector<RspElfSymbol> {
+    std::vector<RspElfSymbol> out;
+    if(!data || size < 64) return out;
+
+    // Validate ELF magic
+    if(data[0] != 0x7f || data[1] != 'E' || data[2] != 'L' || data[3] != 'F') return out;
+    u8 elfClass = data[4];
+    u8 elfData2 = data[5];
+    if(elfData2 != 2) return out;
+    if(elfClass != 1 && elfClass != 2) return out;
+    bool is64 = (elfClass == 2);
+
+    u64 shoff; u32 shentsize, shnum, shstrndx;
+    u32 shdrSize, shOffOff, shSizeOff, shAddrOff;
+    if(is64) {
+      shoff     = elfRead64BE(data, 40); shentsize = elfRead16BE(data, 58);
+      shnum     = elfRead16BE(data, 60); shstrndx  = elfRead16BE(data, 62);
+      shdrSize  = 64; shOffOff = 24; shSizeOff = 32; shAddrOff = 16;
+    } else {
+      shoff     = elfRead32BE(data, 32); shentsize = elfRead16BE(data, 46);
+      shnum     = elfRead16BE(data, 48); shstrndx  = elfRead16BE(data, 50);
+      shdrSize  = 40; shOffOff = 16; shSizeOff = 20; shAddrOff = 12;
+    }
+    if(shoff == 0 || shnum == 0) return out;
+
+    u64 shstrBase = 0;
+    { u32 hdrOff = shoff + shstrndx * shentsize;
+      if(hdrOff + shdrSize <= (u64)size)
+        shstrBase = is64 ? elfRead64BE(data, hdrOff + shOffOff)
+                         : elfRead32BE(data, hdrOff + shOffOff); }
+
+    u64 strtabOff = 0, strtabSz = 0, symtabOff = 0, symtabSz = 0, symEnt = 0;
+    for(u32 i = 0; i < shnum; i++) {
+      u32 hdrOff = shoff + i * shentsize;
+      if(hdrOff + shdrSize > size) break;
+      u32 nameIdx = elfRead32BE(data, hdrOff);
+      u32 type = elfRead32BE(data, hdrOff + 4);
+      u64 secOff = is64 ? elfRead64BE(data, hdrOff + shOffOff)
+                        : elfRead32BE(data, hdrOff + shOffOff);
+      u64 secSz  = is64 ? elfRead64BE(data, hdrOff + shSizeOff)
+                        : elfRead32BE(data, hdrOff + shSizeOff);
+      u64 esize  = is64 ? elfRead64BE(data, hdrOff + 56)
+                        : elfRead32BE(data, hdrOff + 36);
+      if(shstrBase && shstrBase + nameIdx < (u64)size) {
+        nall::string sname{(const char*)(data + shstrBase + nameIdx)};
+        if(type == 3 && sname == ".strtab") { strtabOff = secOff; strtabSz = secSz; }
+        else if(type == 2) { symtabOff = secOff; symtabSz = secSz; symEnt = esize; }
+      }
+    }
+    if(!symtabOff || !strtabOff || !symEnt) return out;
+
+    u32 symValOff = is64 ? 8 : 4;
+    for(u64 s = 0; s < symtabSz; s += symEnt) {
+      u32 symOff = symtabOff + s;
+      if(symOff + symEnt > (u64)size) break;
+      u32 nameIdx = elfRead32BE(data, symOff);
+      u64 symVal  = is64 ? elfRead64BE(data, symOff + symValOff)
+                         : elfRead32BE(data, symOff + symValOff);
+      if(strtabOff + nameIdx >= (u64)size) continue;
+      const char* name = (const char*)(data + strtabOff + nameIdx);
+      nall::string sname{name};
+      // Only collect symbols starting with "rsp_" whose value is in KSEG0.
+      if(!sname.beginsWith("rsp_")) continue;
+      if(symVal < 0x80000000 || symVal >= 0x81000000) continue;
+      out.push_back({sname, symVal});
+    }
+    return out;
+  }
 
 } // anonymous namespace
 
@@ -369,13 +438,18 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
   if(!foundElfPath) return false;
   elfPath = foundElfPath;
 
+  // Cache the entire ELF in memory so subsequent symbol lookups don't hit disk.
+  cachedElfData = string::read(elfPath);
+  const u8* elfData = (const u8*)cachedElfData.data();
+  u32 elfDataSize = cachedElfData ? cachedElfData.size() : 0;
+
   // rsp_queue_text_start is in KSEG0 (0x80000000). The RSPQ code is at offset 0
   // within IMEM when loaded via rsp_load().
   // The DMEM layout is standard per rsp_queue_t.
 
   // Read rspq_overlay_ucodes address from ELF for runtime overlay name detection
   u64 ovlUcodesVal = 0;
-  elfTryReadSymbol(elfPath, "rspq_overlay_ucodes", ovlUcodesVal);
+  elfTryReadSymbolFrom(elfData, elfDataSize, "rspq_overlay_ucodes", ovlUcodesVal);
   ovlUcodesAddr = ovlUcodesVal;
 
   // Try to load JSON config for hooks, DMEM layout, and overlay names
@@ -402,33 +476,29 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
 }
 
 auto RSPCapture::refreshOverlayNames() -> void {
-  static u32 tries = 0;
-  if(tries >= 120) return;
-  tries++;
-
-  // Lazily scan and match DMEM overlay table against ELF symbols
-  if(elfPath) {
+  // Called every frame to pick up runtime overlay registrations.
+  if(elfPath && cachedElfData) {
+    const u8* elfData = (const u8*)cachedElfData.data();
+    u32 elfDataSize = cachedElfData.size();
     auto& r = ares::Nintendo64::rsp;
     auto rdPhys = [](u32 phys) -> u32 {
       return (u32)Nintendo64::rdram.ram.read<Word>(phys, RBusDevice::ARES_DEBUGGER);
     };
     // Read rspq_data_size from ELF: DMEM offset to add to overlay data pointers
     u64 rspqDataSizeVal = 0;
-    if(!elfTryReadSymbol(elfPath, "rsp_queue_data_size", rspqDataSizeVal)) return;
+    if(!elfTryReadSymbolFrom(elfData, elfDataSize, "rsp_queue_data_size", rspqDataSizeVal)) return;
     u32 rspqDataSize = (u32)rspqDataSizeVal;
     // For each non-zero DMEM overlay entry, find matching ELF symbol
     for(u32 slot = 0; slot < 16; slot++) {
       u32 entry = r.dmem.read<Word>(dmemOvlTableOffset + slot * 4);
       u32 dataPhys = entry & 0x00FFFFFF;
       if(!dataPhys) continue;
-      // Try each known ucode name from ELF
-      const char* ucodeNames[] = {
-        "rsp_queue", "rsp_rdpq", "rsp_tiny3d", "rsp_tinypx", "rsp_tiny3d_clip",
-        "rsp_yuv", "rsp_h264", "rsp_audio", "rsp_mp3", "rsp_profile", "rsp_crash", nullptr
-      };
-      for(u32 n = 0; ucodeNames[n]; n++) {
-        u64 addr = 0;
-        if(!elfTryReadSymbol(elfPath, ucodeNames[n], addr)) continue;
+      // Collect all rsp_* symbols from the cached ELF — no hardcoded list.
+      static std::vector<RspElfSymbol> rspSymbols;
+      static bool symbolsBuilt = false;
+      if(!symbolsBuilt) { rspSymbols = elfCollectRspSymbols(elfData, elfDataSize); symbolsBuilt = true; }
+      for(auto& sym : rspSymbols) {
+        u64 addr = sym.value;
         u32 physBase = (u32)addr - 0x80000000u;
         u32 dataPtr = rdPhys(physBase + 8);
         u32 namePtr = rdPhys(physBase + 24);
@@ -455,8 +525,10 @@ auto RSPCapture::refreshOverlayNames() -> void {
         u32 baseId = idmapEntry >> 2;
         u32 cmdOffset = (slot - baseId) * 16;
 
+        if(!overlayNameMap[slot]) {
+          print("RSP: overlay ", slot, " = '", finalName, "'\n");
+        }
         overlayNameMap[slot] = finalName;
-        if(tries == 1) print("RSP: overlay ", slot, " = '", finalName, "'\n");
         // Populate command names + arg descriptors from JSON, shifted by cmdOffset
         for(u32 j = 0; j < jsonOvlDataCount; j++) {
           if(jsonOvlData[j].name == finalName) {

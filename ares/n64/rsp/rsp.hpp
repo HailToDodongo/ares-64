@@ -170,6 +170,9 @@ struct RSPCapture {
 
   // ELF path for lazy overlay name resolution
   string elfPath;
+  // Cached ELF data — loaded once to avoid re-reading the file every frame
+  // during refreshOverlayNames.
+  string cachedElfData;
 };
 
 struct RSP : Thread, Memory::RCP<RSP> {
