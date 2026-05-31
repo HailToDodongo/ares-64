@@ -334,6 +334,10 @@ static auto drawStepTypeCombo() -> void {
   static const char* stepNames[] = {"Frame", "RSP", "RDP"};
   int st = (int)program.stepType - 1;
   if(st < 0) st = 0;
+
+  ImGui::Text("Step:");
+  ImGui::SameLine();
+
   ImGui::SetNextItemWidth(80);
   if(ImGui::Combo("##steptype_bar", &st, stepNames, 3)) {
     program.stepType = (Program::StepType)(st + 1);
@@ -350,14 +354,17 @@ auto DrawMainMenuBar() -> void {
   DrawHelpMenu();
 
   if(emulator) {
-    ImGui::SameLine();
-    drawStepTypeCombo();
-
+    // Right-align the step-type combo just left of the VPS counter.
     auto vps = program.vblanksPerSecond.load();
     char buf[32];
     snprintf(buf, sizeof(buf), "%u VPS", (u32)vps);
-    auto textSize = ImGui::CalcTextSize(buf);
-    ImGui::SameLine(ImGui::GetWindowWidth() - textSize.x - 16);
+    float vpsW = ImGui::CalcTextSize(buf).x;
+    float comboW = ImGui::CalcTextSize("Step:").x + ImGui::GetStyle().ItemSpacing.x + 80;
+    float pad = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - comboW - pad - 16);
+    drawStepTypeCombo();
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - 16);
     ImGui::TextUnformatted(buf);
   }
 
@@ -374,18 +381,18 @@ auto DrawMenuBar() -> void {
   if(emulator) DrawToolsMenu();
   DrawHelpMenu();
 
-  if(emulator) {
-    ImGui::SameLine();
-    drawStepTypeCombo();
-  }
-
-  // VPS counter on the right side of the menu bar
+  // VPS counter on the right, step-type combo just left of it.
   if(emulator) {
     auto vps = program.vblanksPerSecond.load();
     char buf[32];
     snprintf(buf, sizeof(buf), "%u VPS", (u32)vps);
-    auto textSize = ImGui::CalcTextSize(buf);
-    ImGui::SameLine(ImGui::GetWindowWidth() - textSize.x - 16);
+    float vpsW = ImGui::CalcTextSize(buf).x;
+    float comboW = ImGui::CalcTextSize("Step:").x + ImGui::GetStyle().ItemSpacing.x + 80;
+    float pad = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - comboW - pad - 16);
+    drawStepTypeCombo();
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - 16);
     ImGui::TextUnformatted(buf);
 
     // Log VPS every 2 seconds

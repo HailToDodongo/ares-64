@@ -362,13 +362,13 @@ auto DrawRspViewer() -> void {
       bool operator==(const OvlKey& o) const { return name == o.name; }
     };
     struct OvlKeyHash { u64 operator()(const OvlKey& k) const {
-      u64 h = 0; for(char c : (string)k.name) h = h * 31 + c; return h; }};
+      u64 h = 0; for(char c : k.name) h = h * 31 + c; return h; }};
     struct CmdKey {
       OvlKey ovl; string cmd; u8 cmdId;
       bool operator==(const CmdKey& o) const { return ovl.name == o.ovl.name && cmd == o.cmd; }
     };
     struct CmdKeyHash { u64 operator()(const CmdKey& k) const {
-      u64 h = OvlKeyHash{}(k.ovl); for(char c : (string)k.cmd) h = h * 31 + c; return h; }};
+      u64 h = OvlKeyHash{}(k.ovl); for(char c : k.cmd) h = h * 31 + c; return h; }};
 
     std::unordered_map<OvlKey, u64, OvlKeyHash> ovlTime;
     std::unordered_map<OvlKey, u32, OvlKeyHash> ovlCnt;

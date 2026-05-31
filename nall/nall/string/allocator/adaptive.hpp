@@ -32,7 +32,7 @@ inline auto string::get() -> T* {
 template<typename T>
 inline auto string::data() const -> const T* {
   if(_capacity < SSO) return (const T*)_text;
-  return (const T*)_data;
+  return _data ? (const T*)_data : (const T*)_text;
 }
 
 inline auto string::reset() -> type& {

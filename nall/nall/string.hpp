@@ -152,7 +152,10 @@ public:
   ~string() { reset(); }
 
   explicit operator bool() const { return _size; }
-  operator const char*() const { return (const char*)data(); }
+  operator const char*() const {
+    const char* d = (const char*)data();
+    return d ? d : "";
+  }
   operator std::span<char>() { return {(char*)get(), size()}; }
   operator std::span<const char>() const { return {(const char*)data(), size()}; }
   operator std::span<u8>() { return {(u8*)get(), size()}; }
