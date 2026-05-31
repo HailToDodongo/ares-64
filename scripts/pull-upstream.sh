@@ -114,7 +114,7 @@ DELETED=(
   desktop-ui/emulator/zx-spectrum-128.cpp
 )
 
-REMOTE="${1:-upstream}"
+REMOTE="${1:-origin}"
 BRANCH="${2:-master}"
 
 echo "Fetching $REMOTE..."
@@ -126,20 +126,32 @@ if git merge "$REMOTE/$BRANCH"; then
   exit 0
 fi
 
-echo "Merge conflicts: auto-resolving known deletions..."
+# Directories whose conflicts are auto-resolved by keeping our version.
+# Everything under ruby/ is our own SDL3 wrappers,upstream changes are ignored.
+OURS=(
+  ruby
+)
+
+echo "Merge conflicts: auto-resolving known deletions and ours-dirs..."
 
 RESOLVED=()
 while IFS= read -r file; do
+  # 1) Known deletions: delete the file.
   for dir in "${DELETED[@]}"; do
     if [[ "$file" == "$dir" || "$file" == "$dir"/* ]]; then
-      git rm -f "$file" 2>/dev/null && RESOLVED+=("$file")
-      break
+      git rm -f "$file" 2>/dev/null && RESOLVED+=("$file") && continue 2
+    fi
+  done
+  # 2) Ours-dirs: keep our version, discard upstream's.
+  for dir in "${OURS[@]}"; do
+    if [[ "$file" == "$dir" || "$file" == "$dir"/* ]]; then
+      git checkout --ours -- "$file" 2>/dev/null && git add "$file" && RESOLVED+=("$file") && continue 2
     fi
   done
 done < <(git diff --name-only --diff-filter=U)
 
 if [ ${#RESOLVED[@]} -gt 0 ]; then
-  echo "Auto-resolved (deleted):"
+  echo "Auto-resolved:"
   printf '  %s\n' "${RESOLVED[@]}"
 fi
 
