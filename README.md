@@ -13,7 +13,7 @@ If you want to improve accuracy or make changes to the N64 core itself, please a
 
 # Features
 
-Additional features include:
+Additional features include (checkout the 'tools' menu):
 
 - Framebuffer viewer that updates in realtime
   - Color / Coverage / Depth
@@ -27,6 +27,10 @@ Additional features include:
   - metrics to measure RSP times
 - Memory viewer and editor
 - Audio visualizer
+- UI that can be freely organized and is saved across starts
+
+For single stepping, use the hotkey for frame-advance after pausing emulation.<br>
+In the top-right you are also given the option what stepping mode is currently active.
 
 # Internal changes
 
@@ -39,6 +43,24 @@ For anything UI, imgui is used, so native UI toolkits are no longer needed.
 
 The `hiro` code is completely deleted, `ruby` is only a few small wrappers around SDL3.<br>
 In general, large portions of now unused code have been removed.
+
+Keep in mind this project is still very much WIP, so many parts are still left-over and not removed yet (mostly options in UIs).
+
+## Why so many changes?
+
+Imgui is the perfect tool to make debugging UIs like this, at which point it makes little sense to draw the bit of menu UI with something else.<br>
+Especially since it cuts out any platform specific code.<br>
+SDL3 is the same story, by using the GPU API, rendering is abstracted from both OS and graphics API.<br>
+Only vulkan remains as a requirement due to ParallelRDP.
+
+The general code stripping is both due to reducing complexity, build size and compilation times.<br>
+
+With other projects of mine (Pyrite64), i may also use this as a base for future "PC versions" of games.<br>
+Where ROMs can be bundled with ares, and potentially include extended features / rendering.<br>
+In which case a simpler version without driver settings becomes easier to manage.
+
+The exception to this is the N64 core, besides hooks to make certain features work.<br>
+Emulation itself is not touched, and should only be changed upstream.
 
 # Build
 
