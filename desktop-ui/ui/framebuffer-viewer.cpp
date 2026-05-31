@@ -12,7 +12,7 @@ bool showFramebufferViewer = false;
 static SDL_GPUTexture* fbTex = nullptr;
 static SDL_GPUTransferBuffer* fbXfer = nullptr;
 static u32  fbTexW = 0, fbTexH = 0;
-static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth, 3=D-Delta
+static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth, 3=D-Delta, 4=D-Hist
 static int  fbScaleMode = 1; // 0=Integer, 1=Linear
 static float fbDepthMin = 0.0f, fbDepthMax = 100.0f; // range for depth view
 static int  fbDeltaMul = 8; // multiplier for D-Delta mode (percent)
@@ -195,9 +195,71 @@ static auto depthDelta(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
 
 // Show depth buffer: decompress 14-bit Z + 4-bit dz from hidden RDRAM.
 
+// Depth histogram: bar chart showing Z-value distribution (256 bins).
+// A bar chart image (512x256) is generated and uploaded.
+static auto depthHistogram(u32* dst, u32 dstW, u32 dstH,
+                           const u8* src, const u8* hidden, u32 hdrSize,
+                           u32 w, u32 h, u32 rdramAddr,
+                           float zMin, float zMax) -> void {
+  u32 pixels = w * h;
+  u64 absMax = 1;
+
+  // Bin counts (256 buckets covering 0..absMax).
+  u32 bins[256] = {};
+  for(u32 i = 0; i < pixels; i++) {
+    u32 byteOff = i * 2;
+    u16 word = (src[byteOff] << 8) | src[byteOff + 1];
+    u32 d = word >> 2;
+    u32 hi = (rdramAddr + byteOff) / 2;
+    u8 dzLo = 0;
+    if(hidden && hi < hdrSize) dzLo = hidden[hi] & 3;
+    u32 dz = dzLo | ((word & 3) << 2);
+    u64 val = ((u64)zDecompress((u16)d) << 4) | dz;
+    if(val > absMax) absMax = val;
+    u32 b = (u32)(val * 255 / absMax);
+    bins[b]++;
+  }
+
+  // Find max count for scaling.
+  u32 maxCount = 1;
+  for(u32 i = 0; i < 256; i++) if(bins[i] > maxCount) maxCount = bins[i];
+
+  // Clear to dark background.
+  u32 total = dstW * dstH;
+  for(u32 i = 0; i < total; i++) dst[i] = 0xFF101010;
+
+  // Draw bars.
+  u32 barW = dstW / 256;
+  float scale = (float)(dstH - 8) / (float)maxCount;
+  for(u32 b = 0; b < 256; b++) {
+    u32 barH = (u32)((float)bins[b] * scale);
+    u32 x0 = b * barW;
+    u32 y0 = dstH - 4 - barH;
+    for(u32 dy = 0; dy < barH; dy++) {
+      for(u32 dx = 0; dx < barW; dx++) {
+        u32 px = (y0 + dy) * dstW + (x0 + dx);
+        // Color-code: blue (near) to red (far), matching the heatmap.
+        float t = (float)b / 255.0f;
+        u8 r, g, bb;
+        if      (t < 0.25f) { float s = t * 4.0f;        r = 0;           g = 0;           bb = (u8)(64 + s * 191); }
+        else if (t < 0.50f) { float s = (t - 0.25f)*4.0f; r = 0;           g = (u8)(s * 255);  bb = (u8)(255 - s * 255); }
+        else if (t < 0.75f) { float s = (t - 0.50f)*4.0f; r = (u8)(s * 255);    g = 255;          bb = 0; }
+        else                 { float s = (t - 0.75f)*4.0f; r = 255;          g = (u8)(255 - s * 255); bb = 0; }
+        dst[px] = 0xFF000000 | (bb << 16) | (g << 8) | r;
+      }
+    }
+  }
+
+  // Overlay range bounds as vertical lines.
+  u32 r0 = (u32)(zMin * 255.0f);
+  u32 r1 = (u32)(zMax * 255.0f);
+  for(u32 i = 0; i < dstH; i++) {
+    dst[i * dstW + r0] = 0xFFFF8800;
+    dst[i * dstW + r1] = 0xFFFF8800;
+  }
+}
+
 // Show depth buffer: decompress 14-bit Z + 4-bit dz from hidden RDRAM.
-// zMin/zMax (0..1) select a sub-range of the depth: values outside that
-// slice are drawn black; values inside are colour-mapped relative to it.
 static auto depthToGray(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
                         u32 w, u32 h, u32 rdramAddr, float zMin, float zMax) -> void {
   u32 pixels = w * h;
@@ -285,16 +347,16 @@ auto DrawFramebufferViewer() -> void {
 
   // View mode selector
   ImGui::SetNextItemWidth(80);
-  const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta"};
-  ImGui::Combo("##fbmode", &fbViewMode, modes, 4);
+  const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta", "D-Hist"};
+  ImGui::Combo("##fbmode", &fbViewMode, modes, 5);
   ImGui::SameLine();
   // Scale mode selector
   ImGui::SetNextItemWidth(100);
   const char* scales[] = {"Integer", "Linear"};
   ImGui::Combo("##fbscale", &fbScaleMode, scales, 2);
 
-  // Depth range sliders — visible only in depth mode.
-  if(fbViewMode == 2) {
+  // Depth range sliders — visible in depth / histogram mode.
+  if(fbViewMode == 2 || fbViewMode == 4) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(200);
     ImGui::DragFloatRange2("##depthRange", &fbDepthMin, &fbDepthMax, 0.1f, 0.0f, 100.0f,
@@ -312,10 +374,10 @@ auto DrawFramebufferViewer() -> void {
   ImGui::SameLine();
 
   u32 readAddr = addr;
-  if(fbViewMode == 2 || fbViewMode == 3) readAddr = depthAddr;
+  if(fbViewMode >= 2) readAddr = depthAddr;  // Depth / D-Delta / D-Hist
 
   if(readAddr == 0) {
-    ImGui::TextUnformatted((fbViewMode == 2 || fbViewMode == 3) ? "No depth buffer configured." : "No framebuffer configured.");
+    ImGui::TextUnformatted((fbViewMode >= 2) ? "No depth buffer configured." : "No framebuffer configured.");
     ImGui::End();
     settings.general.showFramebufferViewer = true;
     return;
@@ -328,7 +390,7 @@ auto DrawFramebufferViewer() -> void {
     return;
   }
 
-  u32 bpp = (fbViewMode == 2 || fbViewMode == 3) ? 2 : (sz == 3) ? 4 : (sz == 2) ? 2 : (sz == 1) ? 1 : 0;
+  u32 bpp = (fbViewMode >= 2) ? 2 : (sz == 3) ? 4 : (sz == 2) ? 2 : (sz == 1) ? 1 : 0;
   if(bpp == 0) {
     ImGui::TextUnformatted("Unsupported pixel size.");
     ImGui::End();
@@ -378,6 +440,16 @@ auto DrawFramebufferViewer() -> void {
     ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
     depthDelta(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr);
     ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+  } else if(fbViewMode == 4) {
+    const u8* hidden = nullptr;
+    u32 hdrSize = 0;
+    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+    u32 histW = 512, histH = 256;
+    pixelBuf.resize(histW * histH);
+    depthHistogram(pixelBuf.data(), histW, histH, rawBuf.data(), hidden, hdrSize, w, h, readAddr,
+                   fbDepthMin * 0.01f, fbDepthMax * 0.01f);
+    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+    w = histW; h = histH;
   } else {
     n64ToRGBA32(pixelBuf.data(), rawBuf.data(), w, h, fmt, sz);
   }
@@ -385,7 +457,7 @@ auto DrawFramebufferViewer() -> void {
   // Upload texture
   SDL_GPUTexture* tex = fbUpload(pixelBuf.data(), w, h);
 
-  const char* modeTxt = fbViewMode == 3 ? "D-Delta" : fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
+  const char* modeTxt = fbViewMode == 4 ? "D-Hist" : fbViewMode == 3 ? "D-Delta" : fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
   ImGui::Text("%s  addr=0x%06X  %ux%u  fmt=%u sz=%u", modeTxt, readAddr, w, h, fmt, sz);
 
   auto avail = ImGui::GetContentRegionAvail();
