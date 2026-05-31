@@ -756,10 +756,15 @@ auto RSP::captureCommandHook(u32 pc) -> void {
       // Step mode: flush GPU so the framebuffer is current, then spin until the
       // UI advances. Only meaningful at real command boundaries.
       if(cap.stepMode.load(std::memory_order_relaxed)) {
+        vulkan.render();
         vulkan.flush();
         rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
         while(!cap.stepPending.load(std::memory_order_acquire)
               && cap.stepMode.load(std::memory_order_relaxed)) {
+          if(cap.requestClear.exchange(false, std::memory_order_acq_rel)) {
+            cap.committedCount.store(0, std::memory_order_release);
+            cap.writePos.store(0, std::memory_order_release);
+          }
           usleep(1000);
         }
         cap.stepPending.store(false, std::memory_order_release);

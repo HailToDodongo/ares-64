@@ -39,6 +39,9 @@ struct RSPCapture {
   std::atomic<bool> enabled{false};
   std::atomic<bool> stepMode{false};
   std::atomic<bool> stepPending{false};
+  // Set by the RSP viewer to request a manual clear. Picked up by both
+  // spin-waits; clears the RSP buffer immediately while stepping.
+  std::atomic<bool> requestClear{false};
 
   // Hook addresses from JSON config (IMEM offsets)
   u32 hookAddresses[maxHookAddresses];

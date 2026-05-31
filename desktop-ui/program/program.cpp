@@ -131,7 +131,11 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
         // viewers, then reset the live write cursor so the next frame starts fresh.
         static u32 lastViAddr = 0;
         u32 viAddr = vi.io.dramAddress;
-        if(viAddr != 0 && viAddr != lastViAddr) {
+        // Skip the auto-clear while RSP or RDP stepping is active — the
+        // user controls the buffer manually via Clear / Run buttons.
+        bool stepping = rspCap.stepMode.load(std::memory_order_relaxed)
+                     || cap.stepMode.load(std::memory_order_relaxed);
+        if(!stepping && viAddr != 0 && viAddr != lastViAddr) {
           lastViAddr = viAddr;
           cap.committedCount.store(cap.writePos.load(std::memory_order_acquire), std::memory_order_release);
           rspCap.committedCount.store(rspCap.writePos.load(std::memory_order_acquire), std::memory_order_release);

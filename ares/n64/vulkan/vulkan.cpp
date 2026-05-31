@@ -154,6 +154,10 @@ auto Vulkan::render() -> bool {
         // Wait for next step
         while(rdp.capture.stepMode.load() && rdp.capture.enabled.load() &&
               !rdp.capture.stepPending.load()) {
+          if(rsp.capture.requestClear.exchange(false, std::memory_order_acq_rel)) {
+            rsp.capture.committedCount.store(0, std::memory_order_release);
+            rsp.capture.writePos.store(0, std::memory_order_release);
+          }
           usleep(2000);
         }
       }

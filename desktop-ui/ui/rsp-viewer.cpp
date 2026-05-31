@@ -98,6 +98,55 @@ auto DrawRspViewer() -> void {
     } else {
       steppingHeld = false;
     }
+
+    // Clear button — wipes the RSP command buffer immediately.
+    ImGui::SameLine();
+    if(ImGui::Button("Clear")) {
+      cap.requestClear.store(true, std::memory_order_release);
+    }
+
+    // "Run until next Sync_Full" — auto-steps one RSP command per frame
+    // until an RDP Sync_Full (0x29) appears, or 100 VI swaps (safety cap).
+    ImGui::SameLine();
+    static bool autoRun = false;
+    static u32 autoRunLastWritePos = 0;
+    static u32 autoRunStartRdpPos = 0;
+    static u32 autoRunViCount = 0;
+    static u32 autoRunLastViAddr = 0;
+    if(ImGui::Button(autoRun ? "Stop" : "Run >|")) {
+      if(autoRun) {
+        autoRun = false;
+      } else {
+        autoRun = true;
+        autoRunLastWritePos = cap.writePos.load(std::memory_order_acquire);
+        autoRunStartRdpPos = ares::Nintendo64::rdp.capture.writePos.load(std::memory_order_acquire);
+        autoRunViCount = 0;
+        autoRunLastViAddr = (u32)ares::Nintendo64::vi.io.dramAddress;
+        program.stepSequence++;
+        cap.stepPending.store(true, std::memory_order_release);
+      }
+    }
+    if(autoRun) {
+      u32 wp = cap.writePos.load(std::memory_order_acquire);
+      if(wp > autoRunLastWritePos) {
+        autoRunLastWritePos = wp;
+        u32 va = (u32)ares::Nintendo64::vi.io.dramAddress;
+        if(va && va != autoRunLastViAddr) { autoRunLastViAddr = va; autoRunViCount++; }
+        // Stop if a Sync_Full (0x29) appeared since we started.
+        auto& rdpCap = ares::Nintendo64::rdp.capture;
+        u32 rdpEnd = rdpCap.writePos.load(std::memory_order_acquire);
+        bool found = false;
+        for(u32 i = autoRunStartRdpPos; i < rdpEnd; i++) {
+          if(rdpCap.commands[i % ares::Nintendo64::RDPCapture::maxCommands].opcode == 0x29) { found = true; break; }
+        }
+        if(found || autoRunViCount >= 100) {
+          autoRun = false;
+        } else {
+          program.stepSequence++;
+          cap.stepPending.store(true, std::memory_order_release);
+        }
+      }
+    }
   }
 
   // Step mode indicator for display logic. We react to *either* stepper (RSP or
