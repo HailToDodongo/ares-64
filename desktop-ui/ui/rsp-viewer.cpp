@@ -258,7 +258,9 @@ auto DrawRspViewer() -> void {
     ImGui::TableNextRow();
 
     ImGui::TableNextColumn();
+    ImGui::PushFont(monoFont);
     ImGui::Text("%u", row);
+    ImGui::PopFont();
 
     ImGui::TableNextColumn();
     // cmd.cycle is in RCP master-clock ticks. In ares the RSP advances the shared
@@ -273,7 +275,8 @@ auto DrawRspViewer() -> void {
     } else {
       snprintf(timeBuf, sizeof(timeBuf), "%llu", (unsigned long long)cmd.cycle);
     }
-    // Right-align within the column (monospaced digits for clean numeric display).
+    // Right-align within the column. Monospaced so decimal points align.
+    ImGui::PushFont(monoFont);
     float colW = ImGui::GetColumnWidth();
     ImVec2 textSz = ImGui::CalcTextSize(timeBuf);
     float pad = ImGui::GetStyle().ItemSpacing.x;
@@ -282,6 +285,7 @@ auto DrawRspViewer() -> void {
       ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "%s", timeBuf);
     else
       ImGui::Text("%s", timeBuf);
+    ImGui::PopFont();
 
     // Internal/overhead rows (loop dispatch, overlay load, buffer fetch) are not
     // real commands, so don't decode them as ovl 0 / cmd 0.
@@ -401,11 +405,13 @@ auto DrawRspViewer() -> void {
     f64 invTotal = totalTime ? 100.0 / (f64)totalTime : 0.0;
 
     auto numCell = [&](const char* text) {
+      ImGui::PushFont(monoFont);
       float colW = ImGui::GetColumnWidth();
       float tw = ImGui::CalcTextSize(text).x;
       float pad = ImGui::GetStyle().ItemSpacing.x;
       ImGui::SetCursorPosX(ImGui::GetCursorPosX() + colW - tw - pad);
       ImGui::TextUnformatted(text);
+      ImGui::PopFont();
     };
 
     static const char* ohNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};

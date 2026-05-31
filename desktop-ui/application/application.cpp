@@ -1,5 +1,6 @@
 #include "application.hpp"
 #include "../ui/log.hpp"
+#include "../ui/ui.hpp"
 
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
@@ -154,6 +155,14 @@ auto AresApp::initialize() -> bool {
     nall::string fontPath = {basePath, "Altinn-DINExp.ttf"};
     auto imguiFont = io.Fonts->AddFontFromFileTTF(fontPath.data(), fontSize);
     assert(imguiFont);
+
+    // Monospaced font for numeric columns in viewer tables.
+    float monoSize = 16.0f * dpiScale;
+    nall::string monoPath = {basePath, "GoogleSansCode.ttf"};
+    ares::ui::monoFont = io.Fonts->AddFontFromFileTTF(monoPath.data(), monoSize);
+    if(!ares::ui::monoFont) {
+      ares::ui::monoFont = imguiFont;  // fallback to proportional
+    }
   }
 
   running = true;

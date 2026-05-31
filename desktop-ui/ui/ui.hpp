@@ -5,6 +5,8 @@
 
 namespace ares::ui {
 
+extern ImFont* monoFont;  // monospaced font for numeric columns
+
 auto DrawMainMenuBar() -> void;
 auto DrawMenuBar() -> void;
 auto DrawViewport() -> void;

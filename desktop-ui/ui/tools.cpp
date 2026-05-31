@@ -4,6 +4,8 @@
 
 namespace ares::ui {
 
+ImFont* monoFont = nullptr;
+
 bool showManifestViewer = false;
 bool showCheatEditor = false;
 bool showTracerViewer = false;

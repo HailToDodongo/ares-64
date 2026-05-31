@@ -36,7 +36,7 @@ auto DrawMemoryViewer() -> void {
   if(!showMemoryViewer) return;
 
   ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
-  if(!ImGui::Begin("Memory Viewer", &showMemoryViewer)) {
+  if(!ImGui::Begin("Memory Editor", &showMemoryViewer)) {
     ImGui::End();
     settings.general.showMemoryViewer = false;
     return;
@@ -98,7 +98,9 @@ auto DrawMemoryViewer() -> void {
   const int bytesPerRow = 16;
   u32 totalRows = (memSize + bytesPerRow - 1) / bytesPerRow;
 
+  ImGui::PushFont(monoFont);
   float glyph = ImGui::CalcTextSize("F").x;
+  ImGui::PopFont();
   float addrCol = glyph * 10.0f;                 // "00000000: "
   float byteW = glyph * 3.0f;                    // "FF "
   float groupGap = glyph * 1.0f;                 // extra gap between the two 8-byte halves
@@ -120,10 +122,13 @@ auto DrawMemoryViewer() -> void {
       for(int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
         u32 rowAddr = (u32)row * bytesPerRow;
 
+        ImGui::PushFont(monoFont);
         ImGui::Text("%08X:", rowAddr);
+        ImGui::PopFont();
 
-        // Hex byte cells
+        // Hex byte cells — monospaced so columns stay aligned.
         char ascii[bytesPerRow + 1];
+        ImGui::PushFont(monoFont);
         for(int c = 0; c < bytesPerRow; c++) {
           u32 addr = rowAddr + c;
           if(addr >= memSize) { ascii[c] = 0; break; }
@@ -170,11 +175,14 @@ auto DrawMemoryViewer() -> void {
           }
           ImGui::PopID();
         }
+        ImGui::PopFont();
         ascii[bytesPerRow] = 0;
 
-        // ASCII column
+        // ASCII column (monospaced so characters align with hex above).
         ImGui::SameLine(asciiCol);
+        ImGui::PushFont(monoFont);
         ImGui::TextUnformatted(ascii);
+        ImGui::PopFont();
       }
     }
     clipper.End();

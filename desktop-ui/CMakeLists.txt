@@ -84,6 +84,9 @@ add_custom_command(TARGET desktop-ui POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/resource/Altinn-DINExp.ttf"
     "$<TARGET_FILE_DIR:desktop-ui>/Altinn-DINExp.ttf"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/resource/GoogleSansCode.ttf"
+    "$<TARGET_FILE_DIR:desktop-ui>/GoogleSansCode.ttf"
   COMMAND ${CMAKE_COMMAND} -E make_directory
     "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
