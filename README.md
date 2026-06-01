@@ -19,18 +19,24 @@ Additional features include (checkout the 'tools' menu):
   - Color / Coverage / Depth
   - Depth range can be tuned
   - Depth Histogram
+  - Overdraw heatmap for depth/color
 - RDP logging + single stepping
   - stepping updates the framebuffer in realtime
 - RSP logging + single stepping (libdragon only)
   - stepping updates the framebuffer in realtime
   - supported commands can be decoded into readable arguments
   - metrics to measure RSP times
+- TMEM viewer with tile preview
 - Memory viewer and editor
 - Audio visualizer
+- rendering via ParallelRDP and angrylion (swappable mid-game)
+- SD/HD/UHD for ParallelRDP changable mid-game
 - UI that can be freely organized and is saved across starts
 
 For single stepping, use the hotkey for frame-advance after pausing emulation.<br>
 In the top-right you are also given the option what stepping mode is currently active.
+
+Some features are only available with angrylion, you can select the renderer in the top-right.
 
 # Build
 
@@ -89,6 +95,8 @@ For anything UI, imgui is used, so native UI toolkits are no longer needed.
 The `hiro` code is completely deleted, `ruby` is only a few small wrappers around SDL3.<br>
 In general, large portions of now unused code have been removed.
 
+Rendering is now supported via ParallelRDP or angrylion, which can be changed while the game is running.
+
 Keep in mind this project is still very much WIP, so many parts are still left-over and not removed yet (mostly options in UIs).
 
 ## Why so many changes?
@@ -123,3 +131,8 @@ The upstream remote must be setup and be called `origin`, this repo here must be
 After that just run: `./scripts/pull-upstream.sh`.<br>
 On either success or conflict, it will give further logging.
 
+## Modified Repos
+
+This project uses a modified and directly embedded version of angrylion.
+The specific repo it is based on is: <https://github.com/Thar0/angrylion-rdp-plus>
+Nothing of the rendering was changed, only new things added to capture metrics.
