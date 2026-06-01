@@ -96,11 +96,6 @@ auto Screen::setViewport(u32 x, u32 y, u32 width, u32 height) -> void {
   _viewportHeight = height;
 }
 
-auto Screen::setOverscan(bool overscan) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _overscan = overscan;
-}
-
 auto Screen::setSize(u32 width, u32 height) -> void {
   lock_guard<recursive_mutex> lock(_mutex);
   _width  = width;
@@ -119,45 +114,9 @@ auto Screen::setAspect(f64 aspectX, f64 aspectY) -> void {
   _aspectY = aspectY;
 }
 
-auto Screen::setSaturation(f64 saturation) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _saturation = saturation;
-  _palette.reset();
-  refreshPalette();
-}
-
-auto Screen::setGamma(f64 gamma) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _gamma = gamma;
-  _palette.reset();
-  refreshPalette();
-}
-
-auto Screen::setLuminance(f64 luminance) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _luminance = luminance;
-  _palette.reset();
-  refreshPalette();
-}
-
 auto Screen::setFillColor(u32 fillColor) -> void {
   lock_guard<recursive_mutex> lock(_mutex);
   _fillColor = fillColor;
-}
-
-auto Screen::setColorBleed(bool colorBleed) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _colorBleed = colorBleed;
-}
-
-auto Screen::setColorBleedWidth(u32 width) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _colorBleedWidth = width;
-}
-
-auto Screen::setInterframeBlending(bool interframeBlending) -> void {
-  lock_guard<recursive_mutex> lock(_mutex);
-  _interframeBlending = interframeBlending;
 }
 
 auto Screen::setRotation(u32 rotation) -> void {
@@ -214,6 +173,11 @@ auto Screen::frame() -> void {
   }
 }
 
+auto Screen::runExclusive(std::function<void ()> callback) -> void {
+  lock_guard<recursive_mutex> lock(_mutex);
+  if(callback) callback();
+}
+
 auto Screen::refresh() -> void {
   lock_guard<recursive_mutex> lock(_mutex);
   if(runAhead()) return;
@@ -261,33 +225,10 @@ auto Screen::refresh() -> void {
         auto color = _palette[*source++];
         *target++ = color;
       }
-    } else if(_interframeBlending) {
-      n32 mask = 1 << 24 | 1 << 16 | 1 << 8 | 1 << 0;
-      for(u32 x : range(width)) {
-        auto a = *target;
-        auto b = _palette[*source++];
-        *target++ = (a + b - ((a ^ b) & mask)) >> 1;
-      }
     } else {
       for(u32 x : range(width)) {
         auto color = _palette[*source++];
         *target++ = color;
-      }
-    }
-  }
-
-  if (_colorBleed) {
-    n32 mask = 1 << 24 | 1 << 16 | 1 << 8 | 1 << 0;
-    for (u32 y : range(height)) {
-      auto target = output + y * width;
-      for (u32 x : range(0, width, _colorBleedWidth)) {
-        for (u32 offset = 0; offset < _colorBleedWidth && (x + offset) < width; ++offset) {
-          u32 next = x + _colorBleedWidth;
-          if (next + offset >= width) next = x;
-          auto a = target[x + offset];
-          auto b = target[next + offset];
-          target[x + offset] = (a + b - ((a ^ b) & mask)) >> 1;
-        }
       }
     }
   }
@@ -383,26 +324,6 @@ auto Screen::refreshPalette() -> void {
     n16 r = color.bit(32,47);
     n16 a = 65535;
 
-    if(_saturation != 1.0) {
-      n16 grayscale = uclamp<16>((r + g + b) / 3);
-      r = uclamp<16>(grayscale + (r - grayscale) * _saturation);
-      g = uclamp<16>(grayscale + (g - grayscale) * _saturation);
-      b = uclamp<16>(grayscale + (b - grayscale) * _saturation);
-    }
-
-    if(_gamma != 1.0) {
-      f64 reciprocal = 1.0 / 32767.0;
-      r = r > 32767 ? r : n16(32767 * pow(r * reciprocal, _gamma));
-      g = g > 32767 ? g : n16(32767 * pow(g * reciprocal, _gamma));
-      b = b > 32767 ? b : n16(32767 * pow(b * reciprocal, _gamma));
-    }
-
-    if(_luminance != 1.0) {
-      r = uclamp<16>(r * _luminance);
-      g = uclamp<16>(g * _luminance);
-      b = uclamp<16>(b * _luminance);
-    }
-
     a >>= 8;
     r >>= 8;
     g >>= 8;
@@ -421,13 +342,8 @@ auto Screen::serialize(string& output, string depth) -> void {
   output.append(depth, "  aspectX: ", _aspectX, "\n");
   output.append(depth, "  aspectY: ", _aspectY, "\n");
   output.append(depth, "  colors: ", _colors, "\n");
-  output.append(depth, "  saturation: ", _saturation, "\n");
-  output.append(depth, "  gamma: ", _gamma, "\n");
-  output.append(depth, "  luminance: ", _luminance, "\n");
   output.append(depth, "  fillColor: ", _fillColor, "\n");
-  output.append(depth, "  colorBleed: ", _colorBleed, "\n");
   output.append(depth, "  interlace: ", _interlace, "\n");
-  output.append(depth, "  interframeBlending: ", _interframeBlending, "\n");
   output.append(depth, "  rotation: ", _rotation, "\n");
 }
 
@@ -440,13 +356,8 @@ auto Screen::unserialize(Markup::Node node) -> void {
   _aspectX = node["aspectX"].real();
   _aspectY = node["aspectY"].real();
   _colors = node["colors"].natural();
-  _saturation = node["saturation"].real();
-  _gamma = node["gamma"].real();
-  _luminance = node["luminance"].real();
   _fillColor = node["fillColor"].natural();
-  _colorBleed = node["colorBleed"].boolean();
   _interlace = node["interlace"].natural();
-  _interframeBlending = node["interframeBlending"].boolean();
   _rotation = node["rotation"].natural();
   resetPalette();
   resetSprites();

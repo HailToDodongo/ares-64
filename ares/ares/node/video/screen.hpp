@@ -16,17 +16,10 @@ struct Screen : Video {
   auto scaleY() const -> f64 { return _scaleY; }
   auto aspectX() const -> f64 { return _aspectX; }
   auto aspectY() const -> f64 { return _aspectY; }
-  auto overscan() const -> bool { return _overscan; }
   auto colors() const -> u32 { return _colors; }
   auto pixels(bool frame = 0) -> std::span<u32>;
 
-  auto saturation() const -> double { return _saturation; }
-  auto gamma() const -> double { return _gamma; }
-  auto luminance() const -> double { return _luminance; }
-
   auto fillColor() const -> u32 { return _fillColor; }
-  auto colorBleed() const -> bool { return _colorBleed; }
-  auto interframeBlending() const -> bool { return _interframeBlending; }
   auto rotation() const -> u32 { return _rotation; }
 
   auto resetPalette() -> void;
@@ -40,16 +33,8 @@ struct Screen : Video {
   auto setSize(u32 width, u32 height) -> void;
   auto setScale(f64 scaleX, f64 scaleY) -> void;
   auto setAspect(f64 aspectX, f64 aspectY) -> void;
-  auto setOverscan(bool overscan) -> void;
-
-  auto setSaturation(f64 saturation) -> void;
-  auto setGamma(f64 gamma) -> void;
-  auto setLuminance(f64 luminance) -> void;
 
   auto setFillColor(u32 fillColor) -> void;
-  auto setColorBleed(bool colorBleed) -> void;
-  auto setColorBleedWidth(u32 width) -> void;
-  auto setInterframeBlending(bool interframeBlending) -> void;
   auto setRotation(u32 rotation) -> void;
 
   auto setProgressive(bool progressiveDouble = false) -> void;
@@ -61,6 +46,9 @@ struct Screen : Video {
   auto colors(u32 colors, std::function<n64 (n32)> color) -> void;
   auto frame() -> void;
   auto refresh() -> void;
+  //run a callback while holding the refresh mutex, so callers can mutate state the
+  //screen thread reads (e.g. swapping the RDP renderer) without racing refresh().
+  auto runExclusive(std::function<void ()>) -> void;
   auto lookupPalette(u32 index) -> u32;
   auto overrideLineDraw(u32 y, const u32* source) -> void;
   auto clearOverrideLineDraw(u32 y) -> void;
@@ -81,14 +69,7 @@ protected:
   f64  _aspectX = 1.0;
   f64  _aspectY = 1.0;
   u32  _colors = 0;
-  f64  _saturation = 1.0;
-  f64  _gamma = 1.0;
-  f64  _luminance = 1.0;
   u32  _fillColor = 0;
-  bool _colorBleed = false;
-  u32  _colorBleedWidth = 1;
-  bool _interframeBlending = false;
-  bool _overscan = true;
   u32  _rotation = 0;  //counter-clockwise (90 = left, 270 = right)
 
   std::function<n64 (n32)> _color;

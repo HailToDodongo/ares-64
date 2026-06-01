@@ -1,17 +1,17 @@
 static const char* formatNames[] = {"RGBA","YUV","CI","IA","I","I","I","I"};
 static const char* sizeNames[]  = {"4bpp","8bpp","16bpp","32bpp"};
 static const char* cycleNames[] = {"1cycle","2cycle","Copy","Fill"};
-static const char* zModeNames[] = {"Opaque","Interpenetrating","Transparent","Decal"};
+static const char* zModeNames[] = {"Opaque","Interpen.","Transp.","Decal"};
 
 // Color Combiner parameter names (from wiki)
-static const char* ccRGB_A[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","1","NOISE", "0"};
-static const char* ccRGB_B[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","CENTER","K4", "0"};
-static const char* ccRGB_C[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","SCALE","COMBINED_ALPHA","TEX0_ALPHA","TEX1_ALPHA","PRIMITIVE_ALPHA","SHADE_ALPHA","ENVIRONMENT_ALPHA","LOD_FRACTION","PRIM_LOD_FRAC","K5", "0"};
-static const char* ccRGB_D[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","1","0", "0"};
-static const char* ccAlpha_A[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","1","0"};
-static const char* ccAlpha_B[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","1","0"};
-static const char* ccAlpha_C[] = {"LOD_FRACTION","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","PRIM_LOD_FRAC","0"};
-static const char* ccAlpha_D[] = {"COMBINED","TEX0","TEX1","PRIMITIVE","SHADE","ENVIRONMENT","1","0"};
+static const char* ccRGB_A[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","1","NOISE", "0"};
+static const char* ccRGB_B[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","CENTER","K4", "0"};
+static const char* ccRGB_C[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","SCALE","COMBINED_ALPHA","TEX0_ALPHA","TEX1_ALPHA","PRIM_ALPHA","SHADE_ALPHA","ENV_ALPHA","LOD_FRAC","PRIM_LOD_FRAC","K5", "0"};
+static const char* ccRGB_D[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","1","0", "0"};
+static const char* ccAlpha_A[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","1","0"};
+static const char* ccAlpha_B[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","1","0"};
+static const char* ccAlpha_C[] = {"LOD_FRAC","TEX0","TEX1","PRIM","SHADE","ENV","PRIM_LOD_FRAC","0"};
+static const char* ccAlpha_D[] = {"COMBINED","TEX0","TEX1","PRIM","SHADE","ENV","1","0"};
 
 static auto ccName(const char** table, u32 val, u32 max) -> const char* {
   if(val >= max) return table[max - 1];
@@ -126,10 +126,11 @@ auto rdpCommandDescription(u8 opcode, u64 w0) -> string {
             " | ", hex(u(8,7,0), 2L)};
 
   case 0x3c: { // Set_Combine_Mode
-    u32 a0  = u(4,55,52), c0  = u(5,52,47), Aa0 = u(3,46,44), Ac0 = u(3,43,41);
-    u32 b0  = u(4,39,36), d0  = u(3,18,15), Ab0 = u(3,14,12), Ad0 = u(3,11,9);
-    u32 a1  = u(4,30,27), c1  = u(5,37,32), Aa1 = u(3,23,21), Ac1 = u(3,20,18);
-    u32 b1  = u(4,26,23), d1  = u(3,8,6),   Ab1 = u(3,5,3),   Ad1 = u(3,2,0);
+    //Bit layout per the RDP Set_Combine_Mode command (see parallel-rdp op_set_combine).
+    u32 a0  = u(4,55,52), c0  = u(5,51,47), Aa0 = u(3,46,44), Ac0 = u(3,43,41);
+    u32 b0  = u(4,31,28), d0  = u(3,17,15), Ab0 = u(3,14,12), Ad0 = u(3,11,9);
+    u32 a1  = u(4,40,37), c1  = u(5,36,32), Aa1 = u(3,23,21), Ac1 = u(3,20,18);
+    u32 b1  = u(4,27,24), d1  = u(3,8,6),   Ab1 = u(3,5,3),   Ad1 = u(3,2,0);
 
     return {"RGB: (", ccName(ccRGB_A, a0, 9), "-", ccName(ccRGB_B, b0, 9),
             ")*", ccName(ccRGB_C, c0, 17), "+", ccName(ccRGB_D, d0, 8),

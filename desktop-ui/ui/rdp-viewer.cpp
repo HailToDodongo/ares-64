@@ -67,6 +67,21 @@ auto DrawRdpViewer() -> void {
   if(count > cap.maxCommands) count = cap.maxCommands;
   ImGui::Text("Commands: %u", count);
 
+#if defined(ANGRYLION)
+  if(ares::Nintendo64::angrylion.enable) {
+    auto m = ares::Nintendo64::angrylion.metrics();
+    ImGui::SeparatorText("angrylion Metrics (last frame)");
+    u64 area = (u64)m.fbWidth * m.fbHeight;
+    f64 overdraw = area ? (f64)(m.pixelsDrawn + m.pixelsFilled) / (f64)area : 0.0;
+    ImGui::Text("Overdraw: %.2fx  (FB %ux%u)", overdraw, m.fbWidth, m.fbHeight);
+    ImGui::Text("Pixels  drawn: %llu   filled: %llu",
+      (unsigned long long)m.pixelsDrawn, (unsigned long long)m.pixelsFilled);
+    ImGui::Text("Triangles: %llu   Rects: %llu   TexLoads: %llu   Cmds: %llu",
+      (unsigned long long)m.triangles, (unsigned long long)m.rectangles,
+      (unsigned long long)m.textureLoads, (unsigned long long)m.totalCommands);
+  }
+#endif
+
   // React to *either* stepper (RDP or RSP): when the other one steps, new rows
   // may be appended here too, and we want to follow + highlight them just the same.
   bool anyStep = (ares::Nintendo64::rsp.capture.stepMode.load(std::memory_order_relaxed)

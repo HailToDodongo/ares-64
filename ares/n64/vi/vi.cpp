@@ -20,19 +20,27 @@ auto VI::load(Node::Object parent) -> void {
   u32 height = 576;
 
   #if defined(VULKAN)
-  if (vulkan.enable) {
-    width *= vulkan.outputUpscale;
-    height *= vulkan.outputUpscale;
-  }
+  //Size the canvas for the maximum upscale (UHD = 4x), regardless of which renderer
+  //or quality is initially selected. This lets us change upscale quality at runtime
+  //(and switch between paraLLEl-RDP and angrylion) without reallocating the screen
+  //buffers: lower-quality modes and angrylion simply render into the top-left
+  //native-resolution region of the larger canvas.
+  width  *= 4;
+  height *= 4;
   #endif
   screen = node->append<Node::Video::Screen>("Screen", width, height);
   screen->setRefresh(std::bind_front(&VI::refresh, this));
   screen->refreshRateHint(Region::PAL() ? 50 : 60);
-  // With Vulkan, parallel-RDP outputs RGBA directly; no palette conversion needed.
-  // Without Vulkan, the software RDP needs a color lookup table.
+  // GPU/CPU accelerated renderers (parallel-RDP, angrylion) output RGBA directly;
+  // no palette conversion needed. The built-in software VI needs a color lookup table.
+  bool acceleratedRenderer = false;
   #if defined(VULKAN)
-  if(!vulkan.enable)
+  if(vulkan.enable) acceleratedRenderer = true;
   #endif
+  #if defined(ANGRYLION)
+  if(angrylion.enable) acceleratedRenderer = true;
+  #endif
+  if(!acceleratedRenderer)
   {
     screen->colors((1 << 24) + (1 << 15), [&](n32 color) -> n64 {
       if(color < (1 << 24)) {
@@ -51,20 +59,7 @@ auto VI::load(Node::Object parent) -> void {
     });
   }
   
-  int videoHeight = Region::PAL() ? 576 : 480;
-
-  #if defined(VULKAN)
-  if(vulkan.enable) {
-    screen->setSize(vulkan.outputUpscale * 640, vulkan.outputUpscale * videoHeight);
-    if(!vulkan.supersampleScanout) {
-      screen->setScale(1.0 / vulkan.outputUpscale, 1.0 / vulkan.outputUpscale);
-    }
-  } else {
-    screen->setSize(640, videoHeight);
-  }
-  #else
-  screen->setSize(640, videoHeight);
-  #endif
+  configureScreenOutput();
 
   // Pedantic N64 NTSC aspect ratio is 120:119, but let's keep 120:120 to avoid slight scaling.
   // Pedantic N64 PAL aspect ratio is 5900000:4965653, but let's use 12:10 to achieve the
@@ -81,6 +76,87 @@ auto VI::unload() -> void {
   node.reset();
 }
 
+auto VI::configureScreenOutput() -> void {
+  if(!screen) return;
+  int videoHeight = Region::PAL() ? 576 : 480;
+
+  #if defined(VULKAN)
+  if(vulkan.enable) {
+    screen->setSize(vulkan.outputUpscale * 640, vulkan.outputUpscale * videoHeight);
+    if(!vulkan.supersampleScanout) {
+      screen->setScale(1.0 / vulkan.outputUpscale, 1.0 / vulkan.outputUpscale);
+    } else {
+      screen->setScale(1.0, 1.0);
+    }
+    return;
+  }
+  #endif
+
+  //angrylion / software: native resolution, no downscale.
+  screen->setSize(640, videoHeight);
+  screen->setScale(1.0, 1.0);
+}
+
+auto VI::replayRegisters() -> void {
+  //Reconstruct each VI register word from the live io state (the inverse of the
+  //readWord decode) and push it to the active backend. VI_V_CURRENT_LINE (reg 4) is a
+  //write-to-acknowledge register with no persistent state (the field is re-primed each
+  //scanout), so it is omitted.
+  n32 reg[14] = {};
+
+  reg[0].bit( 0, 1) = io.colorDepth;       //VI_CONTROL
+  reg[0].bit( 2)    = io.gammaDither;
+  reg[0].bit( 3)    = io.gamma;
+  reg[0].bit( 4)    = io.divot;
+  reg[0].bit( 5)    = io.reserved.bit(5);
+  reg[0].bit( 6)    = io.serrate;
+  reg[0].bit( 7)    = io.reserved.bit(7);
+  reg[0].bit( 8, 9) = io.antialias;
+  reg[0].bit(10,15) = io.reserved.bit(10,15);
+
+  reg[1].bit(0,23)  = io.dramAddress;      //VI_DRAM_ADDRESS
+  reg[2].bit(0,11)  = io.width;            //VI_H_WIDTH
+  reg[3].bit(0, 9)  = io.coincidence;      //VI_V_INTR
+
+  reg[5].bit( 0, 7) = io.hsyncWidth;       //VI_TIMING
+  reg[5].bit( 8,15) = io.colorBurstWidth;
+  reg[5].bit(16,19) = io.vsyncWidth;
+  reg[5].bit(20,29) = io.colorBurstHsync;
+
+  reg[6].bit(0, 9)  = io.halfLinesPerField; //VI_V_SYNC
+
+  reg[7].bit( 0,11) = io.quarterLineDuration; //VI_H_SYNC
+  reg[7].bit(16,20) = io.leapPattern;
+
+  reg[8].bit( 0,11) = io.hsyncLeap[0];     //VI_H_SYNC_LEAP
+  reg[8].bit(16,27) = io.hsyncLeap[1];
+
+  reg[9].bit( 0, 9) = io.hend;             //VI_H_VIDEO
+  reg[9].bit(16,25) = io.hstart;
+
+  reg[10].bit( 0, 9) = io.vend;            //VI_V_VIDEO
+  reg[10].bit(16,25) = io.vstart;
+
+  reg[11].bit( 0, 9) = io.colorBurstEnd;   //VI_V_BURST
+  reg[11].bit(16,25) = io.colorBurstStart;
+
+  reg[12].bit( 0,11) = io.xscale;          //VI_X_SCALE
+  reg[12].bit(16,27) = io.xsubpixel;
+
+  reg[13].bit( 0,11) = io.yscale;          //VI_Y_SCALE
+  reg[13].bit(16,27) = io.ysubpixel;
+
+  for(u32 address : range(14)) {
+    if(address == 4) continue;
+    #if defined(VULKAN)
+    if(vulkan.enable) vulkan.writeWord(address, reg[address]);
+    #endif
+    #if defined(ANGRYLION)
+    if(angrylion.enable) angrylion.writeWord(address, reg[address]);
+    #endif
+  }
+}
+
 auto VI::main() -> void {
   while(Thread::clock < 0) {
     if(active()) {
@@ -94,6 +170,11 @@ auto VI::main() -> void {
         if (vulkan.enable) {
           gpuOutputValid = vulkan.scanoutAsync(io.field);
           vulkan.frame();
+        }
+        #endif
+        #if defined(ANGRYLION)
+        if (angrylion.enable) {
+          gpuOutputValid = angrylion.scanout(io.field);
         }
         #endif
         refreshed = true;
@@ -153,7 +234,7 @@ auto VI::refresh() -> void {
         // Otherwise proceed as normal
         if(io.serrate == 1 && vulkan.weaveDeinterlacing && !vulkan.supersampleScanout) y_fix = (y % 2 == 0)? y+1 : y-1; // Swap each even/odd line
         auto source = rgba + width * y_fix * sizeof(u32);
-        auto target = screen->pixels(1).data() + y * vulkan.outputUpscale * 640;
+        auto target = screen->pixels(1).data() + (u64)y * screen->canvasWidth();
         for(u32 x : range(width)) {
           target[x] = source[x * 4 + 0] << 16 | source[x * 4 + 1] << 8 | source[x * 4 + 2] << 0;
         }
@@ -165,6 +246,31 @@ auto VI::refresh() -> void {
     vulkan.unmapScanoutRead();
     vulkan.endScanout();
 
+    if(Model::Aleck64()) aleck64.vdp.render(screen); //aleck64 supports overlay graphics
+    return;
+  }
+  #endif
+
+  #if defined(ANGRYLION)
+  if(angrylion.enable && gpuOutputValid) {
+    const u8* rgba = nullptr;
+    u32 width = 0, height = 0, pitch = 0;
+    if(angrylion.frame(rgba, width, height, pitch)) {
+      screen->setViewport(0, 0, width, height);
+      //the canvas may be allocated larger than native res (sized for Vulkan upscale);
+      //angrylion renders at 1x into the top-left region, so stride by the canvas width.
+      u32 canvasPitch = screen->canvasWidth();
+      for(u32 y : range(height)) {
+        auto source = rgba + (u64)y * pitch * sizeof(u32);
+        auto target = screen->pixels(1).data() + (u64)y * canvasPitch;
+        for(u32 x : range(width)) {
+          target[x] = source[x * 4 + 0] << 16 | source[x * 4 + 1] << 8 | source[x * 4 + 2] << 0;
+        }
+      }
+    } else {
+      screen->setViewport(0, 0, 1, 1);
+      screen->pixels(1).data()[0] = 0;
+    }
     if(Model::Aleck64()) aleck64.vdp.render(screen); //aleck64 supports overlay graphics
     return;
   }

@@ -438,6 +438,35 @@ target_include_directories(
 
 target_compile_options(ares PRIVATE $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-newline-eof>)
 
+# angrylion-rdp-plus: alternative CPU RDP renderer (see docs/angrylion-renderer-integration-plan.md)
+target_enable_feature(ares "N64 angrylion-rdp-plus CPU rendering" ANGRYLION)
+target_compile_definitions(ares PUBLIC ANGRYLION)
+
+# The vendored angrylion core lives outside ares/, so build it as its own static
+# library (keeps it out of ares' source_group TREE and isolates the C code).
+# n64video.c pulls in rdp.c/vi.c as a single translation unit; parallel.cpp is its worker pool.
+set(_angrylion_root ${CMAKE_SOURCE_DIR}/thirdparty/angrylion-rdp-plus/src/core)
+add_library(angrylion-rdp-plus STATIC
+  ${_angrylion_root}/n64video.c
+  ${_angrylion_root}/parallel.cpp
+)
+set_target_properties(angrylion-rdp-plus PROPERTIES
+  C_STANDARD 11
+  POSITION_INDEPENDENT_CODE ON
+)
+# Enable the per-pixel/per-command metric counters (overdraw etc.).
+target_compile_definitions(angrylion-rdp-plus PRIVATE N64VIDEO_METRICS)
+target_include_directories(angrylion-rdp-plus PUBLIC ${_angrylion_root})
+target_link_libraries(ares PUBLIC angrylion-rdp-plus)
+
+# The ares-side adapter + logging shim (these live under ares/, so they go through
+# the normal core source handling).
+if(ARES_UNITY_CORES)
+  ares_add_sources(CORE n64 UNITY angrylion/angrylion.cpp angrylion/angrylion.hpp angrylion/msg.cpp)
+else()
+  ares_add_sources(CORE n64 PRIMARY angrylion/angrylion.cpp angrylion/angrylion.hpp angrylion/msg.cpp)
+endif()
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(ares PUBLIC Threads::Threads)

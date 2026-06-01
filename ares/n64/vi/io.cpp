@@ -104,6 +104,10 @@ auto VI::writeWord(u32 address, u32 data_, Thread& thread) -> void {
   if (vulkan.enable) vulkan.writeWord(address, data);
   #endif
 
+  #if defined(ANGRYLION)
+  if (angrylion.enable) angrylion.writeWord(address, data);
+  #endif
+
   if(address == 0) {
     //VI_CONTROL
     io.colorDepth          = data.bit( 0, 1);

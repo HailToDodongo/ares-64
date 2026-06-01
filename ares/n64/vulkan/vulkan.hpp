@@ -21,7 +21,7 @@ struct Vulkan {
   struct Implementation;
   Implementation* implementation = nullptr;
 
-  bool enable = true;
+  std::atomic<bool> enable = true;
   bool disableVideoInterfaceProcessing = false;
   bool weaveDeinterlacing = false;
   u32  internalUpscale = 1;  //1, 2, 4, 8

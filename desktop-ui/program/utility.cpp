@@ -16,21 +16,6 @@ auto Program::mute() -> void {
   if(!_imguiMode) presentation.muteAudioSetting.setChecked(settings.audio.mute);
 }
 
-auto Program::paletteUpdate() -> void {
-  // N64 screen has 16.8M colors; each set* call triggers refreshPalette()
-  // which regenerates the entire lookup table. Skip when defaults (1.0) are used.
-  if(settings.video.luminance == 1.0 && settings.video.saturation == 1.0 && settings.video.gamma == 1.0) return;
-
-  Program::Guard guard;
-  if(!emulator) return;
-  if(!emulator->root) return;
-  for(auto& screen : emulator->root->find<ares::Node::Video::Screen>()) {
-    screen->setLuminance(settings.video.luminance);
-    screen->setSaturation(settings.video.saturation);
-    screen->setGamma(settings.video.gamma);
-  }
-}
-
 auto Program::runAheadUpdate() -> void {
   Program::Guard guard;
   runAhead = settings.general.runAhead;

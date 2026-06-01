@@ -60,6 +60,11 @@ auto Vulkan::load(Node::Object) -> bool {
       platform->status("Vulkan Enabled: using paraLLEl-RDP");
     }
   } else {
+    #if defined(ANGRYLION)
+    //angrylion (loaded right after this) provides rendering instead; stay quiet so it
+    //isn't reported as "no RDP rendering support".
+    if(!angrylion.enable)
+    #endif
     platform->status("Vulkan Disabled: No RDP rendering support");
   }
 

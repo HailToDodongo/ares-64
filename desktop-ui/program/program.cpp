@@ -155,6 +155,11 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
                      && program.stepType == Program::StepType::Frame
                      && emulator && emulator->name == "Nintendo 64";
     u32 stepStartAddr = n64FrameStep ? (u32)ares::Nintendo64::vi.io.dramAddress : 0;
+
+    //Apply a pending RDP renderer hot-swap at the frame boundary (no-op unless an N64
+    //system is loaded and a switch was requested from the UI).
+    ares::Nintendo64::system.applyPendingRenderer();
+
     runOneFrame();
     if(n64FrameStep) {
       for(u32 i = 1; i < 100 && (u32)ares::Nintendo64::vi.io.dramAddress == stepStartAddr; i++) {

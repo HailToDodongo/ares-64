@@ -34,6 +34,16 @@ auto option(string name, string value) -> bool {
   if(vulkan.internalUpscale == 1) vulkan.supersampleScanout = false;
   vulkan.outputUpscale = vulkan.supersampleScanout ? 1 : vulkan.internalUpscale;
   #endif
+  #if defined(ANGRYLION)
+  //Renderer selection. "Enable GPU acceleration" (above) turns Vulkan on; picking
+  //angrylion here overrides it. The two backends are mutually exclusive.
+  if(name == "RDP Renderer") {
+    angrylion.enable = value == "angrylion";
+    #if defined(VULKAN)
+    if(angrylion.enable) vulkan.enable = false;
+    #endif
+  }
+  #endif
   if(name == "Homebrew Mode") system.homebrewMode = value.boolean();
   if(name == "Recompiler") {
     if constexpr(Accuracy::CPU::Recompiler) {
@@ -81,9 +91,87 @@ auto System::game() -> string {
 auto System::run() -> void {
   if(_vulkanNeedsLoad) {
     vulkan.load(node);
+    #if defined(ANGRYLION)
+    angrylion.load(node);
+    #endif
     _vulkanNeedsLoad = false;
   }
   cpu.main();
+}
+
+auto System::requestRenderer(Renderer renderer) -> void {
+  //Called from the UI thread: only record the request. The emu worker thread applies
+  //it at a frame boundary via applyPendingRenderer().
+  _pendingRenderer.store((s32)renderer, std::memory_order_release);
+}
+
+auto System::applyPendingRenderer() -> void {
+  if(_pendingRenderer.load(std::memory_order_acquire) < 0) return;
+  //Not ready yet (no system loaded, or backends not instantiated): leave the request
+  //pending so it applies once run() has loaded the renderers.
+  if(!node || _vulkanNeedsLoad) return;
+  s32 pending = _pendingRenderer.exchange(-1, std::memory_order_acq_rel);
+  if(pending < 0) return;
+  switchRenderer((Renderer)pending);
+}
+
+auto System::switchRenderer(Renderer renderer) -> void {
+  #if defined(ANGRYLION) && defined(VULKAN)
+  bool wantAngrylion = renderer == Renderer::Angrylion;
+  bool isReload = wantAngrylion == angrylion.enable.load(std::memory_order_relaxed);
+
+  //Don't switch while the RDP command viewer is single-stepping: both render paths
+  //block in a spin-loop there and the capture buffers are user-controlled.
+  if(rdp.capture.stepMode.load(std::memory_order_relaxed)) {
+    platform->status("Cannot switch RDP renderer while RDP stepping is active");
+    return;
+  }
+
+  //Perform the swap while holding the screen refresh mutex so the screen thread
+  //(VI::refresh) can't be mid-map into a backend we're about to unload.
+  vi.screen->runExclusive([&] {
+    if(vulkan.enable) vulkan.flush();  //finish in-flight GPU work before teardown
+
+    if(isReload) {
+      //Same renderer, different config (e.g. upscale quality): unload + reload
+      //so the backend picks up changed settings without toggling enable flags.
+      if(wantAngrylion) {
+        angrylion.unload();
+        angrylion.load(node);
+      } else {
+        vulkan.unload();
+        vulkan.load(node);
+        if(!vulkan.enable) {
+          //Vulkan failed to re-init: fall back to angrylion.
+          angrylion.enable = true;
+          angrylion.load(node);
+        }
+      }
+    } else if(wantAngrylion) {
+      vulkan.enable = false;
+      vulkan.unload();
+      angrylion.enable = true;
+      angrylion.load(node);
+    } else {
+      angrylion.enable = false;
+      angrylion.unload();
+      vulkan.enable = true;
+      vulkan.load(node);
+      if(!vulkan.enable) {
+        //Vulkan failed to initialize: fall back to angrylion.
+        angrylion.enable = true;
+        angrylion.load(node);
+      }
+    }
+
+    //the new backend missed every VI register written before it was enabled; re-prime
+    //it from the cached register state so geometry/format are correct immediately.
+    vi.replayRegisters();
+
+    vi.gpuOutputValid = false;   //discard the previous backend's last frame
+    vi.configureScreenOutput();  //update output size/scale for the new renderer
+  });
+  #endif
 }
 
 auto System::load(Node::System& root, string name) -> bool {
@@ -389,6 +477,9 @@ auto System::unload() -> void {
   vulkan.unload();
   _vulkanNeedsLoad = false;
   #endif
+  #if defined(ANGRYLION)
+  angrylion.unload();
+  #endif
   cartridgeSlot.unload();
   controllerPort1.unload();
   controllerPort2.unload();
@@ -439,6 +530,9 @@ auto System::power(bool reset) -> void {
   #if defined(VULKAN)
   vulkan.unload();
   _vulkanNeedsLoad = true;
+  #endif
+  #if defined(ANGRYLION)
+  angrylion.unload();
   #endif
   ai.power(reset);
   pi.power(reset);

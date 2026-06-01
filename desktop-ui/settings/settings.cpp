@@ -53,15 +53,7 @@ auto Settings::process(bool load) -> void {
   bind(string,  "Video/AspectCorrectionMode", video.aspectCorrection);
   bind(boolean, "Video/AdaptiveSizing", video.adaptiveSizing);
   bind(boolean, "Video/AutoCentering", video.autoCentering);
-  bind(real,    "Video/Luminance", video.luminance);
-  bind(real,    "Video/Saturation", video.saturation);
-  bind(real,    "Video/Gamma", video.gamma);
-  bind(boolean, "Video/ColorBleed", video.colorBleed);
-  bind(boolean, "Video/ColorEmulation", video.colorEmulation);
-  bind(boolean, "Video/DeepBlackBoost", video.deepBlackBoost);
-  bind(boolean, "Video/InterframeBlending", video.interframeBlending);
-  bind(boolean, "Video/Overscan", video.overscan);
-  bind(boolean, "Video/PixelAccuracy", video.pixelAccuracy);
+  bind(string,  "Video/Renderer", video.renderer);
   bind(string,  "Video/Quality", video.quality);
   bind(boolean, "Video/Supersampling", video.supersampling);
   bind(boolean, "Video/DisableVideoInterfaceProcessing", video.disableVideoInterfaceProcessing);
@@ -99,6 +91,7 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowRdpViewer", general.showRdpViewer);
   bind(boolean, "General/ShowRspViewer", general.showRspViewer);
   bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
+  bind(boolean, "General/ShowTmemViewer", general.showTmemViewer);
   bind(boolean, "General/ShowMemoryViewer", general.showMemoryViewer);
 
   bind(natural, "Rewind/Length", rewind.length);

@@ -51,7 +51,6 @@ struct Program : ares::Platform {
   //utility.cpp
   auto pause(bool) -> void;
   auto mute() -> void;
-  auto paletteUpdate() -> void;
   auto runAheadUpdate() -> void;
   auto captureScreenshot(const u32* data, u32 pitch, u32 width, u32 height) -> void;
   auto openFile(hiro::BrowserDialog&) -> string;

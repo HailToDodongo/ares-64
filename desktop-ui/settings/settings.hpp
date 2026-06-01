@@ -27,16 +27,7 @@ struct Settings : Markup::Node {
     bool adaptiveSizing = true;
     bool autoCentering = false;
 
-    f64 luminance = 1.0;
-    f64 saturation = 1.0;
-    f64 gamma = 1.0;
-    bool colorBleed = false;
-    bool colorEmulation = true;
-    bool deepBlackBoost = false;
-    bool interframeBlending = true;
-    bool overscan = true;
-    bool pixelAccuracy = false;
-
+    string renderer = "paraLLEl-RDP";  //N64 RDP renderer: "paraLLEl-RDP" or "angrylion"
     string quality = "SD";
     bool supersampling = false;
     bool disableVideoInterfaceProcessing = false;
@@ -83,6 +74,7 @@ struct Settings : Markup::Node {
     bool showRdpViewer = false;
     bool showRspViewer = false;
     bool showFramebufferViewer = false;
+    bool showTmemViewer = false;
     bool showMemoryViewer = false;
   } general;
 

@@ -132,11 +132,6 @@ auto Emulator::load(const string& location) -> bool {
   if(result != successful) {
     return false;
   }
-  setBoolean("Color Emulation", settings.video.colorEmulation);
-  setBoolean("Deep Black Boost", settings.video.deepBlackBoost);
-  setBoolean("Interframe Blending", settings.video.interframeBlending);
-  setOverscan(settings.video.overscan);
-  setColorBleed(settings.video.colorBleed);
 
   latch = {};
   root->power();
@@ -230,34 +225,6 @@ auto Emulator::refresh() -> void {
   }
 }
 
-auto Emulator::setBoolean(const string& name, bool value) -> bool {
-  Program::Guard guard;
-  if(auto node = root->scan<ares::Node::Setting::Boolean>(name)) {
-    node->setValue(value);  //setValue() will not call modify() if value has not changed;
-    node->modify(value);    //but that may prevent the initial setValue() from working
-    return true;
-  }
-  return false;
-}
-
-auto Emulator::setOverscan(bool value) -> bool {
-  Program::Guard guard;
-  if(auto screen = root->scan<ares::Node::Video::Screen>("Screen")) {
-    screen->setOverscan(value);
-    return true;
-  }
-  return false;
-}
-
-auto Emulator::setColorBleed(bool value) -> bool {
-  Program::Guard guard;
-  if(auto screen = root->scan<ares::Node::Video::Screen>("Screen")) {
-    screen->setColorBleed(screen->height() < 720 ? value : false);  //only apply to sub-HD content
-    return true;
-  }
-
-  return false;
-}
 
 auto Emulator::error(const string& text) -> void {
   program.error(text);

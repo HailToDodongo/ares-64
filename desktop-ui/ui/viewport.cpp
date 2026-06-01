@@ -2,6 +2,7 @@
 
 #include "../desktop-ui.hpp"
 #include "../application/application.hpp"
+#include <n64/n64.hpp>
 #include <cstdio>
 
 namespace ares::ui {
@@ -20,7 +21,20 @@ auto DrawViewport() -> void {
     auto avail = ImGui::GetContentRegionAvail();
     float statusH = program.message.text ? ImGui::GetTextLineHeight() + ImGui::GetStyle().ItemSpacing.y + 4 : 0;
     if(avail.x > 0 && avail.y > statusH) {
-      ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(avail.x, avail.y - statusH));
+      u32 outW = 0, outH = 0;
+      if(emulator) {
+        outW = emulator->latch.width;
+        outH = emulator->latch.height;
+      }
+      if(outW && outH) {
+        float scale = std::min((avail.y - statusH) / (float)outH, avail.x / (float)outW);
+        ImVec2 sz(outW * scale, outH * scale);
+        if(avail.x > sz.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - sz.x) * 0.5f);
+        if(avail.y - statusH > sz.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - statusH - sz.y) * 0.5f);
+        ImGui::Image((ImTextureID)(intptr_t)tex, sz);
+      } else {
+        ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(avail.x, avail.y - statusH));
+      }
     }
     if(program.message.text) {
       ImGui::Separator();

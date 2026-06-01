@@ -33,6 +33,10 @@ using v128 = __m128i;
   #endif
 #endif
 
+#if defined(ANGRYLION)
+  #include <n64/angrylion/angrylion.hpp>
+#endif
+
 // Include the GB core, we can use its cartridge emulation for Transfer Pak
 #if defined(CORE_GB)
 #include <gb/gb.hpp>

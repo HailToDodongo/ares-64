@@ -2,6 +2,7 @@
 
 #include "../desktop-ui.hpp"
 #include "../application/application.hpp"
+#include <n64/n64.hpp>
 
 namespace ares::ui {
 
@@ -16,31 +17,34 @@ static constexpr int panelCount = sizeof(panelNames) / sizeof(panelNames[0]);
 // --- Video panel ---
 
 static void DrawVideoPanel() {
-  ImGui::SeparatorText("Color Adjustment");
-  float lum = settings.video.luminance;
-  if(ImGui::SliderFloat("Luminance", &lum, 0.0f, 2.0f, "%.2f")) settings.video.luminance = lum;
-  float sat = settings.video.saturation;
-  if(ImGui::SliderFloat("Saturation", &sat, 0.0f, 2.0f, "%.2f")) settings.video.saturation = sat;
-  float gam = settings.video.gamma;
-  if(ImGui::SliderFloat("Gamma", &gam, 0.0f, 2.0f, "%.2f")) settings.video.gamma = gam;
-
-  ImGui::SeparatorText("Emulator Settings");
-  ImGui::Checkbox("Color Bleed", &settings.video.colorBleed);
-  ImGui::Checkbox("Color Emulation", &settings.video.colorEmulation);
-  ImGui::Checkbox("Deep Black Boost", &settings.video.deepBlackBoost);
-  ImGui::Checkbox("Interframe Blending", &settings.video.interframeBlending);
-  ImGui::Checkbox("Overscan", &settings.video.overscan);
-  ImGui::Checkbox("Pixel Accuracy", &settings.video.pixelAccuracy);
-
   ImGui::SeparatorText("Output");
+  // The N64 RDP renderer is selected live from the main menu bar (see drawRendererCombo).
+  bool angrylion = settings.video.renderer == "angrylion";
+  if(angrylion) ImGui::TextDisabled("angrylion is a CPU renderer (1x, no upscaling).");
+
+  // angrylion renders at native resolution only, so upscaling options don't apply.
+  ImGui::BeginDisabled(angrylion);
   const char* qualities[] = {"SD", "HD", "UHD"};
   int qualityIdx = 0;
   if(settings.video.quality == "HD") qualityIdx = 1;
   if(settings.video.quality == "UHD") qualityIdx = 2;
   if(ImGui::Combo("Quality", &qualityIdx, qualities, 3)) {
     settings.video.quality = qualities[qualityIdx];
+    //apply at runtime: update the upscale vars and, if parallel-RDP is active,
+    //request a reload so the backend picks up the new upscale on the next frame.
+    #if defined(VULKAN)
+    ares::Nintendo64::option("Quality", settings.video.quality);
+    if(ares::Nintendo64::vulkan.enable) {
+      ares::Nintendo64::system.requestRenderer(ares::Nintendo64::System::Renderer::ParallelRDP);
+    }
+    #endif
   }
-  ImGui::Checkbox("Supersampling", &settings.video.supersampling);
+  bool ssChanged = ImGui::Checkbox("Supersampling", &settings.video.supersampling);
+  ImGui::EndDisabled();
+  if((ssChanged) && ares::Nintendo64::vulkan.enable) {
+    ares::Nintendo64::option("Supersampling", settings.video.supersampling);
+    ares::Nintendo64::system.requestRenderer(ares::Nintendo64::System::Renderer::ParallelRDP);
+  }
   ImGui::Checkbox("Disable VI Processing", &settings.video.disableVideoInterfaceProcessing);
   ImGui::Checkbox("Weave Deinterlacing", &settings.video.weaveDeinterlacing);
 }

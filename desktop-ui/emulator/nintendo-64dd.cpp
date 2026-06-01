@@ -86,6 +86,7 @@ auto Nintendo64DD::load() -> LoadResult {
 #else
   ares::Nintendo64::option("Enable GPU acceleration", false);
 #endif
+  ares::Nintendo64::option("RDP Renderer", settings.video.renderer);
   ares::Nintendo64::option("Disable Video Interface Processing", settings.video.disableVideoInterfaceProcessing);
   ares::Nintendo64::option("Weave Deinterlacing", settings.video.weaveDeinterlacing);
   ares::Nintendo64::option("Homebrew Mode", settings.general.homebrewMode);

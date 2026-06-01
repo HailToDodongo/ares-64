@@ -21,6 +21,13 @@ struct VI : Thread, Memory::RCP<VI> {
 
   auto main() -> void;
   auto refresh() -> void;
+  //(re)apply the screen output size/scale for the currently-active RDP renderer.
+  //Safe to call live (e.g. after switching renderers); uses the thread-safe setters.
+  auto configureScreenOutput() -> void;
+  //resend the cached VI register state to the active backend. Needed after a renderer
+  //hot-swap, since the newly-loaded backend missed every register the game wrote before
+  //it was enabled (Y-scale, control/colordepth, width, ...).
+  auto replayRegisters() -> void;
   auto power(bool reset) -> void;
   auto active() -> bool { return io.colorDepth != 0; }
 

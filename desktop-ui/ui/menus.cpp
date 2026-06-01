@@ -89,47 +89,16 @@ static void DrawFileMenu() {
 
 static void DrawSystemMenu() {
   if(!emulator) return;
-  if(!ImGui::BeginMenu(emulator->name.data())) return;
 
-  // Core-specific menu items are built by the emulator
-  // TODO: implement emulator->load() callback
-  ImGui::Separator();
+  // Direct menu-bar entry (no submenu): reset the running system.
   if(ImGui::MenuItem("Reset")) {
     Program::Guard guard;
     emulator->root->power();
   }
-  if(ImGui::MenuItem("Unload")) {
-    Program::Guard guard;
-    program.unload();
-  }
-
-  ImGui::EndMenu();
 }
 
 static void DrawSettingsMenu() {
   if(!ImGui::BeginMenu("Settings")) return;
-
-  // Window Size submenu
-  if(ImGui::BeginMenu("Window Size")) {
-    struct SizePreset { const char* label; u32 w; u32 h; };
-    static const SizePreset presets[] = {
-      {"640x480",   640,  480},
-      {"960x720",   960,  720},
-      {"1280x960",  1280, 960},
-      {"1600x1200", 1600, 1200},
-      {"1920x1440", 1920, 1440},
-      {"2560x1920", 2560, 1920},
-      {"3200x2400", 3200, 2400},
-      {"3840x2880", 3840, 2880},
-    };
-    for(auto& p : presets) {
-      if(ImGui::MenuItem(p.label)) {
-        SDL_SetWindowSize(AresApp::window, p.w, p.h);
-	        SDL_SetWindowPosition(AresApp::window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-      }
-    }
-    ImGui::EndMenu();
-  }
 
   // Output submenu
   if(ImGui::BeginMenu("Output")) {
@@ -302,11 +271,6 @@ static void DrawToolsMenu() {
     }
   }
 
-  if(ImGui::MenuItem("Reload Game")) {
-    Program::Guard guard;
-    program.load(emulator, emulator->game->location);
-  }
-
   ImGui::Separator();
 
   // Tool panel openers
@@ -316,6 +280,7 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("RDP Commands")) showRdpViewer = true;
   if(ImGui::MenuItem("RSP Commands")) showRspViewer = true;
   if(ImGui::MenuItem("Framebuffer")) showFramebufferViewer = true;
+  if(ImGui::MenuItem("TMEM")) showTmemViewer = true;
   if(ImGui::MenuItem("Memory Editor")) showMemoryViewer = true;
   if(ImGui::MenuItem("Audio Viewer")) showAudioViewer = true;
 
@@ -344,6 +309,31 @@ static auto drawStepTypeCombo() -> void {
   }
 }
 
+// Live RDP renderer selector, shown only for N64-based systems. Writes the choice to
+// settings (persisted across restarts) and requests a hot-swap that the emu worker
+// applies at the next frame boundary.
+static auto drawRendererCombo() -> void {
+  if(!ares::Nintendo64::system.node) return;
+  static const char* names[] = {"paraLLEl", "angrylion"};
+  int idx = settings.video.renderer == "angrylion" ? 1 : 0;
+
+  ImGui::Text("RDP:");
+  ImGui::SameLine();
+
+  ImGui::SetNextItemWidth(110);
+  if(ImGui::Combo("##rdp_bar", &idx, names, 2)) {
+    settings.video.renderer = names[idx];
+    using Renderer = ares::Nintendo64::System::Renderer;
+    ares::Nintendo64::system.requestRenderer(idx == 1 ? Renderer::Angrylion : Renderer::ParallelRDP);
+  }
+}
+
+// Width occupied by drawRendererCombo (0 when hidden), used for right-aligned layout.
+static auto rendererComboWidth() -> float {
+  if(!ares::Nintendo64::system.node) return 0.0f;
+  return ImGui::CalcTextSize("RDP:").x + ImGui::GetStyle().ItemSpacing.x + 110 + ImGui::GetStyle().ItemSpacing.x;
+}
+
 auto DrawMainMenuBar() -> void {
   if(!ImGui::BeginMainMenuBar()) return;
 
@@ -354,13 +344,17 @@ auto DrawMainMenuBar() -> void {
   DrawHelpMenu();
 
   if(emulator) {
-    // Right-align the step-type combo just left of the VPS counter.
+    // Right-align, from the VPS counter leftward: [RDP combo] [Step combo] [VPS].
     auto vps = program.vblanksPerSecond.load();
     char buf[32];
     snprintf(buf, sizeof(buf), "%u VPS", (u32)vps);
     float vpsW = ImGui::CalcTextSize(buf).x;
     float comboW = ImGui::CalcTextSize("Step:").x + ImGui::GetStyle().ItemSpacing.x + 80;
+    float rdpW = rendererComboWidth();
     float pad = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - comboW - pad - rdpW - 16);
+    drawRendererCombo();
+
     ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - comboW - pad - 16);
     drawStepTypeCombo();
 
@@ -381,14 +375,18 @@ auto DrawMenuBar() -> void {
   if(emulator) DrawToolsMenu();
   DrawHelpMenu();
 
-  // VPS counter on the right, step-type combo just left of it.
+  // VPS counter on the right, with the Step and RDP-renderer combos just left of it.
   if(emulator) {
     auto vps = program.vblanksPerSecond.load();
     char buf[32];
     snprintf(buf, sizeof(buf), "%u VPS", (u32)vps);
     float vpsW = ImGui::CalcTextSize(buf).x;
     float comboW = ImGui::CalcTextSize("Step:").x + ImGui::GetStyle().ItemSpacing.x + 80;
+    float rdpW = rendererComboWidth();
     float pad = ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - comboW - pad - rdpW - 16);
+    drawRendererCombo();
+
     ImGui::SameLine(ImGui::GetWindowWidth() - vpsW - comboW - pad - 16);
     drawStepTypeCombo();
 

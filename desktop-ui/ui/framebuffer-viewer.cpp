@@ -12,10 +12,12 @@ bool showFramebufferViewer = false;
 static SDL_GPUTexture* fbTex = nullptr;
 static SDL_GPUTransferBuffer* fbXfer = nullptr;
 static u32  fbTexW = 0, fbTexH = 0;
-static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth, 3=D-Delta, 4=D-Hist
+static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth, 3=D-Delta, 4=D-Hist, 5=Overdraw, 6=Z-Overdraw
 static int  fbScaleMode = 1; // 0=Integer, 1=Linear
 static float fbDepthMin = 0.0f, fbDepthMax = 100.0f; // range for depth view
 static int  fbDeltaMul = 8; // multiplier for D-Delta mode (percent)
+static bool fbHeatWrites = true, fbHeatReads = true; // overdraw heatmap: which buffers to show
+static int  fbHeatScale = 8; // access count that maps to full-red in the heatmap
 
 // Upload an RGBA8 buffer into a persistent SDL_GPU texture, recreating it on resize.
 static auto fbUpload(const u32* pixels, u32 w, u32 h) -> SDL_GPUTexture* {
@@ -297,6 +299,31 @@ static auto depthToGray(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
   }
 }
 
+// Framebuffer access heatmap (angrylion only): per pixel, sum the selected read/write
+// counters and map through a blue->green->yellow->red ramp. Counters are indexed by
+// 16-bit RDRAM word, the same masking angrylion uses, so they line up with the pixels.
+static auto heatmapToRGBA(u32* dst, u32 w, u32 h, u32 addr, u32 bpp,
+                          const u8* writes, const u8* reads, u32 entries,
+                          bool showW, bool showR, int scale) -> void {
+  u32 pixels = w * h;
+  u32 mask = entries ? entries - 1 : 0;
+  float inv = 1.0f / (float)std::max(1, scale);
+  for(u32 i = 0; i < pixels; i++) {
+    u32 idx = ((addr + i * bpp) >> 1) & mask;
+    u32 val = 0;
+    if(showW) val += writes[idx];
+    if(showR) val += reads[idx];
+    if(val == 0) { dst[i] = 0xFF101010; continue; }
+    float t = (float)val * inv; if(t > 1.0f) t = 1.0f;
+    u8 r, g, b;
+    if      (t < 0.25f) { float s = t * 4.0f;         r = 0;            g = 0;             b = (u8)(64 + s * 191); }
+    else if (t < 0.50f) { float s = (t - 0.25f)*4.0f;  r = 0;            g = (u8)(s * 255);  b = (u8)(255 - s * 255); }
+    else if (t < 0.75f) { float s = (t - 0.50f)*4.0f;  r = (u8)(s * 255);    g = 255;          b = 0; }
+    else                 { float s = (t - 0.75f)*4.0f;  r = 255;          g = (u8)(255 - s * 255); b = 0; }
+    dst[i] = 0xFF000000 | (b << 16) | (g << 8) | r;
+  }
+}
+
 auto DrawFramebufferViewer() -> void {
   if(!showFramebufferViewer) return;
 
@@ -353,8 +380,8 @@ auto DrawFramebufferViewer() -> void {
 
   // View mode selector
   ImGui::SetNextItemWidth(80);
-  const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta", "D-Hist"};
-  ImGui::Combo("##fbmode", &fbViewMode, modes, 5);
+  const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta", "D-Hist", "Overdraw", "Z-Overdraw"};
+  ImGui::Combo("##fbmode", &fbViewMode, modes, 7);
   ImGui::SameLine();
   // Scale mode selector
   ImGui::SetNextItemWidth(100);
@@ -377,13 +404,24 @@ auto DrawFramebufferViewer() -> void {
     ImGui::SetNextItemWidth(120);
     ImGui::SliderInt("##deltaMul", &fbDeltaMul, 1, 128, "x%d");
   }
+  // Overdraw heatmap controls — visible in either heatmap mode (Overdraw / Z-Overdraw).
+  if(fbViewMode == 5 || fbViewMode == 6) {
+    ImGui::SameLine();
+    ImGui::Checkbox("Writes", &fbHeatWrites);
+    ImGui::SameLine();
+    ImGui::Checkbox("Reads", &fbHeatReads);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    ImGui::SliderInt("##heatScale", &fbHeatScale, 1, 64, "max %d");
+  }
   ImGui::SameLine();
 
-  u32 readAddr = addr;
-  if(fbViewMode >= 2) readAddr = depthAddr;  // Depth / D-Delta / D-Hist
+  // Modes reading the depth/Z buffer: Depth, D-Delta, D-Hist (visualizations) and Z-Overdraw.
+  bool usesDepthAddr = (fbViewMode >= 2 && fbViewMode <= 4) || fbViewMode == 6;
+  u32 readAddr = usesDepthAddr ? depthAddr : addr;
 
   if(readAddr == 0) {
-    ImGui::TextUnformatted((fbViewMode >= 2) ? "No depth buffer configured." : "No framebuffer configured.");
+    ImGui::TextUnformatted(usesDepthAddr ? "No depth buffer configured." : "No framebuffer configured.");
     ImGui::End();
     settings.general.showFramebufferViewer = true;
     return;
@@ -396,7 +434,7 @@ auto DrawFramebufferViewer() -> void {
     return;
   }
 
-  u32 bpp = (fbViewMode >= 2) ? 2 : (sz == 3) ? 4 : (sz == 2) ? 2 : (sz == 1) ? 1 : 0;
+  u32 bpp = usesDepthAddr ? 2 : (sz == 3) ? 4 : (sz == 2) ? 2 : (sz == 1) ? 1 : 0;
   if(bpp == 0) {
     ImGui::TextUnformatted("Unsupported pixel size.");
     ImGui::End();
@@ -429,6 +467,20 @@ auto DrawFramebufferViewer() -> void {
     rawBuf[i + 3] = (word >>  0) & 0xFF;
   }
 
+  // Hidden RDRAM (dz/coverage bits) comes from whichever renderer is active.
+  auto mapHidden = [&](const u8*& hidden, u32& hdrSize) {
+#if defined(ANGRYLION)
+    if(ares::Nintendo64::angrylion.enable) { ares::Nintendo64::angrylion.mapHiddenRDRAM(hidden, hdrSize); return; }
+#endif
+    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+  };
+  auto unmapHidden = [&]() {
+#if defined(ANGRYLION)
+    if(ares::Nintendo64::angrylion.enable) { ares::Nintendo64::angrylion.unmapHiddenRDRAM(); return; }
+#endif
+    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+  };
+
   // Convert to RGBA32 texture
   static std::vector<u32> pixelBuf;
   pixelBuf.resize(w * h);
@@ -437,51 +489,67 @@ auto DrawFramebufferViewer() -> void {
   } else if(fbViewMode == 2) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
-    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+    mapHidden(hidden, hdrSize);
     depthToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, fbDepthMin * 0.01f, fbDepthMax * 0.01f);
-    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+    unmapHidden();
   } else if(fbViewMode == 3) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
-    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+    mapHidden(hidden, hdrSize);
     depthDelta(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr);
-    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+    unmapHidden();
   } else if(fbViewMode == 4) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
-    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+    mapHidden(hidden, hdrSize);
     u32 histW = 512, histH = 256;
     pixelBuf.resize(histW * histH);
     depthHistogram(pixelBuf.data(), histW, histH, rawBuf.data(), hidden, hdrSize, w, h, readAddr,
                    fbDepthMin * 0.01f, fbDepthMax * 0.01f);
-    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+    unmapHidden();
     w = histW; h = histH;
+  } else if(fbViewMode == 5 || fbViewMode == 6) {  // Overdraw (color) / Z-Overdraw (depth)
+    const u8 *writes = nullptr, *reads = nullptr; u32 entries = 0;
+    if(ares::Nintendo64::angrylion.heatmap(writes, reads, entries)) {
+      heatmapToRGBA(pixelBuf.data(), w, h, readAddr, bpp, writes, reads, entries,
+                    fbHeatWrites, fbHeatReads, fbHeatScale);
+    } else {
+      memset(pixelBuf.data(), 0x10, w * h * 4);  // overdraw heatmap requires the angrylion renderer
+    }
   } else {
     n64ToRGBA32(pixelBuf.data(), rawBuf.data(), w, h, fmt, sz);
   }
 
-  // Upload texture
-  SDL_GPUTexture* tex = fbUpload(pixelBuf.data(), w, h);
+  // The overdraw / Z-overdraw heatmaps are only produced by the angrylion renderer
+  // (paraLLEl-RDP doesn't expose per-pixel access counts).
+  bool overdrawUnavailable = (fbViewMode == 5 || fbViewMode == 6) && !ares::Nintendo64::angrylion.enable;
 
-  const char* modeTxt = fbViewMode == 4 ? "D-Hist" : fbViewMode == 3 ? "D-Delta" : fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
+  // Upload texture
+  SDL_GPUTexture* tex = overdrawUnavailable ? nullptr : fbUpload(pixelBuf.data(), w, h);
+
+  const char* modeTxt = fbViewMode == 6 ? "Z-Overdraw" : fbViewMode == 5 ? "Overdraw" : fbViewMode == 4 ? "D-Hist" : fbViewMode == 3 ? "D-Delta" : fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
   ImGui::Text("%s  addr=0x%06X  %ux%u  fmt=%u sz=%u", modeTxt, readAddr, w, h, fmt, sz);
 
-  auto avail = ImGui::GetContentRegionAvail();
-  float scale;
-  if(fbScaleMode == 0) {
-    // Integer scale: largest integer multiple that fits
-    float maxW = std::floor(avail.x / (float)w);
-    float maxH = std::floor(avail.y / (float)h);
-    scale = std::max(1.0f, std::min(maxW, maxH));
+  if(overdrawUnavailable) {
+    ImGui::TextUnformatted("Overdraw heatmap requires the angrylion renderer.");
   } else {
-    // Linear: fill window keeping aspect ratio
-    scale = std::min(avail.x / (float)w, avail.y / (float)h);
+    auto avail = ImGui::GetContentRegionAvail();
+    float scale;
+    if(fbScaleMode == 0) {
+      // Integer scale: largest integer multiple that fits
+      float maxW = std::floor(avail.x / (float)w);
+      float maxH = std::floor(avail.y / (float)h);
+      scale = std::max(1.0f, std::min(maxW, maxH));
+    } else {
+      // Linear: fill window keeping aspect ratio
+      scale = std::min(avail.x / (float)w, avail.y / (float)h);
+    }
+    ImVec2 imgSize(w * scale, h * scale);
+    // Center image in available space
+    if(avail.x > imgSize.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - imgSize.x) * 0.5f);
+    if(avail.y > imgSize.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - imgSize.y) * 0.5f);
+    if(tex) ImGui::Image((ImTextureID)(intptr_t)tex, imgSize);
   }
-  ImVec2 imgSize(w * scale, h * scale);
-  // Center image in available space
-  if(avail.x > imgSize.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - imgSize.x) * 0.5f);
-  if(avail.y > imgSize.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - imgSize.y) * 0.5f);
-  if(tex) ImGui::Image((ImTextureID)(intptr_t)tex, imgSize);
 
   ImGui::End();
   settings.general.showFramebufferViewer = true;

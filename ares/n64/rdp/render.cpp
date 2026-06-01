@@ -70,6 +70,12 @@ auto RDP::render() -> void {
   }
   #endif
 
+  #if defined(ANGRYLION)
+  if(angrylion.enable && angrylion.render()) {
+    return;
+  }
+  #endif
+
   auto& memory = !command.source ? (Memory::Writable&)rdram.ram : (Memory::Writable&)rsp.dmem;
 
   auto fetch = [&]() -> u64 {

@@ -107,7 +107,6 @@ auto Program::load(string location) -> bool {
     }
   }
 
-  paletteUpdate();
   runAheadUpdate();
 
   // Auto-detect RSPQ from ELF alongside the ROM
