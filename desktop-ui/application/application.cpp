@@ -15,7 +15,7 @@ auto AresApp::initialize() -> bool {
 
   SDL_DisableScreenSaver();
 
-  window = SDL_CreateWindow("ares", 1024, 768,
+  window = SDL_CreateWindow("Ares 64", 1024, 768,
                             SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
   if (!window) {
     fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
