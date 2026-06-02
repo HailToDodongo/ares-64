@@ -458,6 +458,8 @@ set_target_properties(angrylion-rdp-plus PROPERTIES
 target_compile_definitions(angrylion-rdp-plus PRIVATE N64VIDEO_METRICS)
 target_include_directories(angrylion-rdp-plus PUBLIC ${_angrylion_root})
 target_link_libraries(ares PUBLIC angrylion-rdp-plus)
+# angrylion calls into ares, fix link order by informing cmake
+target_link_libraries(angrylion-rdp-plus PRIVATE ares)
 
 # The ares-side adapter + logging shim (these live under ares/, so they go through
 # the normal core source handling).

@@ -41,6 +41,11 @@ jobs:
           shell: sh
           install: cmake ccache xcbeautify
           target-cmake-preset: macos-ci-universal
+        - name: linux-x64
+          os: ubuntu-24.04
+          shell: bash
+          install: cmake ccache ninja-build libao-dev libopenal-dev qt6-base-dev
+          target-cmake-preset: ubuntu-ci
     name: ${{ matrix.program }}-${{ matrix.platform.name }}
     runs-on: ${{ matrix.platform.os }}
     defaults:
@@ -107,6 +112,11 @@ jobs:
         TARGET_PRESET: ${{ matrix.platform.target-cmake-preset }}
         MACOS_CERTIFICATE_NAME: ${{ secrets.MACOS_CERTIFICATE_NAME }}
         MACOS_NOTARIZATION_TEAMID: ${{ secrets.MACOS_NOTARIZATION_TEAMID }}
+    - name: "Build: Linux"
+      if: runner.os == 'Linux'
+      run: .github/scripts/build_ubuntu.sh
+      env:
+        TARGET_PRESET: ${{ matrix.platform.target-cmake-preset }}
     - name: "Compress Build Artifact (macOS)"
       if: runner.os == 'macOS'
       run: |
@@ -115,6 +125,11 @@ jobs:
       if: runner.os != 'macOS' && runner.os != 'Linux'
       run: |
         tar -cvJf ares-${{ matrix.platform.name }}.tar.xz -C build/desktop-ui/rundir/ .
+    - name: "Compress Build Artifact (Linux)"
+      if: runner.os == 'Linux'
+      run: |
+        tar -cvJf ares-${{ matrix.platform.name }}.tar.xz \
+          -C build/desktop-ui --exclude=CMakeFiles --exclude=cmake_install.cmake .
     - name: Upload Build
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:

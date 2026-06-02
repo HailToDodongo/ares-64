@@ -80,3 +80,4 @@ jobs:
           ${{ github.workspace }}/ares-windows-x64-PDBs.zip
           ${{ github.workspace }}/ares-windows-clang-cl-arm64.zip
           ${{ github.workspace }}/ares-windows-clang-cl-arm64-PDBs.zip
+          ${{ github.workspace }}/bin/ares-linux-x64/ares-linux-x64.tar.xz

@@ -231,6 +231,17 @@ function(_extract_target_from_link_expression)
       message(DEBUG "setting arg_dt_TARGET_VAR to ${gen_library}")
       set(${arg_dt_TARGET_VAR} ${gen_library})
     endif()
+  elseif(arg_dt_LIBRARY MATCHES "\\$<TARGET_NAME:[^>]+>")
+    # $<TARGET_NAME:tgt> simply names a target. SDL3's exported interface uses it to reference SDL3::Headers; extract
+    # the wrapped target name so dependency walking can continue.
+    string(REGEX REPLACE "\\$<TARGET_NAME:([^>]+)>" "\\1" gen_library "${arg_dt_LIBRARY}")
+
+    message(DEBUG "gen_library is ${gen_library}")
+
+    if(TARGET ${gen_library})
+      message(DEBUG "setting arg_dt_TARGET_VAR to ${gen_library}")
+      set(${arg_dt_TARGET_VAR} ${gen_library})
+    endif()
   else()
     # Unknown or unimplemented generator expression found. Abort script run to either add to ignore list or implement
     # detection.

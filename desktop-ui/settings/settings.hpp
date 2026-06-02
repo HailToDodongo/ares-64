@@ -37,8 +37,8 @@ struct Settings : Markup::Node {
   struct Audio {
     string driver;
     string device;
-    u32 frequency = 0;
-    u32 latency = 0;
+    u32 frequency = 48000;
+    u32 latency = 20;
     bool exclusive = false;
     bool blocking = true;
     bool dynamic = false;

@@ -27,15 +27,6 @@ if(ARES_ENABLE_LIBRASHADER)
   endif()
 endif()
 
-# Stage and install mia database
-add_custom_command(
-  TARGET desktop-ui
-  POST_BUILD
-  COMMAND
-  COMMENT "Copying mia database to staging directory"
-)
-
-
 # Stage and install icon, .desktop file
 add_custom_command(
   TARGET desktop-ui

@@ -9,8 +9,8 @@ struct Audio {
 
   auto setBlocking(bool block) -> bool { blocking = block; clear(); return true; }
   auto setDynamic(bool dyn) -> bool { dynamic = dyn; return true; }
-  auto setFrequency(u32 freq) -> bool { frequency = freq; return initialize(); }
-  auto setLatency(u32 lat) -> bool { latency = lat; return initialize(); }
+  auto setFrequency(u32 freq) -> bool { if(freq) frequency = freq; return initialize(); }
+  auto setLatency(u32 lat) -> bool { if(lat) latency = lat; return initialize(); }
   auto setChannels(u32 ch) -> bool { channels = ch; return initialize(); }
 
   auto clear() -> void;

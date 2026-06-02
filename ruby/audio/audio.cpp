@@ -25,7 +25,7 @@ auto Audio::output(const f64 samples[]) -> void {
 
   auto* stream = static_cast<SDL_AudioStream*>(_stream);
 
-  if(blocking) {
+  if(blocking && frequency > 0) {
     auto bytesRemaining = SDL_GetAudioStreamAvailable(stream);
     while(bytesRemaining > _bufferSize) {
       auto bytesToWait = bytesRemaining - _bufferSize;
