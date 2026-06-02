@@ -21,7 +21,7 @@
       "name": "RSPQ",
       "commands": {
         "0x00": {"name": "NOP"},
-        "0x01": {"name": "Write Word", "fmt": "DMEM[{addr:x}] = {value:x}", "args": [
+        "0x01": {"name": "Write Word", "fmt": "{addr:dmem} = {value:x}", "args": [
           {"name": "addr", "word": 0},
           {"name": "value", "word": 1}
         ]},
@@ -86,7 +86,7 @@
           {"name": "advance", "word": 0, "bits": [23, 8], "signed": true},
           {"name": "mat", "word": 1}
         ]},
-        "0x03": {"name": "Set Word", "fmt": "DMEM[{addr:x}] = {value:x} ({width})", "args": [
+        "0x03": {"name": "Set Word", "fmt": "DMEM[{addr:dmem}] = {value:x} ({width})", "args": [
           {"name": "addr", "word": 0, "bits": [14, 0]},
           {"name": "width", "word": 0, "bits": [15, 15], "enum": {"0": "u32", "1": "u16"}},
           {"name": "value", "word": 1}
@@ -337,7 +337,7 @@
           {"name": "advance", "word": 0, "bits": [23, 8], "signed": true},
           {"name": "mat", "word": 1}
         ]},
-        "0x03": {"name": "Set DMEM", "fmt": "DMEM[{addr:x}] = {value:x} ({width})", "args": [
+        "0x03": {"name": "Set DMEM", "fmt": "DMEM[{addr:dmem}] = {value:x} ({width})", "args": [
           {"name": "addr", "word": 0, "bits": [14, 0]},
           {"name": "width", "word": 0, "bits": [15, 15], "enum": {"0": "u32", "1": "u16"}},
           {"name": "value", "word": 1}

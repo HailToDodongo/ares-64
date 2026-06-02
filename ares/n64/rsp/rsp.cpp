@@ -1,5 +1,7 @@
 #include <n64/n64.hpp>
 #include <nlohmann/json.hpp>
+#include <nall/decode/elf.hpp>
+#include <nall/decode/dwarf.hpp>
 
 namespace ares::Nintendo64 {
 

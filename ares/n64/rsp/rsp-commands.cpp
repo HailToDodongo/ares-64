@@ -2,167 +2,6 @@
 
 namespace {
 
-struct Elf64Header {
-  u8  ident[16];
-  u16 type;
-  u16 machine;
-  u32 version;
-  u64 entry;
-  u64 phoff;
-  u64 shoff;
-  u32 flags;
-  u16 ehsize;
-  u16 phentsize;
-  u16 phnum;
-  u16 shentsize;
-  u16 shnum;
-  u16 shstrndx;
-};
-
-struct Elf64Shdr {
-  u32 name;
-  u32 type;
-  u64 flags;
-  u64 addr;
-  u64 offset;
-  u64 size;
-  u32 link;
-  u32 info;
-  u64 addralign;
-  u64 entsize;
-};
-
-struct Elf64Sym {
-  u32 name;
-  u8  info;
-  u8  other;
-  u16 shndx;
-  u64 value;
-  u64 size;
-};
-
-static auto elfRead64BE(const u8* data, u32 offset) -> u64 {
-  u64 val = 0;
-  for(int i = 0; i < 8; i++) val = (val << 8) | data[offset + i];
-  return val;
-}
-
-static auto elfRead32BE(const u8* data, u32 offset) -> u32 {
-  return (u32(data[offset]) << 24) | (u32(data[offset+1]) << 16)
-       | (u32(data[offset+2]) << 8) | u32(data[offset+3]);
-}
-
-static auto elfRead16BE(const u8* data, u32 offset) -> u16 {
-  return (u16(data[offset]) << 8) | u16(data[offset+1]);
-}
-
-// Try to read a symbol's value from a pre-loaded ELF data buffer.
-// Handles both ELF32 and ELF64 big-endian.
-static auto elfTryReadSymbolFrom(const u8* data, u32 size, const string& symName, u64& value) -> bool {
-  if(!data || size < 64) return false;
-
-  // Validate ELF magic
-  if(data[0] != 0x7f || data[1] != 'E' || data[2] != 'L' || data[3] != 'F') return false;
-  u8 elfClass = data[4];  // 1=ELF32, 2=ELF64
-  u8 elfData2 = data[5];  // 1=LE, 2=BE
-  if(elfData2 != 2) return false; // only big-endian
-  if(elfClass != 1 && elfClass != 2) return false;
-
-  bool is64 = (elfClass == 2);
-  
-  // Read section header info (different layout for ELF32 vs ELF64)
-  u64 shoff;
-  u32 shentsize, shnum, shstrndx;
-  u32 shdrSize;        // size of one section header
-  u32 shOffOff, shSizeOff, shAddrOff; // offsets within section header
-
-  if(is64) {
-    shoff     = elfRead64BE(data, 40);
-    shentsize = elfRead16BE(data, 58);
-    shnum     = elfRead16BE(data, 60);
-    shstrndx  = elfRead16BE(data, 62);
-    shdrSize  = 64;
-    shOffOff  = 24;  // sh_offset at +24
-    shSizeOff = 32;  // sh_size at +32
-    shAddrOff = 16;  // sh_addr at +16
-  } else {
-    shoff     = elfRead32BE(data, 32);
-    shentsize = elfRead16BE(data, 46);
-    shnum     = elfRead16BE(data, 48);
-    shstrndx  = elfRead16BE(data, 50);
-    shdrSize  = 40;
-    shOffOff  = 16;  // sh_offset at +16
-    shSizeOff = 20;  // sh_size at +20
-    shAddrOff = 12;  // sh_addr at +12
-  }
-
-  if(shoff == 0 || shnum == 0) return false;
-
-  // Find shstrtab base (for section name lookup)
-  u64 shstrBase = 0;
-  {
-    u32 shstrHdrOff = shoff + shstrndx * shentsize;
-    if(shstrHdrOff + shdrSize <= (u64)size) {
-      shstrBase = is64 ? elfRead64BE(data, shstrHdrOff + shOffOff)
-                       : elfRead32BE(data, shstrHdrOff + shOffOff);
-    }
-  }
-
-  // Find .strtab and .symtab sections
-  u64 strtabOffset = 0, strtabSize = 0;
-  u64 symtabOffset = 0, symtabSize = 0, symtabEntsize = 0;
-
-  for(u32 i = 0; i < shnum; i++) {
-    u32 shdrOff = shoff + i * shentsize;
-    if(shdrOff + shdrSize > size) break;
-    u32 nameIdx = elfRead32BE(data, shdrOff);
-    u32 type    = elfRead32BE(data, shdrOff + 4);
-    u64 secOff  = is64 ? elfRead64BE(data, shdrOff + shOffOff)
-                       : elfRead32BE(data, shdrOff + shOffOff);
-    u64 secSize = is64 ? elfRead64BE(data, shdrOff + shSizeOff)
-                       : elfRead32BE(data, shdrOff + shSizeOff);
-    u64 esize   = is64 ? elfRead64BE(data, shdrOff + 56)
-                       : elfRead32BE(data, shdrOff + 36);
-
-    // Get section name
-    if(shstrBase && shstrBase + nameIdx < (u64)size) {
-      const char* secName = (const char*)(data + shstrBase + nameIdx);
-      nall::string sname{secName};
-
-      if(type == 3 && sname == ".strtab") { // SHT_STRTAB
-        strtabOffset = secOff;
-        strtabSize = secSize;
-      } else if(type == 2) { // SHT_SYMTAB
-        symtabOffset = secOff;
-        symtabSize = secSize;
-        symtabEntsize = esize;
-      }
-    }
-  }
-
-  if(!symtabOffset || !strtabOffset || !symtabEntsize) return false;
-
-  // Search symbol table
-  u32 symValueOff = is64 ? 8 : 4;
-
-  for(u64 s = 0; s < symtabSize; s += symtabEntsize) {
-    u32 symOff = symtabOffset + s;
-    if(symOff + symtabEntsize > (u64)size) break;
-    u32 nameIdx = elfRead32BE(data, symOff);
-    u64 symVal  = is64 ? elfRead64BE(data, symOff + symValueOff)
-                       : elfRead32BE(data, symOff + symValueOff);
-
-    if(strtabOffset + nameIdx >= (u64)size) continue;
-    const char* name = (const char*)(data + strtabOffset + nameIdx);
-    if(nall::string{name} == symName) {
-      value = symVal;
-      return true;
-    }
-  }
-
-  return false;
-}
-
 // Parse one command's optional "args" + "fmt" into a descriptor. JSON shape:
 //   "0x02": { "name": "Matrix Stack", "fmt": "{mul?mul:set} advance {advance}", "args": [
 //     { "name":"mul", "word":0, "bits":[0,0], "type":"bool" },
@@ -206,122 +45,45 @@ static auto parseArgsJson(const nlohmann::json& cmdData, RSPCapture::CmdArgInfo&
   }
 }
 
-  // Collect all rsp_* symbols from the ELF whose value falls in the KSEG0
-  // range (0x80000000–0x81000000) — these are rsp_ucode_t struct pointers.
-  struct RspElfSymbol { string name; u64 value; };
-  static auto elfCollectRspSymbols(const u8* data, u32 size) -> std::vector<RspElfSymbol> {
-    std::vector<RspElfSymbol> out;
-    if(!data || size < 64) return out;
-
-    // Validate ELF magic
-    if(data[0] != 0x7f || data[1] != 'E' || data[2] != 'L' || data[3] != 'F') return out;
-    u8 elfClass = data[4];
-    u8 elfData2 = data[5];
-    if(elfData2 != 2) return out;
-    if(elfClass != 1 && elfClass != 2) return out;
-    bool is64 = (elfClass == 2);
-
-    u64 shoff; u32 shentsize, shnum, shstrndx;
-    u32 shdrSize, shOffOff, shSizeOff, shAddrOff;
-    if(is64) {
-      shoff     = elfRead64BE(data, 40); shentsize = elfRead16BE(data, 58);
-      shnum     = elfRead16BE(data, 60); shstrndx  = elfRead16BE(data, 62);
-      shdrSize  = 64; shOffOff = 24; shSizeOff = 32; shAddrOff = 16;
-    } else {
-      shoff     = elfRead32BE(data, 32); shentsize = elfRead16BE(data, 46);
-      shnum     = elfRead16BE(data, 48); shstrndx  = elfRead16BE(data, 50);
-      shdrSize  = 40; shOffOff = 16; shSizeOff = 20; shAddrOff = 12;
-    }
-    if(shoff == 0 || shnum == 0) return out;
-
-    u64 shstrBase = 0;
-    { u32 hdrOff = shoff + shstrndx * shentsize;
-      if(hdrOff + shdrSize <= (u64)size)
-        shstrBase = is64 ? elfRead64BE(data, hdrOff + shOffOff)
-                         : elfRead32BE(data, hdrOff + shOffOff); }
-
-    u64 strtabOff = 0, strtabSz = 0, symtabOff = 0, symtabSz = 0, symEnt = 0;
-    for(u32 i = 0; i < shnum; i++) {
-      u32 hdrOff = shoff + i * shentsize;
-      if(hdrOff + shdrSize > size) break;
-      u32 nameIdx = elfRead32BE(data, hdrOff);
-      u32 type = elfRead32BE(data, hdrOff + 4);
-      u64 secOff = is64 ? elfRead64BE(data, hdrOff + shOffOff)
-                        : elfRead32BE(data, hdrOff + shOffOff);
-      u64 secSz  = is64 ? elfRead64BE(data, hdrOff + shSizeOff)
-                        : elfRead32BE(data, hdrOff + shSizeOff);
-      u64 esize  = is64 ? elfRead64BE(data, hdrOff + 56)
-                        : elfRead32BE(data, hdrOff + 36);
-      if(shstrBase && shstrBase + nameIdx < (u64)size) {
-        nall::string sname{(const char*)(data + shstrBase + nameIdx)};
-        if(type == 3 && sname == ".strtab") { strtabOff = secOff; strtabSz = secSz; }
-        else if(type == 2) { symtabOff = secOff; symtabSz = secSz; symEnt = esize; }
-      }
-    }
-    if(!symtabOff || !strtabOff || !symEnt) return out;
-
-    u32 symValOff = is64 ? 8 : 4;
-    for(u64 s = 0; s < symtabSz; s += symEnt) {
-      u32 symOff = symtabOff + s;
-      if(symOff + symEnt > (u64)size) break;
-      u32 nameIdx = elfRead32BE(data, symOff);
-      u64 symVal  = is64 ? elfRead64BE(data, symOff + symValOff)
-                         : elfRead32BE(data, symOff + symValOff);
-      if(strtabOff + nameIdx >= (u64)size) continue;
-      const char* name = (const char*)(data + strtabOff + nameIdx);
-      nall::string sname{name};
-      // Only collect symbols starting with "rsp_" whose value is in KSEG0.
-      if(!sname.beginsWith("rsp_")) continue;
-      if(symVal < 0x80000000 || symVal >= 0x81000000) continue;
-      out.push_back({sname, symVal});
-    }
-    return out;
-  }
-
-  // Map a KSEG0 vaddr to a pointer into the ELF image (via section headers),
-  // returning the number of readable bytes available. Returns nullptr if the
-  // address isn't backed by file data (e.g. .bss / out of range).
-  static auto elfPtrAtVaddr(const u8* data, u32 size, u32 vaddr, u32& avail) -> const u8* {
-    avail = 0;
-    if(!data || size < 64) return nullptr;
-    if(data[0]!=0x7f||data[1]!='E'||data[2]!='L'||data[3]!='F') return nullptr;
-    if(data[5] != 2) return nullptr;
-    bool is64 = (data[4] == 2);
-    u64 shoff = 0; u32 shentsize = 0, shnum = 0, shdrSize = 0, shOffOff = 0, shSizeOff = 0, shAddrOff = 0;
-    if(is64) { shoff=elfRead64BE(data,40); shentsize=elfRead16BE(data,58); shnum=elfRead16BE(data,60);
-               shdrSize=64; shOffOff=24; shSizeOff=32; shAddrOff=16; }
-    else     { shoff=elfRead32BE(data,32); shentsize=elfRead16BE(data,46); shnum=elfRead16BE(data,48);
-               shdrSize=40; shOffOff=16; shSizeOff=20; shAddrOff=12; }
-    if(!shoff || !shnum) return nullptr;
-    for(u32 i = 0; i < shnum; i++) {
-      u32 hdrOff = shoff + i * shentsize;
-      if(hdrOff + shdrSize > size) break;
-      u32 type = elfRead32BE(data, hdrOff + 4);
-      if(type == 8) continue;
-      u64 secAddr = is64 ? elfRead64BE(data, hdrOff+shAddrOff) : elfRead32BE(data, hdrOff+shAddrOff);
-      if(!secAddr) continue;
-      u64 secOff  = is64 ? elfRead64BE(data, hdrOff+shOffOff)  : elfRead32BE(data, hdrOff+shOffOff);
-      u64 secSize = is64 ? elfRead64BE(data, hdrOff+shSizeOff) : elfRead32BE(data, hdrOff+shSizeOff);
-      if(vaddr >= secAddr && vaddr < secAddr + secSize) {
-        u64 fo = secOff + (vaddr - secAddr);
-        if(fo >= size) return nullptr;
-        avail = (u32)min<u64>(secAddr + secSize - vaddr, (u64)size - fo);
-        return data + fo;
-      }
-    }
-    return nullptr;
-  }
-
-  // Read a big-endian u32 from the ELF image at a KSEG0 vaddr.
-  static auto elfReadWordAtVaddr(const u8* data, u32 size, u32 vaddr, u32& out) -> bool {
-    u32 avail = 0;
-    const u8* p = elfPtrAtVaddr(data, size, vaddr, avail);
-    if(!p || avail < 4) return false;
-    out = (p[0]<<24) | (p[1]<<16) | (p[2]<<8) | p[3];
-    return true;
-  }
-
 } // anonymous namespace
+
+auto RSPCapture::buildDmemLabels() -> void {
+  if(dmemLabelsBuilt) return;
+  dmemLabelsBuilt = true;  // only attempt once, even on failure
+  if(!cachedElfData) return;
+
+  nall::Decode::ELF elf{(const u8*)cachedElfData.data(), cachedElfData.size()};
+  nall::Decode::DWARF dwarf{elf};
+  if(!dwarf) {
+    print("RSP: buildDmemLabels: no DWARF debug info in ELF (need an unstripped build)\n");
+    return;
+  }
+  // rsp_queue_t mirrors shared DMEM layout, used to resolved addresses later
+  for(auto& f : dwarf.flattenStruct("rsp_queue_s")) {
+    dmemLabels.push_back({(u32)f.offset, (u32)f.size, (u32)f.stride, f.name});
+  }
+  if(!dmemLabels.empty()) {
+    print("RSP: resolved ", dmemLabels.size(), " shared-DMEM field labels from rsp_queue_t\n");
+  } else {
+    print("RSP: buildDmemLabels: rsp_queue_t struct not found in DWARF\n");
+  }
+}
+
+auto RSPCapture::resolveDmemLabel(u32 offset) const -> string {
+  for(const auto& l : dmemLabels) {
+    if(offset < l.offset || offset >= l.offset + l.size) continue;
+    u32 rel = offset - l.offset;
+    if(l.stride) {  // array: pick the element + any sub-offset
+      u32 idx = rel / l.stride, rem = rel % l.stride;
+      string s{l.name, "[", idx, "]"};
+      if(rem) s.append("+", rem);
+      return s;
+    }
+    if(rel) return string{l.name, "+", rel};
+    return l.name;
+  }
+  return {};
+}
 
 auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
   string data = string::read(jsonPath);
@@ -483,16 +245,15 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
 
   // Cache the entire ELF in memory so subsequent symbol lookups don't hit disk.
   cachedElfData = string::read(elfPath);
-  const u8* elfData = (const u8*)cachedElfData.data();
-  u32 elfDataSize = cachedElfData ? cachedElfData.size() : 0;
 
   // rsp_queue_text_start is in KSEG0 (0x80000000). The RSPQ code is at offset 0
   // within IMEM when loaded via rsp_load().
   // The DMEM layout is standard per rsp_queue_t.
 
   // Read rspq_overlay_ucodes address from ELF for runtime overlay name detection
+  nall::Decode::ELF elf{(const u8*)cachedElfData.data(), cachedElfData.size()};
   u64 ovlUcodesVal = 0;
-  elfTryReadSymbolFrom(elfData, elfDataSize, "rspq_overlay_ucodes", ovlUcodesVal);
+  elf.symbolValue("rspq_overlay_ucodes", ovlUcodesVal);
   ovlUcodesAddr = ovlUcodesVal;
 
   // Try to load JSON config for hooks, DMEM layout, and overlay names
@@ -513,6 +274,8 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
     return false;
   }
 
+  buildDmemLabels();
+
   configLoaded = true;
   enabled.store(true, std::memory_order_relaxed);
   return true;
@@ -521,13 +284,21 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
 auto RSPCapture::refreshOverlayNames() -> void {
   // Called every frame to pick up runtime overlay registrations.
   if(elfPath && cachedElfData) {
-    const u8* elfData = (const u8*)cachedElfData.data();
-    u32 elfDataSize = cachedElfData.size();
     auto& r = ares::Nintendo64::rsp;
-    // Collect the rsp_* symbols once (rsp_ucode_t struct pointers + labels).
-    static std::vector<RspElfSymbol> rspSymbols;
+    // Parse the ELF and collect the rsp_* ucode symbols once. These are
+    // rsp_ucode_t struct pointers in KSEG0 (0x80000000–0x81000000).
+    static nall::Decode::ELF elf;
+    static std::vector<nall::Decode::ELF::Symbol> rspSymbols;
     static bool symbolsBuilt = false;
-    if(!symbolsBuilt) { rspSymbols = elfCollectRspSymbols(elfData, elfDataSize); symbolsBuilt = true; }
+    if(!symbolsBuilt) {
+      symbolsBuilt = true;
+      elf.load((const u8*)cachedElfData.data(), cachedElfData.size());
+      for(auto& sym : elf.symbols()) {
+        if(!sym.name.beginsWith("rsp_")) continue;
+        if(sym.value < 0x80000000 || sym.value >= 0x81000000) continue;
+        rspSymbols.push_back(sym);
+      }
+    }
 
     // For each non-zero DMEM overlay-table entry (the RDRAM address rspq DMAs the
     // overlay's data from), find the ucode whose data section contains it.
@@ -541,9 +312,9 @@ auto RSPCapture::refreshOverlayNames() -> void {
         // data_end (+12), name (+24). Reading from RDRAM is unreliable — the
         // structs are often still dirty in the CPU cache.
         u32 dataStart = 0, dataEnd = 0, namePtr = 0;
-        if(!elfReadWordAtVaddr(elfData, elfDataSize, (u32)sym.value + 8,  dataStart)) continue;
-        if(!elfReadWordAtVaddr(elfData, elfDataSize, (u32)sym.value + 12, dataEnd))  continue;
-        if(!elfReadWordAtVaddr(elfData, elfDataSize, (u32)sym.value + 24, namePtr))  continue;
+        if(!elf.readWord(sym.value + 8,  dataStart)) continue;
+        if(!elf.readWord(sym.value + 12, dataEnd))  continue;
+        if(!elf.readWord(sym.value + 24, namePtr))  continue;
         // Both must be KSEG0 data pointers forming a forward range.
         if((dataStart >> 24) != 0x80 || (dataEnd >> 24) != 0x80) continue;
         u32 dsPhys = dataStart & 0x00FFFFFF;
@@ -552,8 +323,8 @@ auto RSPCapture::refreshOverlayNames() -> void {
         if(dataPhys < dsPhys || dataPhys >= dePhys) continue;  // not this overlay's data
 
         // Read the name string from the ELF; require an "rsp_" prefix.
-        u32 avail = 0;
-        const u8* np = elfPtrAtVaddr(elfData, elfDataSize, namePtr, avail);
+        u64 avail = 0;
+        const u8* np = elf.virtualAddress(namePtr, avail);
         if(!np || avail == 0) continue;
         char buf[64] = {};
         for(u32 j = 0; j < 63 && j < avail; j++) { buf[j] = (char)np[j]; if(!buf[j]) break; }
@@ -680,6 +451,14 @@ auto RSPCapture::formatArgs(u16 overlayId, u8 commandId, const u32* words, u8 wo
     }
     const ArgField* field = nullptr;
     for(auto& f : info.fields) if(f.name == tok.c_str()) { field = &f; break; }
+
+    if(field && spec == "dmem") {
+      s64 v = rspExtractField(*field, words, wordCount);
+      string label = resolveDmemLabel((u32)v);
+      if(label) out += label.data();
+      else { char b[16]; snprintf(b, sizeof(b), "0x%X", (u32)v); out += b; }
+      continue;
+    }
     if(field) out += valueText(*field, spec.empty() ? 0 : spec[0]);
     else { out += '{'; out += tok; out += '}'; }  // unknown name: leave visible
   }

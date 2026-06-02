@@ -168,6 +168,20 @@ struct RSPCapture {
   // JSON descriptor. Returns {} if the command has no descriptor.
   auto formatArgs(u16 overlayId, u8 commandId, const u32* words, u8 wordCount) const -> string;
 
+  struct DmemLabel {
+    u32 offset = 0;   // DMEM byte offset of this field
+    u32 size = 0;     // size in bytes the field/array occupies
+    u32 stride = 0;   // element size when this entry is an array (0 => scalar)
+    string name;      // field path, e.g. "rdp_mode.combiner"
+  };
+  std::vector<DmemLabel> dmemLabels;
+  bool dmemLabelsBuilt = false;
+  // Parse the cached game ELF's DWARF info, locate rsp_queue_t, and flatten its
+  // members into dmemLabels.
+  auto buildDmemLabels() -> void;
+  // Map a DMEM byte offset to a field label, "" if it falls outside the struct.
+  auto resolveDmemLabel(u32 offset) const -> string;
+
   // RDRAM address of the rspq_overlay_ucodes array (found via ELF)
   u64 ovlUcodesAddr = 0;
 
