@@ -51,6 +51,8 @@ target_sources(
     primitives.hpp
     priority-queue.hpp
     queue.hpp
+    random.cpp
+    random.hpp
     range.hpp
     reed-solomon.hpp
     run.cpp

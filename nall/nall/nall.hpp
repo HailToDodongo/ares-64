@@ -40,6 +40,7 @@
 #include <nall/range.hpp>
 #include <nall/reed-solomon.hpp>
 #include <nall/run.hpp>
+#include <nall/random.hpp>
 #include <nall/serializer.hpp>
 #include <nall/set.hpp>
 #include <nall/stdint.hpp>

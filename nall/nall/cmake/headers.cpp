@@ -36,6 +36,7 @@
 #include <nall/primitives.hpp>
 #include <nall/priority-queue.hpp>
 #include <nall/queue.hpp>
+#include <nall/random.hpp>
 #include <nall/range.hpp>
 #include <nall/reed-solomon.hpp>
 #include <nall/run.hpp>

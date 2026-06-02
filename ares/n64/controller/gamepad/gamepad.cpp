@@ -453,9 +453,9 @@ auto Gamepad::formatControllerPak() -> void {
   ram.fill(0x00);
 
   //page 0 (system area)
-  n6  fieldA = rand();
-  n19 fieldB = rand();
-  n27 fieldC = rand();
+  n6  fieldA = random();
+  n19 fieldB = random();
+  n27 fieldC = random();
   for(u32 area : array<u8[4]>{1,3,4,6}) {
     ram.write<Byte>(area * 0x20 + 0x01, fieldA);                        //unknown
     ram.write<Word>(area * 0x20 + 0x04, fieldB);                        //serial# hi
