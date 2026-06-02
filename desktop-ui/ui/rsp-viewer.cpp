@@ -251,12 +251,14 @@ auto DrawRspViewer() -> void {
       for(int c = 1; c < 6; c++) ImGui::TableNextColumn();
     }
 
-    // Highlight rows added since the last step.
+    ImGui::TableNextRow();
+
+    // Highlight rows added since the last step. This must come AFTER TableNextRow:
+    // TableSetBgColor targets the most recently started row, so calling it earlier
+    // would color the previous row (making the newest step land on the row above).
     if(anyStep && row >= hlStart) {
       ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(60, 60, 0, 255));
     }
-
-    ImGui::TableNextRow();
 
     ImGui::TableNextColumn();
     ImGui::PushFont(monoFont);
