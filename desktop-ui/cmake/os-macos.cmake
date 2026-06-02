@@ -25,7 +25,6 @@ set_target_properties(
     XCODE_EMBED_PLUGINS_CODE_SIGN_ON_COPY YES
 )
 
-target_add_resource(desktop-ui "${CMAKE_SOURCE_DIR}/ruby/video/metal/Shaders.metal" "Shaders")
 if(ACTOOL_PROGRAM)
   target_add_resource(desktop-ui "${CMAKE_CURRENT_SOURCE_DIR}/resource/Assets.xcassets")
 else()
@@ -73,16 +72,5 @@ if(ARES_ENABLE_LIBRASHADER)
     unset(_required_macos)
   endif()
 endif()
-
-# Can't use target_add_resource for this since we only want it to occur in debug configurations
-add_custom_command(
-  TARGET desktop-ui
-  POST_BUILD
-  COMMAND $<$<CONFIG:Debug>:ditto>
-  ARGS
-    "${CMAKE_SOURCE_DIR}/ruby/video/metal/Shaders.metallib" "$<TARGET_BUNDLE_CONTENT_DIR:desktop-ui>/Resources/Shaders/"
-  WORKING_DIRECTORY "$<TARGET_BUNDLE_CONTENT_DIR:desktop-ui>"
-  COMMENT "Copying debug .metallib to app bundle"
-)
 
 target_install_database(desktop-ui)

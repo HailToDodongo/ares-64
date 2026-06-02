@@ -81,25 +81,31 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${desktop-ui_SOURCES})
 
 ares_configure_executable(desktop-ui)
 
+if (APPLE)
+  set(RESOURCE_DIR "$<TARGET_FILE_DIR:desktop-ui>/../Resources")
+else()
+  set(RESOURCE_DIR "$<TARGET_FILE_DIR:desktop-ui>")
+endif()
+
 # Copy font and firmware to build output
 add_custom_command(TARGET desktop-ui POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/resource/Altinn-DINExp.ttf"
-    "$<TARGET_FILE_DIR:desktop-ui>/Altinn-DINExp.ttf"
+    "${RESOURCE_DIR}/Altinn-DINExp.ttf"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/resource/GoogleSansCode.ttf"
-    "$<TARGET_FILE_DIR:desktop-ui>/GoogleSansCode.ttf"
+    "${RESOURCE_DIR}/GoogleSansCode.ttf"
   COMMAND ${CMAKE_COMMAND} -E make_directory
-    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64"
+    "${RESOURCE_DIR}/Firmware/Nintendo 64"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.ntsc.rom"
-    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.ntsc.rom"
+    "${RESOURCE_DIR}/Firmware/Nintendo 64/pif.ntsc.rom"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.pal.rom"
-    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.pal.rom"
+    "${RESOURCE_DIR}/Firmware/Nintendo 64/pif.pal.rom"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.sm5.rom"
-    "$<TARGET_FILE_DIR:desktop-ui>/Firmware/Nintendo 64/pif.sm5.rom"
+    "${RESOURCE_DIR}/Firmware/Nintendo 64/pif.sm5.rom"
 )
 
 # Auto-copy the RSP overlay config whenever it is edited (not only on relink).
@@ -108,7 +114,7 @@ add_custom_command(TARGET desktop-ui POST_BUILD
 add_custom_target(desktop-ui-rspq-config
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/rspq-libdragon.json"
-    "$<TARGET_FILE_DIR:desktop-ui>/rspq-libdragon.json"
+    "${RESOURCE_DIR}/rspq-libdragon.json"
   COMMENT "Syncing rspq-libdragon.json to build output"
   VERBATIM
 )
