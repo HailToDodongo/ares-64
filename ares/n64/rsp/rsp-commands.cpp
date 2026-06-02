@@ -543,6 +543,9 @@ auto RSP::captureCommandHook(u32 pc) -> void {
           if(cap.requestClear.exchange(false, std::memory_order_acq_rel)) {
             cap.committedCount.store(0, std::memory_order_release);
             cap.writePos.store(0, std::memory_order_release);
+            // Also wipe the RDP command log so both viewers clear together.
+            rdp.capture.committedCount.store(0, std::memory_order_release);
+            rdp.capture.writePos.store(0, std::memory_order_release);
           }
           usleep(1000);
         }
