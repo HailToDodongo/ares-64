@@ -192,7 +192,13 @@ auto Angrylion::renderStepped(u32 current, u32 end, bool source) -> void {
           rsp.capture.committedCount.store(0, std::memory_order_release);
           rsp.capture.writePos.store(0, std::memory_order_release);
         }
-        usleep(2000);
+
+        #if defined(PLATFORM_WINDOWS)
+          nall::usleep(2000);
+        #else
+          usleep(2000);
+        #endif
+          
       }
     }
     addr = next;

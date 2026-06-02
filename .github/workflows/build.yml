@@ -44,7 +44,13 @@ jobs:
         - name: linux-x64
           os: ubuntu-24.04
           shell: bash
-          install: cmake ccache ninja-build libao-dev libopenal-dev qt6-base-dev
+          # ares renders/inputs/audios through the vendored SDL3, which is built from source and
+          # needs the X11/Wayland + GL + ALSA/Pulse dev libraries to enable real (non-dummy) backends.
+          install: cmake ccache ninja-build libao-dev libopenal-dev
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+            libwayland-dev wayland-protocols libdecor-0-dev
+            libgl1-mesa-dev libegl1-mesa-dev
+            libasound2-dev libpulse-dev libdbus-1-dev libudev-dev
           target-cmake-preset: ubuntu-ci
     name: ${{ matrix.program }}-${{ matrix.platform.name }}
     runs-on: ${{ matrix.platform.os }}

@@ -56,10 +56,6 @@ jobs:
           os: ubuntu-24.04-arm
           shell: bash
           target-cmake-preset: ubuntu-ci-clang
-        - name: ubuntu-gcc-arm64-qt
-          os: ubuntu-24.04-arm
-          shell: bash
-          target-cmake-preset: ubuntu-ci-qt
         - name: freebsd
           os: ubuntu-24.04
           shell: bash
@@ -90,7 +86,13 @@ jobs:
       if: runner.os == 'Linux' && matrix.platform.name != 'freebsd'
       run: |
         sudo apt-get update -y -qq
-        sudo apt-get install cmake ccache ninja-build libao-dev libopenal-dev qt6-base-dev
+        # SDL3 is built from source and needs the X11/Wayland + GL + ALSA/Pulse dev libraries to
+        # enable real (non-dummy) video/audio backends.
+        sudo apt-get install cmake ccache ninja-build libao-dev libopenal-dev \
+          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev \
+          libwayland-dev wayland-protocols libdecor-0-dev \
+          libgl1-mesa-dev libegl1-mesa-dev \
+          libasound2-dev libpulse-dev libdbus-1-dev libudev-dev
     - name: "Build: Linux"
       if: runner.os == 'Linux' && matrix.platform.name != 'freebsd'
       run: .github/scripts/build_ubuntu.sh

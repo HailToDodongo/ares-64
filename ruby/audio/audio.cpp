@@ -1,6 +1,10 @@
 #include <ruby/ruby.hpp>
 #include <SDL3/SDL.h>
 
+#if defined(PLATFORM_WINDOWS)
+  #include <windows.h>
+#endif
+
 using namespace nall;
 
 namespace ruby {
@@ -62,7 +66,7 @@ auto Audio::initialize() -> bool {
 }
 
 auto Audio::tryInitWithDriver(const char* driver) -> bool {
-  if(driver) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, driver);
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, driver);
 
   if(!SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
 
