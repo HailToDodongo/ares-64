@@ -1,6 +1,6 @@
 #include <n64/n64.hpp>
 
-#include <unistd.h>  //usleep (step-mode spin)
+#include <nall/platform.hpp>  //usleep (step-mode spin)
 
 extern "C" {
   #include <n64video.h>
@@ -193,12 +193,7 @@ auto Angrylion::renderStepped(u32 current, u32 end, bool source) -> void {
           rsp.capture.writePos.store(0, std::memory_order_release);
         }
 
-        #if defined(PLATFORM_WINDOWS)
-          nall::usleep(2000);
-        #else
-          usleep(2000);
-        #endif
-          
+        usleep(2000);
       }
     }
     addr = next;

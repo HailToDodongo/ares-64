@@ -37,12 +37,23 @@ extern "C" {
 #define STRICTINLINE inline
 #endif
 
-#define FALLTHROUGH __attribute__((fallthrough))
-#define NORETURN    __attribute__((noreturn))
+#if defined(_MSC_VER)
+  #define FALLTHROUGH ((void)0)
+  #define NORETURN __declspec(noreturn)
+#elif defined(__GNUC__) || defined(__clang__)
+  #define FALLTHROUGH __attribute__((fallthrough))
+  #define NORETURN __attribute__((noreturn))
+#endif
+
+#if defined(_MSC_VER)
+#define UNREACHABLE() __assume(0)
+#elif defined(__GNUC__) || defined(__clang__)
+#define UNREACHABLE() __builtin_unreachable()
+#endif
 
 #define case_no_default \
     default:            \
-        __builtin_unreachable()
+        UNREACHABLE()
 
 // branch prediction hints
 #define LIKELY(cond)   __builtin_expect(!!(cond), true)

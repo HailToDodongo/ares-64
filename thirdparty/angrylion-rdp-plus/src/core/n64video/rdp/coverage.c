@@ -73,7 +73,7 @@ compute_cvg_flip(struct rdp_state *wstate, int32_t scanline)
                 wstate->cvgbuf[majorcurint] |= samecvg << maskshift;
             } else {
                 // This had better be unreachable, since minorx should be >= majorx
-                __builtin_unreachable();
+                UNREACHABLE();
             }
         } else {
             // Invalid, mask coverage in the range [purgestart, purgeend]
@@ -125,7 +125,7 @@ compute_cvg_noflip(struct rdp_state *wstate, int32_t scanline)
                 wstate->cvgbuf[majorcurint] |= samecvg << maskshift;
             } else {
                 // This had better be unreachable, since minorx should be >= majorx
-                __builtin_unreachable();
+                UNREACHABLE();
             }
         } else {
             // Invalid, mask coverage in the range [purgestart, purgeend]

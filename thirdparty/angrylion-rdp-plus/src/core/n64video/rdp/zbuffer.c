@@ -31,34 +31,26 @@ z_build_com_table(void)
 {
     for (int z = 0; z < 0x40000; z++) {
         uint16_t altmem = 0;
-        switch ((z >> 11) & 0x7F) {
-            case_no_default;
+        uint16_t key = (z >> 11) & 0x7F;
 
-            case 0x00 ... 0x3F: // 64
-                altmem = ((z >> 4) & 0x1FFC) | 0x0000;
-                break;
-            case 0x40 ... 0x5F: // 32
-                altmem = ((z >> 3) & 0x1FFC) | 0x2000;
-                break;
-            case 0x60 ... 0x6F: // 16
-                altmem = ((z >> 2) & 0x1FFC) | 0x4000;
-                break;
-            case 0x70 ... 0x77: // 8
-                altmem = ((z >> 1) & 0x1FFC) | 0x6000;
-                break;
-            case 0x78 ... 0x7B: // 4
-                altmem = ((z >> 0) & 0x1FFC) | 0x8000;
-                break;
-            case 0x7C ... 0x7D: // 2
-                altmem = ((z << 1) & 0x1FFC) | 0xA000;
-                break;
-            case 0x7e: // 1
-                altmem = ((z << 2) & 0x1FFC) | 0xC000;
-                break;
-            case 0x7f: // 1
-                altmem = ((z << 2) & 0x1FFC) | 0xE000;
-                break;
+        if (key <= 0x3F) {
+            altmem = ((z >> 4) & 0x1FFC) | 0x0000;
+        } else if (key <= 0x5F) {
+            altmem = ((z >> 3) & 0x1FFC) | 0x2000;
+        } else if (key <= 0x6F) {
+            altmem = ((z >> 2) & 0x1FFC) | 0x4000;
+        } else if (key <= 0x77) {
+            altmem = ((z >> 1) & 0x1FFC) | 0x6000;
+        } else if (key <= 0x7B) {
+            altmem = ((z >> 0) & 0x1FFC) | 0x8000;
+        } else if (key <= 0x7D) {
+            altmem = ((z << 1) & 0x1FFC) | 0xA000;
+        } else if (key == 0x7E) {
+            altmem = ((z << 2) & 0x1FFC) | 0xC000;
+        } else { // 0x7F
+            altmem = ((z << 2) & 0x1FFC) | 0xE000;
         }
+
         z_com_table[z] = altmem;
     }
 }
