@@ -143,6 +143,12 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
           rspCap.writePos.store(0, std::memory_order_release);
           rspCap.frameNumber++;
           rspCap.refreshOverlayNames();
+
+          if(ares::ui::logDump.active()) {
+            u32 rspN = min<u32>(rspCap.committedCount.load(std::memory_order_acquire), rspCap.maxCommands);
+            u32 rdpN = min<u32>(cap.committedCount.load(std::memory_order_acquire), cap.maxCommands);
+            if(ares::ui::LogDumpOnFrame(rspN, rdpN)) _quitRequested = true;
+          }
         }
       }
     };

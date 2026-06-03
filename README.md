@@ -75,6 +75,55 @@ For libdragon ROMs, you can make sure to keep the `.elf` file around.<br>
 Either next to the ROM, or in a `build` directory next to it.<br>
 This will enable fetching labels used to figure out the overlay setup.<br>
 
+## Command-line options
+
+Pass a N64 ROMs as a positional argument, plus any of the options below:
+
+| Option | Description |
+| --- | --- |
+| `--help` | Display the available options (and the list of supported systems) and exit |
+| `--version` | Display the version string and exit |
+| `--system name` | Specify the system name to load the game with |
+| `--setting name=value` | Override a single setting for this run (repeatable) |
+| `--dump-all-settings` | Print every available setting path and exit |
+| `--no-file-prompt` | Do not prompt to load optional additional ROMs (e.g. 64DD) |
+| `--settings-file path` | Use an alternate `settings.bml` file |
+| `--save-state slot` | Load a save state slot on startup (`1`-`9`) |
+| `--dump-log spec` | Dump the RSP/RDP command log to stdout, then quit (see below) |
+| `--terminal` | Windows only: open a new terminal window for stdio |
+
+### `--dump-log`
+
+Dumps the RSP and/or RDP command log to stdout then quit. Useful for profiling and diffing command streams programmatically. 
+The viewer windows do not need to be open.
+
+```
+--dump-log <targets>:<after-frames>[:<frame-count>]
+```
+
+- `targets`: `rsp`, `rdp`, `rsp+rdp` (or `all`)
+- `after-frames`: number of presented frames to skip before dumping
+- `frame-count`: number of consecutive frames to dump (default: `1`)
+
+Output is tab-separated, one command per row, with a `=== frame N (R RSP + D RDP commands) ===`
+header per frame. When both logs are requested they are merged into a single,
+causally-ordered stream (by capture order), so you can see which RSP command
+spawned which RDP commands. Every row starts with a `Src` column (`RSP` or `RDP`):
+
+```
+Src   #   us   Ovl   Command   Data   Hex
+```
+
+RDP rows leave the `us`/`Ovl` columns empty and fill `Hex` with the raw command word;
+RSP rows leave `Hex` empty.<br>
+As with the viewers, RSP command/overlay names require a
+libdragon `.elf` alongside the ROM.
+
+```sh
+# After 120 frames, dump 3 frames of both logs, then exit
+./build/desktop-ui/ares --dump-log rsp+rdp:120:3 /path/to/game.z64 > log.tsv
+```
+
 ## Adapting overlays
 
 Some data that can't be fetched form the `.elf` will be loaded from a JSON file.<br>

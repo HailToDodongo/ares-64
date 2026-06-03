@@ -12,6 +12,7 @@ struct RDPCapture {
     u8  wordCount = 1;
     u64 word0 = 0;
     u64 word1 = 0;
+    u64 seq = 0;  // global capture order, shared with RSP (see captureSequence)
   };
   Command commands[maxCommands];
   std::atomic<u32> writePos{0};
@@ -23,7 +24,7 @@ struct RDPCapture {
   auto push(u32 frame, u32 index, u8 opcode, u64 word0, u64 word1 = 0, u8 wordCount = 1) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
-    commands[pos % maxCommands] = {frame, index, opcode, wordCount, word0, word1};
+    commands[pos % maxCommands] = {frame, index, opcode, wordCount, word0, word1, captureSequence++};
     writePos.store(pos + 1, std::memory_order_release);
   }
 };

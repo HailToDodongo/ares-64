@@ -356,10 +356,17 @@ private:
       for(u32 off = p; off < cuEnd && off < infoSize;) {
         Die d = parseDie(off);
         if(d.code == 0) { off = d.nextOff; continue; }
-        if(d.tag == DW_TAG_structure_type && d.children && d.hasByteSize && d.byteSize > 0
-           && d.name && want == d.name) {
-          flatten(off, 0, string{}, 0);
-          if(!out.empty()) return true;
+        if(d.name && want == d.name) {
+          //match either a tagged struct/union directly, or a typedef naming an
+          //anonymous one (e.g. `typedef struct { ... } rsp_ucode_t;`). flatten()
+          //resolves typedefs, so passing the typedef's own type ref works.
+          if(d.tag == DW_TAG_structure_type && d.children && d.hasByteSize && d.byteSize > 0) {
+            flatten(off, 0, string{}, 0);
+            if(!out.empty()) return true;
+          } else if(d.tag == DW_TAG_typedef && d.hasType) {
+            flatten(d.typeRef, 0, string{}, 0);
+            if(!out.empty()) return true;
+          }
         }
         off = d.nextOff;
       }

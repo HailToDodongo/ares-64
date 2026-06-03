@@ -112,6 +112,11 @@ auto Program::load(string location) -> bool {
   // Auto-detect RSPQ from ELF alongside the ROM
   if(emulator && emulator->name == "Nintendo 64") {
     ares::Nintendo64::rsp.capture.autoDetect(location);
+
+    if(ares::ui::logDump.active()) {
+      ares::Nintendo64::rsp.capture.enabled.store(true, std::memory_order_release);
+      ares::Nintendo64::rdp.capture.enabled.store(true, std::memory_order_release);
+    }
   }
 
   if(!_imguiMode) {

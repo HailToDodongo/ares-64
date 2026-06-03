@@ -107,6 +107,26 @@ auto nall::main(Arguments arguments) -> void {
     }
   }
 
+  // --dump-log <targets:after[:count]>: headless dump of the N64 RSP/RDP command
+  // logs to stdout, exactly as the viewer windows show them. After <after>
+  // presented frames, dump <count> frames (default 1) of the selected log(s),
+  // then quit. <targets> contains "rsp", "rdp", or both (e.g. "rsp+rdp", "all").
+  if(string spec; arguments.take("--dump-log", spec)) {
+    auto parts = nall::split(spec, ":");
+    if(parts.size() >= 2) {
+      auto targets = parts[0];
+      ares::ui::logDump.rsp = (bool)targets.ifind("rsp") || targets == "all";
+      ares::ui::logDump.rdp = (bool)targets.ifind("rdp") || targets == "all";
+      ares::ui::logDump.startFrame = (u32)parts[1].natural();
+      ares::ui::logDump.frameCount = parts.size() >= 3 ? max(1u, (u32)parts[2].natural()) : 1u;
+    }
+    if(!ares::ui::logDump.active()) {
+      print("Invalid --dump-log spec: ", spec, "\n");
+      print("Expected: --dump-log <rsp|rdp|rsp+rdp>:<after-frames>[:<frame-count>]\n");
+      return;
+    }
+  }
+
   inputManager.create();
   Emulator::construct();
 
@@ -168,6 +188,9 @@ auto nall::main(Arguments arguments) -> void {
     print("  --no-file-prompt      Do not prompt to load (optional) additional roms (eg: 64DD)\n");
     print("  --settings-file path  Specify a settings file override (settings.bml)\n");
     print("  --save-state slot     Specify a save state slot to load (1-9)\n");
+    print("  --dump-log spec       Dump the N64 RSP/RDP command log to stdout, then quit.\n");
+    print("                        spec = <rsp|rdp|rsp+rdp>:<after-frames>[:<frame-count>]\n");
+    print("                        e.g. --dump-log rsp+rdp:120:3\n");
     print("\n");
     print("Available Systems:\n");
     print("  ");

@@ -10,6 +10,7 @@ add_executable(
   ui/audio-viewer.cpp
   ui/rdp-viewer.cpp
   ui/rsp-viewer.cpp
+  ui/log-dump.cpp
   ui/framebuffer-viewer.cpp
 ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
@@ -41,6 +42,7 @@ set_source_files_properties(
   ui/audio-viewer.cpp
   ui/rdp-viewer.cpp
   ui/rsp-viewer.cpp
+  ui/log-dump.cpp
   ui/framebuffer-viewer.cpp
 ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
