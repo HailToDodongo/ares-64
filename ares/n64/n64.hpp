@@ -12,6 +12,12 @@
 #include <functional>
 #include <span>
 #include <vector>
+#include <unordered_map>
+#include <atomic>
+#if __has_include(<cxxabi.h>)
+  #include <cxxabi.h>  //GCC/Clang C++ name demangling for the CPU profiler
+  #define ARES_HAS_CXA_DEMANGLE 1
+#endif
 
 #if defined(ARCHITECTURE_AMD64)
 #include <nmmintrin.h>

@@ -22,7 +22,7 @@ auto DrawRdpViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("RDP Commands", &showRdpViewer)) {
     ImGui::End();
-    settings.general.showRdpViewer = false;
+    settings.general.showRdpViewer = showRdpViewer;
     return;
   }
 

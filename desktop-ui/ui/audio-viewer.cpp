@@ -61,7 +61,7 @@ auto DrawAudioViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Audio Viewer", &showAudioViewer)) {
     ImGui::End();
-    settings.general.showAudioViewer = false;
+    settings.general.showAudioViewer = showAudioViewer;
     return;
   }
 

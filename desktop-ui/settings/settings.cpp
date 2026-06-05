@@ -90,6 +90,7 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowTracerViewer", general.showTracerViewer);
   bind(boolean, "General/ShowRdpViewer", general.showRdpViewer);
   bind(boolean, "General/ShowRspViewer", general.showRspViewer);
+  bind(boolean, "General/ShowCpuProfiler", general.showCpuProfiler);
   bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
   bind(boolean, "General/ShowTmemViewer", general.showTmemViewer);
   bind(boolean, "General/ShowMemoryViewer", general.showMemoryViewer);

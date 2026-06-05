@@ -23,6 +23,7 @@ CPU cpu;
 #include "serialization.cpp"
 #include "disassembler.cpp"
 #include "emux.cpp"
+#include "profiler.cpp"
 
 auto CPU::load(Node::Object parent) -> void {
   node = parent->append<Node::Object>("CPU");
@@ -174,6 +175,8 @@ auto CPU::instruction() -> bool {
 
 auto CPU::instructionPrologue(u64 address, u32 instruction) -> void {
   debugger.instruction(address, instruction);
+  if(unlikely(profiler.enabled.load(std::memory_order_relaxed)))
+    profiler.onInstruction(address, instruction);
 }
 
 template<bool Recompiled>

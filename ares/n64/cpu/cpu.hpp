@@ -47,6 +47,10 @@ struct CPU : Thread {
   template<bool Recompiled> auto instructionEpilogue() -> void;
   auto raiseCoprocessor1Exception() -> void;
 
+  //profiler.cpp: recompute whether the per-instruction prologue hook must be
+  //emitted by the JIT (needed by the instruction tracer and/or the profiler).
+  auto updatePrologueHook() -> void;
+
   auto power(bool reset) -> void;
 
   struct Pipeline {
@@ -1282,6 +1286,69 @@ struct CPU : Thread {
   };
 
   std::vector<ProfileSlot> profileSlots;
+
+  //profiler.cpp — in-game CPU cost profiler. Instruments calls (JAL/JALR) and
+  //returns (JR $ra) while "enabled" to build per-function call counts + cycle
+  //costs. Written on the emulation thread, read live by the desktop-ui viewer.
+  struct Profiler {
+    struct FuncStat {
+      u32 addr = 0;
+      u64 callCount = 0;
+      u64 inclCycles = 0;  //cycles between entry and matching return (incl children)
+      u64 exclCycles = 0;  //inclCycles minus time spent in callees
+      u64 waitCycles = 0;  //exclusive time spent in spin/wait functions anywhere
+                           //in this function's subtree (direct + indirect)
+      bool isSpin = false;
+    };
+    struct Sym {
+      u32 addr = 0;
+      u32 size = 0;
+      string name;
+      bool isSpin = false;
+    };
+    struct Frame {
+      u32 funcAddr = 0;
+      u64 entryCycle = 0;
+      u64 childCycles = 0;  //inclusive time of callees that have returned
+      u64 childWait = 0;    //subtree wait time of callees that have returned
+      bool isException = false;  //synthetic frame for an exception/interrupt handler
+    };
+
+    // Synthetic "function" addresses for exception/interrupt handler entries, so
+    // their time is attributed separately (and subtracted from the interrupted
+    // function) rather than counted as that function's own work.
+    static constexpr u32 kExcBase = 0xE000'0000;
+    auto isExceptionAddr(u32 addr) const -> bool { return (addr & 0xFFFF'0000) == kExcBase; }
+    auto exceptionEntryAddr(u32 code) -> u32;       //synthetic addr for current exception
+    auto labelFor(u32 addr) -> string;              //display name (symbol / exception / hex)
+
+    std::atomic<bool> enabled{false};
+
+    std::unordered_map<u32, FuncStat> stats;       //continuous totals
+    std::unordered_map<u32, FuncStat> frameStats;  //last fully-completed frame
+    std::unordered_map<u32, FuncStat> frameAccum;  //frame in progress
+    std::vector<Frame> callStack;
+    u64 frameCount = 0;  //presented frames accumulated into stats since last clear
+
+    std::vector<Sym> syms;                 //sorted by addr, for enclosing lookup
+    std::unordered_map<u32, u32> symByAddr;//exact entry addr -> index into syms
+    bool symbolsLoaded = false;
+    u32  symbolCount = 0;
+
+    static constexpr u32 maxStackDepth = 1024;
+    static constexpr u32 maxFrames = 1000;  //cap continuous accumulation window
+
+    auto loadSymbols(const string& romPath) -> bool;
+    auto resolve(u32 addr) -> Sym*;
+    auto onInstruction(u64 address, u32 instruction) -> void;
+    auto onException(u32 code) -> void;  //exception/interrupt entry: push handler frame
+    auto onEret() -> void;               //exception return: pop handler frame
+    auto popFrame() -> bool;             //record+propagate top frame; returns isException
+    auto onFrame() -> void;       //per framebuffer swap: publish frame snapshot
+    auto setEnabled(bool value) -> void;
+    auto clearStats() -> void;
+    auto now() -> u64;  //monotonic master-clock timebase
+  } profiler;
 
   struct EmuxState {
     n64 excMask;

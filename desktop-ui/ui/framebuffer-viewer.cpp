@@ -330,7 +330,7 @@ auto DrawFramebufferViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(360, 320), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Framebuffer", &showFramebufferViewer)) {
     ImGui::End();
-    settings.general.showFramebufferViewer = false;
+    settings.general.showFramebufferViewer = showFramebufferViewer;
     return;
   }
 

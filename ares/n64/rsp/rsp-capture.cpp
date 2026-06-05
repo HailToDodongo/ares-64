@@ -116,6 +116,14 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
 
     if(j.contains("banner")) banner = j["banner"].get<std::string>().c_str();
 
+    // CPU profiler: substring patterns that mark a function as spin/wait time.
+    cpuWaitPatterns.clear();
+    if(j.contains("cpuWaitFunctions")) {
+      for(auto& v : j["cpuWaitFunctions"]) {
+        cpuWaitPatterns.push_back(string{v.get<std::string>().c_str()});
+      }
+    }
+
     // Parse IMEM hook addresses
     if(j.contains("imem")) {
       for(auto& [key, val] : j["imem"].items()) {

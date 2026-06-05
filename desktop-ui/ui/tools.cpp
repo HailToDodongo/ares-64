@@ -76,7 +76,7 @@ auto DrawManifestViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(500, 350), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Manifest Viewer", &showManifestViewer)) {
     ImGui::End();
-    settings.general.showManifestViewer = false;
+    settings.general.showManifestViewer = showManifestViewer;
     return;
   }
 
@@ -117,7 +117,7 @@ auto DrawCheatEditor() -> void {
   ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Cheat Editor", &showCheatEditor)) {
     ImGui::End();
-    settings.general.showCheatEditor = false;
+    settings.general.showCheatEditor = showCheatEditor;
     return;
   }
 
@@ -191,7 +191,7 @@ auto DrawTracerViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Trace Logger", &showTracerViewer)) {
     ImGui::End();
-    settings.general.showTracerViewer = false;
+    settings.general.showTracerViewer = showTracerViewer;
     return;
   }
 

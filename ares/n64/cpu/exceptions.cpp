@@ -1,5 +1,6 @@
 auto CPU::Exception::trigger(u32 code, u32 coprocessor, bool tlbMiss) -> void {
   self.debugger.exception(code);
+  if(unlikely(self.profiler.enabled.load(std::memory_order_relaxed))) self.profiler.onException(code);
   if (code != 0) {  //ignore interrupt exceptions
     reportGDBException(code, self.ipu.pc); 
   }

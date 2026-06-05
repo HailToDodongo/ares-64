@@ -11,8 +11,9 @@ add_executable(
   ui/rdp-viewer.cpp
   ui/rsp-viewer.cpp
   ui/log-dump.cpp
+  ui/cpu-profiler.cpp
   ui/framebuffer-viewer.cpp
-ui/tmem-viewer.cpp
+  ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
@@ -43,8 +44,9 @@ set_source_files_properties(
   ui/rdp-viewer.cpp
   ui/rsp-viewer.cpp
   ui/log-dump.cpp
+  ui/cpu-profiler.cpp
   ui/framebuffer-viewer.cpp
-ui/tmem-viewer.cpp
+  ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp

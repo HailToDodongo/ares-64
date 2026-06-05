@@ -38,7 +38,7 @@ auto DrawMemoryViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Memory Editor", &showMemoryViewer)) {
     ImGui::End();
-    settings.general.showMemoryViewer = false;
+    settings.general.showMemoryViewer = showMemoryViewer;
     return;
   }
 

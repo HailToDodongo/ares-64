@@ -73,6 +73,7 @@ struct Settings : Markup::Node {
     bool showTracerViewer = false;
     bool showRdpViewer = false;
     bool showRspViewer = false;
+    bool showCpuProfiler = false;
     bool showFramebufferViewer = false;
     bool showTmemViewer = false;
     bool showMemoryViewer = false;

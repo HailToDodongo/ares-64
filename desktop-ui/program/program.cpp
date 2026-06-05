@@ -149,6 +149,7 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
             u32 rdpN = min<u32>(cap.committedCount.load(std::memory_order_acquire), cap.maxCommands);
             if(ares::ui::LogDumpOnFrame(rspN, rdpN)) _quitRequested = true;
           }
+          ares::Nintendo64::cpu.profiler.onFrame();
         }
       }
     };

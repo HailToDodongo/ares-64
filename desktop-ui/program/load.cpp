@@ -117,6 +117,7 @@ auto Program::load(string location) -> bool {
       ares::Nintendo64::rsp.capture.enabled.store(true, std::memory_order_release);
       ares::Nintendo64::rdp.capture.enabled.store(true, std::memory_order_release);
     }
+    ares::Nintendo64::cpu.profiler.loadSymbols(location);
   }
 
   if(!_imguiMode) {

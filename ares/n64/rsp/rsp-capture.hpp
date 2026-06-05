@@ -75,9 +75,7 @@ struct RSPCapture {
   u8  segWordCount = 0;
   u32 segWords[maxCommandWords] = {};
 
-  // DMEM layout from JSON config. These are overridden by the actual offsets
-  // resolved from the rsp_queue_s DWARF struct when debug info is present
-  // (see buildDmemLabels), so a libdragon layout change can't desync them.
+  // DMEM layout from JSON config
   u32 dmemCmdsOffset = 0;
   u32 dmemCmdsSize = 0;
   u32 dmemDramAddrOffset = 0;
@@ -210,4 +208,8 @@ struct RSPCapture {
   // Cached ELF data — loaded once to avoid re-reading the file every frame
   // during refreshOverlayNames.
   string cachedElfData;
+
+  // CPU profiler: substring patterns (case-insensitive) that classify a function
+  // as spin/wait time. Loaded from "cpuWaitFunctions" in the JSON config.
+  std::vector<string> cpuWaitPatterns;
 };

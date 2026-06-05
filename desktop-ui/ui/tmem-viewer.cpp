@@ -119,7 +119,7 @@ auto DrawTmemViewer() -> void {
 
   ImGui::SetNextWindowSize(ImVec2(420, 340), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("TMEM", &showTmemViewer)) {
-    ImGui::End(); settings.general.showTmemViewer = false; return;
+    ImGui::End(); settings.general.showTmemViewer = showTmemViewer; return;
   }
 
   if(!emulator || emulator->name != "Nintendo 64") {

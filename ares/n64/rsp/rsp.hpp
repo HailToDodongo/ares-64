@@ -1,5 +1,4 @@
 //Reality Signal Processor
-
 #include <n64/rsp/rsp-capture.hpp>
 
 struct RSP : Thread, Memory::RCP<RSP> {

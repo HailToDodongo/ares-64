@@ -24,6 +24,19 @@ struct MI : Memory::RCP<MI> {
   auto lower(IRQ) -> void;
   auto poll() -> void;
 
+  //bitmask (by IRQ index) of RCP sub-sources currently asserting an interrupt;
+  //used by the CPU profiler to label the active interrupt source.
+  auto activeIRQs() const -> u32 {
+    u32 m = 0;
+    if(irq.sp.line & irq.sp.mask) m |= 1u << (u32)IRQ::SP;
+    if(irq.si.line & irq.si.mask) m |= 1u << (u32)IRQ::SI;
+    if(irq.ai.line & irq.ai.mask) m |= 1u << (u32)IRQ::AI;
+    if(irq.vi.line & irq.vi.mask) m |= 1u << (u32)IRQ::VI;
+    if(irq.pi.line & irq.pi.mask) m |= 1u << (u32)IRQ::PI;
+    if(irq.dp.line & irq.dp.mask) m |= 1u << (u32)IRQ::DP;
+    return m;
+  }
+
   auto power(bool reset) -> void;
 
   //io.cpp

@@ -27,7 +27,7 @@ auto DrawRspViewer() -> void {
   ImGui::SetNextWindowSize(ImVec2(700, 400), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("RSP Commands", &showRspViewer)) {
     ImGui::End();
-    settings.general.showRspViewer = false;
+    settings.general.showRspViewer = showRspViewer;
     return;
   }
 

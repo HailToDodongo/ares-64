@@ -298,6 +298,7 @@ auto CPU::ERET() -> void {
     pipeline.setPc(scc.epc);
     scc.status.exceptionLevel = 0;
   }
+  if(unlikely(profiler.enabled.load(std::memory_order_relaxed))) profiler.onEret();
   pipeline.exception();
   scc.llbit = 0;
   context.setMode();

@@ -279,6 +279,7 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("Trace Logger")) showTracerViewer = true;
   if(ImGui::MenuItem("RDP Commands")) showRdpViewer = true;
   if(ImGui::MenuItem("RSP Commands")) showRspViewer = true;
+  if(ImGui::MenuItem("CPU Profiler")) showCpuProfiler = true;
   if(ImGui::MenuItem("Framebuffer")) showFramebufferViewer = true;
   if(ImGui::MenuItem("TMEM")) showTmemViewer = true;
   if(ImGui::MenuItem("Memory Editor")) showMemoryViewer = true;
