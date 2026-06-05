@@ -7,6 +7,14 @@ namespace ares::ui {
 
 bool showRspViewer = false;
 
+// Human-readable byte count for the memory-bandwidth columns.
+static auto fmtBytes(u64 b, char* buf, size_t n) -> void {
+  if(b == 0)               snprintf(buf, n, "-");
+  else if(b < 1024)        snprintf(buf, n, "%lluB", (unsigned long long)b);
+  else if(b < (1u << 20))  snprintf(buf, n, "%.1fK", (f64)b / 1024.0);
+  else                     snprintf(buf, n, "%.2fM", (f64)b / (1024.0 * 1024.0));
+}
+
 static auto overlayColor(u8 overlayId) -> ImU32 {
   static const ImU32 colors[] = {
     IM_COL32(128, 128, 128, 255), // 0: builtin (gray)
@@ -190,7 +198,7 @@ auto DrawRspViewer() -> void {
     statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.34f, 140.0f, 320.0f);
   }
 
-  if(!ImGui::BeginTable("rsp_cmds", 5,
+  if(!ImGui::BeginTable("rsp_cmds", 7,
        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
        ImVec2(0, showStats ? -statsH : 0))) {
@@ -204,6 +212,8 @@ auto DrawRspViewer() -> void {
 
   ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 45);
   ImGui::TableSetupColumn(timeUnit == 0 ? "us" : "Cycles", ImGuiTableColumnFlags_WidthFixed, 60);
+  ImGui::TableSetupColumn("In", ImGuiTableColumnFlags_WidthFixed, 55);
+  ImGui::TableSetupColumn("Out", ImGuiTableColumnFlags_WidthFixed, 55);
   ImGui::TableSetupColumn("Ovl", ImGuiTableColumnFlags_WidthFixed, 35);
   ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthFixed, 140);
   ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_WidthStretch);
@@ -248,7 +258,7 @@ auto DrawRspViewer() -> void {
       pendingSeparator = false;
       ImGui::TableNextRow(ImGuiTableRowFlags_None, 2.0f);
       ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(0x77, 0x77, 0x77, 0xFF));
-      for(int c = 1; c < 6; c++) ImGui::TableNextColumn();
+      for(int c = 1; c < 8; c++) ImGui::TableNextColumn();
     }
 
     ImGui::TableNextRow();
@@ -289,6 +299,24 @@ auto DrawRspViewer() -> void {
     else
       ImGui::Text("%s", timeBuf);
     ImGui::PopFont();
+
+    // Memory-bandwidth columns: bytes DMAed in / out attributed to this row.
+    auto byteCell = [&](u64 bytes) {
+      char byteBuf[24];
+      fmtBytes(bytes, byteBuf, sizeof(byteBuf));
+      ImGui::TableNextColumn();
+      ImGui::PushFont(monoFont);
+      float cw = ImGui::GetColumnWidth();
+      float tw = ImGui::CalcTextSize(byteBuf).x;
+      float p  = ImGui::GetStyle().ItemSpacing.x;
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + cw - tw - p);
+      if(bytes == 0)          ImGui::TextDisabled("%s", byteBuf);
+      else if(cmd.isOverhead) ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1), "%s", byteBuf);
+      else                    ImGui::TextUnformatted(byteBuf);
+      ImGui::PopFont();
+    };
+    byteCell(cmd.bytesIn);
+    byteCell(cmd.bytesOut);
 
     // Internal/overhead rows (loop dispatch, overlay load, buffer fetch) are not
     // real commands, so don't decode them as ovl 0 / cmd 0.
@@ -377,27 +405,32 @@ auto DrawRspViewer() -> void {
     struct CmdKeyHash { u64 operator()(const CmdKey& k) const {
       u64 h = OvlKeyHash{}(k.ovl); for(char c : k.cmd) h = h * 31 + c; return h; }};
 
-    std::unordered_map<OvlKey, u64, OvlKeyHash> ovlTime;
+    std::unordered_map<OvlKey, u64, OvlKeyHash> ovlTime, ovlIn, ovlOut;
     std::unordered_map<OvlKey, u32, OvlKeyHash> ovlCnt;
-    std::unordered_map<CmdKey, u64, CmdKeyHash> cmdTime;
+    std::unordered_map<CmdKey, u64, CmdKeyHash> cmdTime, cmdIn, cmdOut;
     std::unordered_map<CmdKey, u32, CmdKeyHash> cmdCnt;
     u64 ohTime[4] = {}; u32 ohCnt[4] = {};
+    u64 ohIn[4] = {}, ohOut[4] = {};
 
-    u64 totalTime = 0;
+    u64 totalTime = 0, totalIn = 0, totalOut = 0;
     for(u32 i = 0; i < displayCount; i++) {
       auto& c = cap.commands[i];
       totalTime += c.cycle;
+      totalIn += c.bytesIn; totalOut += c.bytesOut;
       if(c.isOverhead) {
         u8 t = c.overheadType < 4 ? c.overheadType : 0;
         ohTime[t] += c.cycle; ohCnt[t]++;
+        ohIn[t] += c.bytesIn; ohOut[t] += c.bytesOut;
       } else {
         u8 slot = c.overlayId & 15;
         auto& nm = cap.overlayNameMap[slot];
         OvlKey ok{nm ? string{nm} : string{hex(slot)}, slot};
         ovlTime[ok] += c.cycle; ovlCnt[ok]++;
+        ovlIn[ok] += c.bytesIn; ovlOut[ok] += c.bytesOut;
         auto& cn = cap.commandNameMap[slot][c.commandId];
         CmdKey ck{ok, cn ? string{cn} : string{hex(c.commandId, 2L)}, c.commandId};
         cmdTime[ck] += c.cycle; cmdCnt[ck]++;
+        cmdIn[ck] += c.bytesIn; cmdOut[ck] += c.bytesOut;
       }
     }
 
@@ -425,22 +458,24 @@ auto DrawRspViewer() -> void {
 
       // --- By Overlay ------------------------------------------------------
       if(ImGui::BeginTabItem("By Overlay")) {
-        struct Row { string label; ImU32 color; u32 count; u64 time; };
+        struct Row { string label; ImU32 color; u32 count; u64 time; u64 bin; u64 bout; };
         std::vector<Row> rows;
         for(auto& [ok, t] : ovlTime) {
-          rows.push_back({ok.name, overlayColor(ok.slot), ovlCnt[ok], t});
+          rows.push_back({ok.name, overlayColor(ok.slot), ovlCnt[ok], t, ovlIn[ok], ovlOut[ok]});
         }
         for(u32 t = 1; t < 4; t++) {
           if(!ohCnt[t]) continue;
-          rows.push_back({string{ohNames[t]}, IM_COL32(150, 150, 150, 255), ohCnt[t], ohTime[t]});
+          rows.push_back({string{ohNames[t]}, IM_COL32(150, 150, 150, 255), ohCnt[t], ohTime[t], ohIn[t], ohOut[t]});
         }
         std::sort(rows.begin(), rows.end(), [](auto& a, auto& b) { return a.time > b.time; });
 
-        if(ImGui::BeginTable("##ovlStats", 4,
+        if(ImGui::BeginTable("##ovlStats", 6,
              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
           ImGui::TableSetupColumn("Overlay", ImGuiTableColumnFlags_WidthStretch);
           ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 60);
           ImGui::TableSetupColumn(timeHdr, ImGuiTableColumnFlags_WidthFixed, 80);
+          ImGui::TableSetupColumn("In", ImGuiTableColumnFlags_WidthFixed, 60);
+          ImGui::TableSetupColumn("Out", ImGuiTableColumnFlags_WidthFixed, 60);
           ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 55);
           ImGui::TableSetupScrollFreeze(0, 1);
           ImGui::TableHeadersRow();
@@ -452,12 +487,16 @@ auto DrawRspViewer() -> void {
             ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(r.color), "%s", r.label.data());
             ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%u", r.count); numCell(buf);
             ImGui::TableNextColumn(); fmtTime(r.time, buf, sizeof(buf)); numCell(buf);
+            ImGui::TableNextColumn(); fmtBytes(r.bin, buf, sizeof(buf)); numCell(buf);
+            ImGui::TableNextColumn(); fmtBytes(r.bout, buf, sizeof(buf)); numCell(buf);
             ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)r.time * invTotal); numCell(buf);
           }
           ImGui::TableNextRow();
           ImGui::TableNextColumn(); ImGui::TextDisabled("Total");
           ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%u", displayCount); numCell(buf);
           ImGui::TableNextColumn(); fmtTime(totalTime, buf, sizeof(buf)); numCell(buf);
+          ImGui::TableNextColumn(); fmtBytes(totalIn, buf, sizeof(buf)); numCell(buf);
+          ImGui::TableNextColumn(); fmtBytes(totalOut, buf, sizeof(buf)); numCell(buf);
           ImGui::TableNextColumn(); numCell("100.0");
           ImGui::EndTable();
         }
@@ -466,19 +505,21 @@ auto DrawRspViewer() -> void {
 
       // --- By Command -------------------------------------------------------
       if(ImGui::BeginTabItem("By Command")) {
-        struct Row { string ovl; ImU32 color; string cmd; u32 count; u64 time; };
+        struct Row { string ovl; ImU32 color; string cmd; u32 count; u64 time; u64 bin; u64 bout; };
         std::vector<Row> rows;
         for(auto& [ck, t] : cmdTime) {
-          rows.push_back({ck.ovl.name, overlayColor(ck.ovl.slot), ck.cmd, cmdCnt[ck], t});
+          rows.push_back({ck.ovl.name, overlayColor(ck.ovl.slot), ck.cmd, cmdCnt[ck], t, cmdIn[ck], cmdOut[ck]});
         }
         std::sort(rows.begin(), rows.end(), [](auto& a, auto& b) { return a.time > b.time; });
 
-        if(ImGui::BeginTable("##cmdStats", 5,
+        if(ImGui::BeginTable("##cmdStats", 7,
              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
           ImGui::TableSetupColumn("Overlay", ImGuiTableColumnFlags_WidthFixed, 90);
           ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthStretch);
           ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 60);
           ImGui::TableSetupColumn(timeHdr, ImGuiTableColumnFlags_WidthFixed, 80);
+          ImGui::TableSetupColumn("In", ImGuiTableColumnFlags_WidthFixed, 60);
+          ImGui::TableSetupColumn("Out", ImGuiTableColumnFlags_WidthFixed, 60);
           ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 55);
           ImGui::TableSetupScrollFreeze(0, 1);
           ImGui::TableHeadersRow();
@@ -491,6 +532,8 @@ auto DrawRspViewer() -> void {
             ImGui::TableNextColumn(); ImGui::TextColored(col, "%s", r.cmd.data());
             ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%u", r.count); numCell(buf);
             ImGui::TableNextColumn(); fmtTime(r.time, buf, sizeof(buf)); numCell(buf);
+            ImGui::TableNextColumn(); fmtBytes(r.bin, buf, sizeof(buf)); numCell(buf);
+            ImGui::TableNextColumn(); fmtBytes(r.bout, buf, sizeof(buf)); numCell(buf);
             ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)r.time * invTotal); numCell(buf);
           }
           ImGui::EndTable();

@@ -38,6 +38,8 @@ struct RSPCapture {
     u32 words[maxCommandWords] = {};
     bool isOverhead = false;
     u8  overheadType = 0;
+    u64 bytesIn = 0;      // RDRAM -> DMEM/IMEM DMA bytes attributed to this row
+    u64 bytesOut = 0;     // DMEM/IMEM -> RDRAM DMA bytes attributed to this row
   };
 
   Command commands[maxCommands];
@@ -69,6 +71,11 @@ struct RSPCapture {
   u8  segType = SegNone;
   u64 segStart = 0;
   u64 segSeq = 0;
+  // Memory-bus bytes DMAed during the current segment (RSP only touches the bus
+  // via DMA). Assigned in full at DMA start and flushed into the row on segment
+  // close. "In" = RDRAM -> RSP, "Out" = RSP -> RDRAM.
+  u64 segBytesIn = 0;
+  u64 segBytesOut = 0;
   // Pending command descriptor for SegCommand (captured at dispatch time).
   u16 segOverlay = 0;
   u8  segCommand = 0;
@@ -138,7 +145,8 @@ struct RSPCapture {
   // JSON config loaded flag
   bool configLoaded = false;
 
-  auto push(u64 cycle, u64 seq, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words) -> void {
+  auto push(u64 cycle, u64 seq, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words,
+            u64 bytesIn, u64 bytesOut) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
     auto& cmd = commands[pos % maxCommands];
@@ -150,12 +158,14 @@ struct RSPCapture {
     cmd.wordCount = wordCount;
     cmd.isOverhead = false;
     cmd.overheadType = 0;
+    cmd.bytesIn = bytesIn;
+    cmd.bytesOut = bytesOut;
     u32 wc = min(wordCount, maxCommandWords);
     for(u32 i = 0; i < wc; i++) cmd.words[i] = words[i];
     writePos.store(pos + 1, std::memory_order_release);
   }
 
-  auto pushOverhead(u64 cycle, u64 seq, u8 overheadType) -> void {
+  auto pushOverhead(u64 cycle, u64 seq, u8 overheadType, u64 bytesIn, u64 bytesOut) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
     auto& cmd = commands[pos % maxCommands];
@@ -167,7 +177,19 @@ struct RSPCapture {
     cmd.wordCount = 0;
     cmd.isOverhead = true;
     cmd.overheadType = overheadType;
+    cmd.bytesIn = bytesIn;
+    cmd.bytesOut = bytesOut;
     writePos.store(pos + 1, std::memory_order_release);
+  }
+
+  // Called by the SP DMA engine when a transfer starts. The RSP only reaches the
+  // memory bus via DMA, so attributing each transfer's full size to the active
+  // segment gives the per-command memory bandwidth. toRDRAM=true is an outgoing
+  // (RSP -> RDRAM) transfer; false is incoming (RDRAM -> RSP).
+  auto onDMA(bool toRDRAM, u64 bytes) -> void {
+    if(!enabled.load(std::memory_order_relaxed)) return;
+    if(toRDRAM) segBytesOut += bytes;
+    else        segBytesIn  += bytes;
   }
 
   auto hasHook(u32 imemAddress) const -> bool {
