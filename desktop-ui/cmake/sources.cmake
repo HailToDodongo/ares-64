@@ -34,14 +34,7 @@ target_sources(
 target_sources(
   desktop-ui
   PRIVATE
-    tools/cheats.cpp
-    tools/graphics.cpp
-    tools/manifest.cpp
-    tools/memory.cpp
-    tools/properties.cpp
-    tools/streams.cpp
     tools/tools.hpp
-    tools/tracer.cpp
 )
 
 target_sources(

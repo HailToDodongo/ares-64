@@ -7,6 +7,17 @@ set -e
 DELETED=(
   hiro
   tools/genius
+  tools/mame2bml
+  scripts/update-arcade-rom-db.sh
+  desktop-ui/tools/cheats.cpp
+  desktop-ui/tools/graphics.cpp
+  desktop-ui/tools/manifest.cpp
+  desktop-ui/tools/memory.cpp
+  desktop-ui/tools/properties.cpp
+  desktop-ui/tools/streams.cpp
+  desktop-ui/tools/tape.cpp
+  desktop-ui/tools/tools.cpp
+  desktop-ui/tools/tracer.cpp
   ruby/video/glx.cpp
   ruby/video/wgl.cpp
   ruby/video/cgl.cpp
