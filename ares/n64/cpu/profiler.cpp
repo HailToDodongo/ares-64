@@ -180,28 +180,50 @@ auto CPU::Profiler::resolve(u32 addr) -> Sym* {
 }
 
 auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
+  u32 pc32 = (u32)address;
+
+  // Return detection by *arrival* at a call's return address, rather than by
+  // catching the `jr $ra` instruction. The JIT does not reliably emit the
+  // per-instruction hook for a `jr` reached as the fall-through of a preceding
+  // branch (back-to-back branches), so the return itself can be invisible. 
+  // but the return *target* is always a normal instruction in the (instrumented)
+  // caller. When execution arrives at the top frame's recorded return address,
+  // that call has returned: pop it. One pop per arrival so recursion that returns
+  // to a shared call site unwinds a single level at a time. Exception frames are
+  // popped by onEret, not here, and never matched (their retAddr is 0).
+  if(!callStack.empty() && !callStack.back().isException && callStack.back().retAddr == pc32) {
+    popFrame();
+  }
+
   u32 op = instruction >> 26;
   bool isJAL  = (op == 0x03);
   bool isJALR = (op == 0x00) && ((instruction & 0x3f) == 0x09);
-  bool isJR   = (op == 0x00) && ((instruction & 0x3f) == 0x08);
 
   if(isJAL || isJALR) {
+    // Only standard calls that link into $ra (rd=31 for JALR) form a call/return
+    // pair we can balance; a JALR linking elsewhere returns via a register we
+    // don't track, so treating it as a call would just leak a frame.
+    if(isJALR && ((instruction >> 11) & 31) != 31) return;
     if(callStack.size() >= maxStackDepth) return;  //runaway guard
-    u32 pc32 = (u32)address;
     u32 target = isJAL
       ? ((pc32 & 0xf000'0000) | ((instruction & 0x03ff'ffff) << 2))
       : (u32)cpu.ipu.r[(instruction >> 21) & 31].u64;  //JALR rs holds the target
-    callStack.push_back({target, now(), 0});
-    return;
+    Frame f;
+    f.funcAddr = target;
+    f.retAddr = pc32 + 8;  //where the callee returns to (after the delay slot)
+    f.entryCycle = now();
+    callStack.push_back(f);
   }
+}
 
-  if(isJR) {
-    if(((instruction >> 21) & 31) != 31) return;  //only "jr $ra" is a return
-    if(callStack.empty()) return;                 //underflow guard
-    if(callStack.back().isException) return;       //a normal return never crosses
-                                                   //an exception boundary (ERET does)
-    popFrame();
-  }
+// Memory-bus bytes committed to RDRAM during the current frame's execution.
+// Attributed in full to the function on top of the call stack at the time of the
+// access, mirroring how exclusive cycles are charged. The inclusive total is
+// rolled up into the caller on popFrame.
+auto CPU::Profiler::onBusAccess(bool toRDRAM, u64 bytes) -> void {
+  if(callStack.empty()) return;  //bytes outside any tracked frame are dropped
+  if(toRDRAM) callStack.back().bytesOutOwn += bytes;
+  else        callStack.back().bytesInOwn  += bytes;
 }
 
 // Record the top frame's timing into the stats and propagate its inclusive time
@@ -219,6 +241,9 @@ auto CPU::Profiler::popFrame() -> bool {
   // Wait time within this call's whole subtree: this function's own exclusive
   // time if it is a spin/wait function, plus whatever its callees waited on.
   u64 subtreeWait = frame.childWait + (spin ? excl : 0);
+  // Bytes: own = exclusive (this function's code), incl = own + returned callees.
+  u64 inclBytesIn  = frame.bytesInOwn  + frame.childBytesIn;
+  u64 inclBytesOut = frame.bytesOutOwn + frame.childBytesOut;
   auto add = [&](std::unordered_map<u32, FuncStat>& m) {
     auto& st = m[frame.funcAddr];
     st.addr = frame.funcAddr;
@@ -227,12 +252,18 @@ auto CPU::Profiler::popFrame() -> bool {
     st.inclCycles += incl;
     st.exclCycles += excl;
     st.waitCycles += subtreeWait;
+    st.inclBytesIn  += inclBytesIn;
+    st.inclBytesOut += inclBytesOut;
+    st.exclBytesIn  += frame.bytesInOwn;
+    st.exclBytesOut += frame.bytesOutOwn;
   };
   if(frameCount < maxFrames) add(stats);  //freeze continuous totals at the cap
   add(frameAccum);                         //per-frame snapshot is always live
   if(!callStack.empty()) {
     callStack.back().childCycles += incl;
     callStack.back().childWait   += subtreeWait;
+    callStack.back().childBytesIn  += inclBytesIn;
+    callStack.back().childBytesOut += inclBytesOut;
   }
   return frame.isException;
 }

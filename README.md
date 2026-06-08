@@ -59,7 +59,7 @@ The binary will be at `build/desktop-ui/ares`.
 
 For faster iterative builds, use:
 ```sh
-cmake -S . -B build -DENABLE_IPO=OFF -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_IPO=OFF -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld
 ```
 
 # Running

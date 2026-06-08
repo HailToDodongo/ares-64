@@ -126,23 +126,36 @@ auto CPU::devirtualizeDebug(u64 vaddr) -> u64 {
   return devirtualize<Read, Byte>(vaddr, false).paddr; // this wrapper preserves the inlining of 'devirtualizeFast'
 }
 
+// Only accesses that reach physical RDRAM (address <= 0x03ef'ffff) count toward
+// the profiler's memory-bandwidth stats; MMIO registers and RDRAM registers are
+// excluded. The Size enum value is the transfer size in bytes (Byte=1 .. ICache=32).
+inline auto CPU::profileBusAccess(bool toRDRAM, u32 address, u64 bytes) -> void {
+  if(!profiler.enabled.load(std::memory_order_relaxed)) return;
+  if(address > 0x03ef'ffff) return;
+  profiler.onBusAccess(toRDRAM, bytes);
+}
+
 template<u32 Size>
 inline auto CPU::busWrite(u32 address, u64 data) -> void {
+  profileBusAccess(true, address, Size);
   bus.write<Size>(address, data, *this, RBusDevice::VR4300_UNCACHED);
 }
 
 template<u32 Size>
 inline auto CPU::busWriteBurst(u32 address, u32 *data) -> bool {
+  profileBusAccess(true, address, Size);
   return bus.writeBurst<Size>(address, data, *this);
 }
 
 template<u32 Size>
 inline auto CPU::busRead(u32 address) -> u64 {
+  profileBusAccess(false, address, Size);
   return bus.read<Size>(address, *this, RBusDevice::VR4300_UNCACHED);
 }
 
 template<u32 Size>
-inline auto CPU::busReadBurst(u32 address, u32 *data) -> bool {
+inline auto CPU::busReadBurst(u32 address, u32 *data, bool count) -> bool {
+  if(count) profileBusAccess(false, address, Size);
   return bus.readBurst<Size>(address, data, *this);
 }
 

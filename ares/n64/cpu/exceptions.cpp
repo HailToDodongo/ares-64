@@ -1,6 +1,10 @@
 auto CPU::Exception::trigger(u32 code, u32 coprocessor, bool tlbMiss) -> void {
   self.debugger.exception(code);
-  if(unlikely(self.profiler.enabled.load(std::memory_order_relaxed))) self.profiler.onException(code);
+  // Only push a profiler frame for a fresh exception (EXL=0). A fault taken while
+  // already in a handler (EXL=1) saves no new EPC and is cleared by the same
+  // single ERET, so it must not add an extra frame the ERET won't balance.
+  if(unlikely(self.profiler.enabled.load(std::memory_order_relaxed)) && !self.scc.status.exceptionLevel)
+    self.profiler.onException(code);
   if (code != 0) {  //ignore interrupt exceptions
     reportGDBException(code, self.ipu.pc); 
   }

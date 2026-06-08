@@ -115,17 +115,21 @@ auto DrawCpuProfiler() -> void {
   // Snapshot the active map (continuous totals or the last completed frame).
   auto& srcMap = (windowMode == 0) ? prof.stats : prof.frameStats;
 
-  struct Row { u32 addr; string name; bool isSpin; bool isExc; u64 calls; u64 incl; u64 excl; u64 wait; };
+  struct Row { u32 addr; string name; bool isSpin; bool isExc; u64 calls; u64 incl; u64 excl; u64 wait;
+               u64 bytesIn; u64 bytesOut; u64 inclBytesIn; u64 inclBytesOut; };
   std::vector<Row> rows;
   rows.reserve(srcMap.size());
-  u64 totalExcl = 0, spinExcl = 0;
+  u64 totalExcl = 0, spinExcl = 0, totalBytesIn = 0, totalBytesOut = 0;
   for(auto& [addr, st] : srcMap) {
     bool isExc = prof.isExceptionAddr(addr);
     string name = prof.labelFor(addr);
     bool spin = !isExc && st.isSpin;
-    rows.push_back({addr, name, spin, isExc, st.callCount, st.inclCycles, st.exclCycles, st.waitCycles});
+    rows.push_back({addr, name, spin, isExc, st.callCount, st.inclCycles, st.exclCycles, st.waitCycles,
+                    st.exclBytesIn, st.exclBytesOut, st.inclBytesIn, st.inclBytesOut});
     totalExcl += st.exclCycles;
     if(spin) spinExcl += st.exclCycles;
+    totalBytesIn += st.exclBytesIn;
+    totalBytesOut += st.exclBytesOut;
   }
 
   // (rows are sorted below according to the table's clickable column headers)
@@ -142,6 +146,14 @@ auto DrawCpuProfiler() -> void {
   auto fmtCount = [&](u64 raw, char* buf, size_t n) {
     if(avgMode) snprintf(buf, n, "%.2f", (f64)raw / divisor);
     else        snprintf(buf, n, "%llu", (unsigned long long)raw);
+  };
+  // Human-readable RDRAM byte count (divisor-aware for the per-frame average).
+  auto fmtBytes = [&](u64 raw, char* buf, size_t n) {
+    f64 b = (f64)raw / divisor;
+    if(raw == 0)             snprintf(buf, n, "-");
+    else if(b < 1024)        snprintf(buf, n, "%.0fB", b);
+    else if(b < (1u << 20))  snprintf(buf, n, "%.1fK", b / 1024.0);
+    else                     snprintf(buf, n, "%.2fM", b / (1024.0 * 1024.0));
   };
   auto numCell = [&](const char* text) {
     ImGui::PushFont(monoFont);
@@ -160,8 +172,12 @@ auto DrawCpuProfiler() -> void {
   float statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.30f, 120.0f, 260.0f);
 
   // --- main function table ----------------------------------------------------
-  if(ImGui::BeginTable("cpu_funcs", 7,
+  // Hideable: right-click any header to toggle column visibility. ImGui persists
+  // the per-column choice (plus order/width/sort) to imgui.ini under this table's
+  // id, so it is remembered across sessions.
+  if(ImGui::BeginTable("cpu_funcs", 11,
        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Sortable |
+       ImGuiTableFlags_Hideable | ImGuiTableFlags_Reorderable |
        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
        ImVec2(0, -statsH))) {
     ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, 40);
@@ -170,6 +186,12 @@ auto DrawCpuProfiler() -> void {
     ImGui::TableSetupColumn("Excl", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultSort, 80);
     ImGui::TableSetupColumn("Incl", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 80);
     ImGui::TableSetupColumn("Wait", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 80);
+    // RDRAM memory-bus bytes: In = RDRAM->CPU, Out = CPU->RDRAM; "ex" = this
+    // function's own code, "in" = including callees.
+    ImGui::TableSetupColumn("In ex",  ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 64);
+    ImGui::TableSetupColumn("In in",  ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 64);
+    ImGui::TableSetupColumn("Out ex", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 64);
+    ImGui::TableSetupColumn("Out in", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_PreferSortDescending, 64);
     ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, 55);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
@@ -185,6 +207,10 @@ auto DrawCpuProfiler() -> void {
         case 2:  return asc ? a.calls < b.calls : a.calls > b.calls;
         case 4:  return asc ? a.incl  < b.incl  : a.incl  > b.incl;
         case 5:  return asc ? a.wait  < b.wait  : a.wait  > b.wait;
+        case 6:  return asc ? a.bytesIn      < b.bytesIn      : a.bytesIn      > b.bytesIn;
+        case 7:  return asc ? a.inclBytesIn  < b.inclBytesIn  : a.inclBytesIn  > b.inclBytesIn;
+        case 8:  return asc ? a.bytesOut     < b.bytesOut     : a.bytesOut     > b.bytesOut;
+        case 9:  return asc ? a.inclBytesOut < b.inclBytesOut : a.inclBytesOut > b.inclBytesOut;
         case 3:
         default: return asc ? a.excl  < b.excl  : a.excl  > b.excl;
         }
@@ -218,6 +244,11 @@ auto DrawCpuProfiler() -> void {
       if(r.wait) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.65f, 0.3f, 1));
       numCell(buf);
       if(r.wait) ImGui::PopStyleColor();
+      // RDRAM bandwidth: In/Out, each as exclusive (own code) and inclusive (subtree).
+      ImGui::TableNextColumn(); fmtBytes(r.bytesIn,      buf, sizeof(buf)); numCell(buf);
+      ImGui::TableNextColumn(); fmtBytes(r.inclBytesIn,  buf, sizeof(buf)); numCell(buf);
+      ImGui::TableNextColumn(); fmtBytes(r.bytesOut,     buf, sizeof(buf)); numCell(buf);
+      ImGui::TableNextColumn(); fmtBytes(r.inclBytesOut, buf, sizeof(buf)); numCell(buf);
       ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)r.excl * invTotal); numCell(buf);
     }
     ImGui::EndTable();
@@ -259,6 +290,20 @@ auto DrawCpuProfiler() -> void {
         ImGui::TableNextColumn(); ImGui::TextDisabled(avgMode ? "Per-frame total" : "Profiled total");
         ImGui::TableNextColumn(); fmtTime(totalExcl / divisor, buf, sizeof(buf)); numCell(buf);
         ImGui::TableNextColumn(); numCell("100.0");
+
+        // RDRAM memory-bus bandwidth. The value column shows bytes (not time);
+        // the % column shows each direction's share of total bus traffic.
+        u64 totalBus = totalBytesIn + totalBytesOut;
+        f64 invBus = totalBus ? 100.0 / (f64)totalBus : 0.0;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::TextDisabled("RDRAM in");
+        ImGui::TableNextColumn(); fmtBytes(totalBytesIn, buf, sizeof(buf)); numCell(buf);
+        ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)totalBytesIn * invBus); numCell(buf);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn(); ImGui::TextDisabled("RDRAM out");
+        ImGui::TableNextColumn(); fmtBytes(totalBytesOut, buf, sizeof(buf)); numCell(buf);
+        ImGui::TableNextColumn(); snprintf(buf, sizeof(buf), "%.1f", (f64)totalBytesOut * invBus); numCell(buf);
         ImGui::EndTable();
       }
       ImGui::EndTabItem();

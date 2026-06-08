@@ -172,7 +172,7 @@ struct CPU : Thread {
       if(!line.hit(paddr))
         return true;
       u32 ram[8];
-      self.busReadBurst<ICache>(paddr & ~0x0000'0fff | line.index, ram);
+      self.busReadBurst<ICache>(paddr & ~0x0000'0fff | line.index, ram, false);  //probe: not real bus traffic
       for (int i=0; i<8; i++)
         if (ram[i] != line.words[i])
           return false;
@@ -351,10 +351,13 @@ struct CPU : Thread {
     profile.icacheMisses++;
     line.fill(paddr, *this);
   }
+  auto profileBusAccess(bool toRDRAM, u32 address, u64 bytes) -> void;  //memory.cpp
   template<u32 Size> auto busWrite(u32 address, u64 data) -> void;
   template<u32 Size> auto busRead(u32 address) -> u64;
   template<u32 Size> auto busWriteBurst(u32 address, u32 *data) -> bool;
-  template<u32 Size> auto busReadBurst(u32 address, u32 *data) -> bool;
+  //count=false skips memory-bandwidth profiling for emulator-only probe reads
+  //(e.g. the icache coherency check) that real hardware never drives on the bus.
+  template<u32 Size> auto busReadBurst(u32 address, u32 *data, bool count = true) -> bool;
   template<u32 Size> auto read(PhysAccess access) -> maybe<u64>;
   template<u32 Size> auto write(PhysAccess access, u64 data) -> bool;
   template<u32 Size> auto read(u64 vaddr) -> maybe<u64> {
@@ -1298,6 +1301,10 @@ struct CPU : Thread {
       u64 exclCycles = 0;  //inclCycles minus time spent in callees
       u64 waitCycles = 0;  //exclusive time spent in spin/wait functions anywhere
                            //in this function's subtree (direct + indirect)
+      u64 inclBytesIn = 0;   //RDRAM -> CPU bytes incl. callees
+      u64 inclBytesOut = 0;  //CPU -> RDRAM bytes incl. callees
+      u64 exclBytesIn = 0;   //RDRAM -> CPU bytes from this function's own code
+      u64 exclBytesOut = 0;  //CPU -> RDRAM bytes from this function's own code
       bool isSpin = false;
     };
     struct Sym {
@@ -1308,9 +1315,14 @@ struct CPU : Thread {
     };
     struct Frame {
       u32 funcAddr = 0;
+      u32 retAddr = 0;      //expected $ra on return (call address + 8); 0 for exception frames
       u64 entryCycle = 0;
       u64 childCycles = 0;  //inclusive time of callees that have returned
       u64 childWait = 0;    //subtree wait time of callees that have returned
+      u64 bytesInOwn = 0;    //RDRAM -> CPU bytes while this frame was on top (exclusive)
+      u64 bytesOutOwn = 0;   //CPU -> RDRAM bytes while this frame was on top (exclusive)
+      u64 childBytesIn = 0;  //inclusive RDRAM -> CPU bytes of callees that have returned
+      u64 childBytesOut = 0; //inclusive CPU -> RDRAM bytes of callees that have returned
       bool isException = false;  //synthetic frame for an exception/interrupt handler
     };
 
@@ -1341,6 +1353,9 @@ struct CPU : Thread {
     auto loadSymbols(const string& romPath) -> bool;
     auto resolve(u32 addr) -> Sym*;
     auto onInstruction(u64 address, u32 instruction) -> void;
+    //memory-bus access committed to RDRAM, attributed to the current frame.
+    //toRDRAM=true is outgoing (CPU -> RDRAM), false is incoming (RDRAM -> CPU).
+    auto onBusAccess(bool toRDRAM, u64 bytes) -> void;
     auto onException(u32 code) -> void;  //exception/interrupt entry: push handler frame
     auto onEret() -> void;               //exception return: pop handler frame
     auto popFrame() -> bool;             //record+propagate top frame; returns isException
