@@ -142,6 +142,22 @@ auto DrawFlameChart() -> void {
       u64 dur = (u32)c.cycle;
       rspSpans.push_back({rel, rel + dur, c.overlayId, c.commandId, c.isOverhead, c.overheadType});
     }
+    // The RSP segment model only emits a row on transition. At the VI swap the
+    // current segment (usually SegLoop = idle/dispatch) is still open — its
+    // trailing idle time leaks into the next frame's first overhead row. Fill the
+    // tail gap with a synthetic span so the RSP lane covers the full frame.
+    // Also clamp spans that start before 0 (previous-frame segments whose
+    // startCycle predates the VI swap, wrapping the u32 delta).
+    if(rn > 0) {
+      u64 rspFrameTicks = (u32)(rcap.committedClockEnd - rstart);
+      u64 lastEnd = rspSpans.back().end;
+      if(lastEnd < rspFrameTicks)
+        rspSpans.push_back({lastEnd, rspFrameTicks, 0, 0, true, 1 /*Loop*/});
+      for(auto& s : rspSpans) {
+        if(s.start > rspFrameTicks) s.start = 0;   //wrapped to before frame start
+        if(s.end > rspFrameTicks) s.end = rspFrameTicks;
+      }
+    }
     std::sort(rspSpans.begin(), rspSpans.end(),
               [](const RspSpan& a, const RspSpan& b) { return a.start < b.start; });
   }
