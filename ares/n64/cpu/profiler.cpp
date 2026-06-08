@@ -259,6 +259,12 @@ auto CPU::Profiler::popFrame() -> bool {
   };
   if(frameCount < maxFrames) add(stats);  //freeze continuous totals at the cap
   add(frameAccum);                         //per-frame snapshot is always live
+  // Flame-chart span: this call's [entry,now) at its call-stack depth. callStack
+  // was just popped, so its current size is exactly this frame's nesting depth.
+  if(recordTimeline.load(std::memory_order_relaxed) && frameAccumSpans.size() < maxSpans) {
+    frameAccumSpans.push_back({frame.entryCycle, nowT, frame.funcAddr,
+                               (u16)min<u32>(callStack.size(), 0xffff), frame.isException});
+  }
   if(!callStack.empty()) {
     callStack.back().childCycles += incl;
     callStack.back().childWait   += subtreeWait;
@@ -329,6 +335,14 @@ auto CPU::Profiler::onEret() -> void {
 auto CPU::Profiler::onFrame() -> void {
   frameStats = frameAccum;
   frameAccum.clear();
+  // Publish this frame's flame-chart spans and start the next frame's window.
+  // Swap (not copy) so the live buffer's capacity is retained across frames.
+  u64 nowT = now();
+  frameSpans.swap(frameAccumSpans);
+  frameAccumSpans.clear();
+  frameSpanStart = frameStartCycle;
+  frameSpanEnd = nowT;
+  frameStartCycle = nowT;
   //number of presented frames the continuous totals span, capped at maxFrames so
   //the accumulation stops growing once the window is full (Clear restarts it).
   if(frameCount < maxFrames) frameCount++;
@@ -346,6 +360,8 @@ auto CPU::Profiler::clearStats() -> void {
   frameAccum.clear();
   callStack.clear();
   frameCount = 0;
+  frameSpans.clear();
+  frameAccumSpans.clear();
 }
 
 auto CPU::updatePrologueHook() -> void {

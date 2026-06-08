@@ -74,6 +74,7 @@ struct Settings : Markup::Node {
     bool showRdpViewer = false;
     bool showRspViewer = false;
     bool showCpuProfiler = false;
+    bool showFlameChart = false;
     bool showFramebufferViewer = false;
     bool showTmemViewer = false;
     bool showMemoryViewer = false;

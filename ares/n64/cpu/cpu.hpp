@@ -1326,6 +1326,17 @@ struct CPU : Thread {
       bool isException = false;  //synthetic frame for an exception/interrupt handler
     };
 
+    // Flame-chart timeline: one span per completed call, recorded at popFrame time
+    // when timeline recording is on. start/end are absolute master-clock ticks
+    // (now()); depth is the call-stack nesting level (0 = outermost tracked call).
+    struct Span {
+      u64 start = 0;
+      u64 end = 0;
+      u32 funcAddr = 0;
+      u16 depth = 0;
+      bool isException = false;
+    };
+
     // Synthetic "function" addresses for exception/interrupt handler entries, so
     // their time is attributed separately (and subtracted from the interrupted
     // function) rather than counted as that function's own work.
@@ -1341,6 +1352,18 @@ struct CPU : Thread {
     std::unordered_map<u32, FuncStat> frameAccum;  //frame in progress
     std::vector<Frame> callStack;
     u64 frameCount = 0;  //presented frames accumulated into stats since last clear
+
+    // Flame-chart timeline buffers (only written when recordTimeline is set).
+    // Same publish-on-frame-swap model as frameAccum/frameStats: the emu thread
+    // appends to frameAccumSpans, and onFrame() swaps it into frameSpans for the
+    // UI to read (the emu cothread is parked while the UI draws).
+    std::atomic<bool> recordTimeline{false};
+    static constexpr u32 maxSpans = 1u << 18;  //per-frame cap (262144 spans)
+    std::vector<Span> frameAccumSpans;  //spans completed in the frame in progress
+    std::vector<Span> frameSpans;       //published snapshot of the last frame
+    u64 frameStartCycle = 0;            //now() at the current frame's start
+    u64 frameSpanStart = 0;             //start cycle of the published snapshot
+    u64 frameSpanEnd = 0;               //end cycle of the published snapshot
 
     std::vector<Sym> syms;                 //sorted by addr, for enclosing lookup
     std::unordered_map<u32, u32> symByAddr;//exact entry addr -> index into syms

@@ -22,7 +22,8 @@ auto DrawCpuProfiler() -> void {
   // long as the window stays open (we only force-enable on the open edge).
   static bool autoCaptureActive = false;
   if(!showCpuProfiler) {
-    if(autoCaptureActive && isN64) ares::Nintendo64::cpu.profiler.setEnabled(false);
+    // Leave capture running if the Flame Chart is still open (it shares the hook).
+    if(autoCaptureActive && isN64 && !showFlameChart) ares::Nintendo64::cpu.profiler.setEnabled(false);
     autoCaptureActive = false;
     return;
   }

@@ -12,6 +12,7 @@ add_executable(
   ui/rsp-viewer.cpp
   ui/log-dump.cpp
   ui/cpu-profiler.cpp
+  ui/flame-chart.cpp
   ui/framebuffer-viewer.cpp
   ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
@@ -45,6 +46,7 @@ set_source_files_properties(
   ui/rsp-viewer.cpp
   ui/log-dump.cpp
   ui/cpu-profiler.cpp
+  ui/flame-chart.cpp
   ui/framebuffer-viewer.cpp
   ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
