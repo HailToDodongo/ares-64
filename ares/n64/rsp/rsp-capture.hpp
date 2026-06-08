@@ -30,6 +30,7 @@ struct RSPCapture {
 
   struct Command {
     u64 cycle = 0;        // cycle delta to the previous event (time this row took)
+    u64 startCycle = 0;   // absolute clocksTotal (master ticks) at segment start, for the flame chart
     u64 seq = 0;          // global capture order (see captureSequence)
     u32 frame = 0;        // frame number
     u16 overlayId = 0;
@@ -142,15 +143,24 @@ struct RSPCapture {
   // Per-frame cycle tracking
   u32 frameNumber = 0;
 
+  // Flame-chart frame window: clocksTotal (master ticks) at the VI swaps bounding
+  // the committed frame. Command startCycles are normalized against
+  // committedClockStart so the RSP lane aligns with the CPU lane (both anchored to
+  // the same VI swap). Set on the UI/commit thread at each presented frame.
+  u64 frameClockStart = 0;       //running: clock at the last VI swap
+  u64 committedClockStart = 0;   //published window start of the committed frame
+  u64 committedClockEnd = 0;     //published window end of the committed frame
+
   // JSON config loaded flag
   bool configLoaded = false;
 
-  auto push(u64 cycle, u64 seq, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words,
+  auto push(u64 cycle, u64 startCycle, u64 seq, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words,
             u64 bytesIn, u64 bytesOut) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
     auto& cmd = commands[pos % maxCommands];
     cmd.cycle = cycle;
+    cmd.startCycle = startCycle;
     cmd.seq = seq;
     cmd.frame = frame;
     cmd.overlayId = overlayId;
@@ -165,11 +175,12 @@ struct RSPCapture {
     writePos.store(pos + 1, std::memory_order_release);
   }
 
-  auto pushOverhead(u64 cycle, u64 seq, u8 overheadType, u64 bytesIn, u64 bytesOut) -> void {
+  auto pushOverhead(u64 cycle, u64 startCycle, u64 seq, u8 overheadType, u64 bytesIn, u64 bytesOut) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
     auto& cmd = commands[pos % maxCommands];
     cmd.cycle = cycle;
+    cmd.startCycle = startCycle;
     cmd.seq = seq;
     cmd.frame = frameNumber;
     cmd.overlayId = 0;

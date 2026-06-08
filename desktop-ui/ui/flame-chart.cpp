@@ -16,6 +16,15 @@ static constexpr f64 ticksPerMicrosecond = 187.5;
 
 using Span = ares::Nintendo64::CPU::Profiler::Span;
 
+// A flattened RSP command span, frame-relative (tick 0 = frame start).
+struct RspSpan {
+  u64 start = 0, end = 0;
+  u16 overlayId = 0;
+  u8  commandId = 0;
+  bool overhead = false;
+  u8  overheadType = 0;
+};
+
 // Stable per-function color from its address (golden-ratio hue hash).
 static auto spanColor(u32 addr, bool isException) -> ImU32 {
   if(isException) return IM_COL32(120, 120, 130, 255);  //handlers: muted gray-blue
@@ -24,6 +33,26 @@ static auto spanColor(u32 addr, bool isException) -> ImU32 {
   f32 r, g, b;
   ImGui::ColorConvertHSVtoRGB(hue, 0.55f, 0.85f, r, g, b);
   return IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), 255);
+}
+
+// RSP overlay palette (mirrors the RSP viewer's overlayColor).
+static auto rspOverlayColor(u8 overlayId) -> ImU32 {
+  static const ImU32 colors[] = {
+    IM_COL32(128, 128, 128, 255), IM_COL32(100, 200, 255, 255),
+    IM_COL32(100, 255, 150, 255), IM_COL32(255, 255, 100, 255),
+    IM_COL32(255, 180, 100, 255), IM_COL32(255, 150, 200, 255),
+    IM_COL32(180, 130, 255, 255), IM_COL32(255, 120, 120, 255),
+  };
+  return colors[overlayId & 7];
+}
+
+static auto rspLabel(u8 overheadType, bool overhead, u16 overlayId, u8 commandId) -> string {
+  static const char* overheadNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};
+  auto& rcap = ares::Nintendo64::rsp.capture;
+  if(overhead) return string{overheadNames[overheadType < 4 ? overheadType : 0]};
+  auto& name = rcap.commandNameMap[overlayId & 15][commandId];
+  if(name) return name;
+  return string{"ovl", hex(overlayId, 1L), ":", hex(commandId, 2L)};
 }
 
 static auto fmtTime(f64 ticks, char* buf, size_t n) -> void {
@@ -43,12 +72,14 @@ auto DrawFlameChart() -> void {
     if(autoActive && isN64) {
       ares::Nintendo64::cpu.profiler.recordTimeline.store(false, std::memory_order_relaxed);
       if(!showCpuProfiler) ares::Nintendo64::cpu.profiler.setEnabled(false);
+      // Leave RSP capture running if the RSP viewer is still open (it owns the toggle).
+      if(!showRspViewer) ares::Nintendo64::rsp.capture.enabled.store(false, std::memory_order_relaxed);
     }
     autoActive = false;
     return;
   }
 
-  ImGui::SetNextWindowSize(ImVec2(960, 500), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(960, 620), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Flame Chart", &showFlameChart)) {
     ImGui::End();
     settings.general.showFlameChart = showFlameChart;
@@ -66,6 +97,7 @@ auto DrawFlameChart() -> void {
   if(!autoActive) {
     prof.setEnabled(true);
     prof.recordTimeline.store(true, std::memory_order_relaxed);
+    ares::Nintendo64::rsp.capture.enabled.store(true, std::memory_order_relaxed);
     autoActive = true;
   }
 
@@ -73,6 +105,7 @@ auto DrawFlameChart() -> void {
   // frame's end cycle). The live buffer is swapped wholesale on the emu thread; we
   // work off a local sorted copy so culling can binary-search by start time.
   static std::vector<Span> spans;
+  static std::vector<RspSpan> rspSpans;
   static u64 shownFrameEnd = ~0ull;
   static u64 frameT0 = 0, frameT1 = 0;
   static bool freeze = false;
@@ -94,6 +127,23 @@ auto DrawFlameChart() -> void {
     }
     std::sort(spans.begin(), spans.end(),
               [](const Span& a, const Span& b) { return a.start < b.start; });
+
+    // RSP commands for the same frame, normalized to the RSP frame-start clock
+    // (anchored to the same VI swap as the CPU lane). clocksTotal is u32, so the
+    // delta is taken in u32 to stay correct across the ~23s wrap.
+    auto& rcap = ares::Nintendo64::rsp.capture;
+    u32 rn = std::min<u32>(rcap.committedCount.load(std::memory_order_acquire), rcap.maxCommands);
+    u64 rstart = rcap.committedClockStart;
+    rspSpans.clear();
+    rspSpans.reserve(rn);
+    for(u32 i = 0; i < rn; i++) {
+      auto& c = rcap.commands[i];
+      u64 rel = (u32)(c.startCycle - rstart);
+      u64 dur = (u32)c.cycle;
+      rspSpans.push_back({rel, rel + dur, c.overlayId, c.commandId, c.isOverhead, c.overheadType});
+    }
+    std::sort(rspSpans.begin(), rspSpans.end(),
+              [](const RspSpan& a, const RspSpan& b) { return a.start < b.start; });
   }
 
   u64 frameTicks = frameT1 > frameT0 ? frameT1 - frameT0 : 1;
@@ -103,17 +153,21 @@ auto DrawFlameChart() -> void {
   // --- view (pan/zoom) state, in frame-relative ticks ------------------------
   static u64 viewStart = 0;
   static u64 viewSpan = 0;
-  auto fit = [&]() { viewStart = 0; viewSpan = frameTicks; };
-  if(viewSpan == 0) fit();  //first data only; afterwards the user controls the view
+  static bool userAdjusted = false;  //true once the user pans/zooms
+  auto fit = [&]() { viewStart = 0; viewSpan = std::max<u64>(1, frameTicks); };
+  // Keep the view fitted to the live frame until the user takes control (then the
+  // view persists across frames). This also self-corrects the bogus oversized
+  // first frame right after recording is enabled.
+  if(viewSpan == 0 || !userAdjusted) fit();
 
   // --- toolbar ---------------------------------------------------------------
-  if(ImGui::Button("Fit")) fit();
+  if(ImGui::Button("Fit")) { fit(); userAdjusted = false; }
   ImGui::SameLine();
   ImGui::Checkbox("Freeze", &freeze);
   ImGui::SameLine();
   {
     char b[32]; fmtTime((f64)frameTicks, b, sizeof(b));
-    ImGui::Text("frame: %s   spans: %zu   depth: %u", b, spans.size(), maxDepth + 1);
+    ImGui::Text("frame: %s   cpu: %zu (d%u)   rsp: %zu", b, spans.size(), maxDepth + 1, rspSpans.size());
   }
   if(spans.size() >= ares::Nintendo64::CPU::Profiler::maxSpans) {
     ImGui::SameLine();
@@ -135,26 +189,44 @@ auto DrawFlameChart() -> void {
   dl->PushClipRect(origin, ImVec2(origin.x + avail.x, origin.y + avail.y), true);
   dl->AddRectFilled(origin, ImVec2(origin.x + avail.x, origin.y + avail.y), IM_COL32(20, 20, 24, 255));
 
-  // Zoom around cursor on wheel; pan on drag.
+  // Vertical scroll for the lanes (deep call stacks + the RSP lane below them):
+  // Shift+wheel, or vertical drag. The time axis stays pinned at the top.
+  static f32 laneScroll = 0.0f;
+  f32 contentH = (maxDepth + 1) * rowH + 19.0f /*RSP label gap*/ + rowH;
+  f32 visibleH = avail.y - axisH;
+  f32 maxScroll = std::max(0.0f, contentH - visibleH);
+
+  // Zoom around cursor on wheel (Shift+wheel scrolls vertically); pan on drag.
   if(hovered && io.MouseWheel != 0.0f) {
-    f64 pxPerTick = avail.x / (f64)viewSpan;
-    f64 mouseTick = viewStart + (io.MousePos.x - origin.x) / pxPerTick;
-    f64 factor = std::pow(1.2, -io.MouseWheel);
-    f64 newSpan = std::clamp<f64>(viewSpan * factor, 32.0, frameTicks * 8.0);
-    f64 newPxPerTick = avail.x / newSpan;
-    f64 ns = mouseTick - (io.MousePos.x - origin.x) / newPxPerTick;
-    viewStart = (u64)std::max<f64>(0.0, ns);
-    viewSpan = (u64)newSpan;
+    if(io.KeyShift) {
+      laneScroll -= io.MouseWheel * rowH * 2.0f;
+    } else {
+      f64 pxPerTick = avail.x / (f64)viewSpan;
+      f64 mouseTick = viewStart + (io.MousePos.x - origin.x) / pxPerTick;
+      f64 factor = std::pow(1.2, -io.MouseWheel);
+      f64 newSpan = std::clamp<f64>(viewSpan * factor, 32.0, frameTicks * 8.0);
+      f64 newPxPerTick = avail.x / newSpan;
+      f64 ns = mouseTick - (io.MousePos.x - origin.x) / newPxPerTick;
+      viewStart = (u64)std::max<f64>(0.0, ns);
+      viewSpan = (u64)newSpan;
+      userAdjusted = true;
+    }
   }
-  if(ImGui::IsItemActive() && io.MouseDelta.x != 0.0f) {
-    f64 pxPerTick = avail.x / (f64)viewSpan;
-    f64 ns = (f64)viewStart - io.MouseDelta.x / pxPerTick;
-    viewStart = (u64)std::max<f64>(0.0, ns);
+  if(ImGui::IsItemActive()) {
+    if(io.MouseDelta.x != 0.0f) {
+      f64 pxPerTick = avail.x / (f64)viewSpan;
+      f64 ns = (f64)viewStart - io.MouseDelta.x / pxPerTick;
+      viewStart = (u64)std::max<f64>(0.0, ns);
+      userAdjusted = true;
+    }
+    if(io.MouseDelta.y != 0.0f) laneScroll -= io.MouseDelta.y;
   }
+  laneScroll = std::clamp(laneScroll, 0.0f, maxScroll);
 
   f64 pxPerTick = avail.x / (f64)viewSpan;
   u64 viewEnd = viewStart + viewSpan;
-  f32 lanesTop = origin.y + axisH;
+  f32 lanesTop = origin.y + axisH - laneScroll;
+  f32 clipTop = origin.y + axisH;  //lanes are clipped below the pinned axis
 
   // Time axis ticks (~every 120px), labelled in us/ms relative to frame start.
   {
@@ -174,6 +246,10 @@ auto DrawFlameChart() -> void {
       dl->AddText(ImVec2(x + 3, origin.y + 2), IM_COL32(170, 170, 180, 255), b);
     }
   }
+
+  // Clip the lanes to below the pinned time axis so vertical scrolling doesn't
+  // overdraw the axis labels.
+  dl->PushClipRect(ImVec2(origin.x, clipTop), ImVec2(origin.x + avail.x, origin.y + avail.y), true);
 
   // Spans, sorted by start: iterate and cull. Break once a span starts past the
   // view (nothing later can overlap); skip those entirely left of it. A frame
@@ -210,7 +286,60 @@ auto DrawFlameChart() -> void {
     }
   }
 
-  dl->PopClipRect();
+  // --- RSP lane: command spans on the same axis, below the CPU call stack -----
+  const RspSpan* rhover = nullptr;
+  {
+    f32 cpuBottom = lanesTop + (maxDepth + 1) * rowH;
+    f32 labelY = cpuBottom + 4.0f;
+    f32 rspTop = labelY + 15.0f;
+    dl->AddLine(ImVec2(origin.x, labelY), ImVec2(origin.x + avail.x, labelY), IM_COL32(70, 70, 80, 200));
+    dl->AddText(ImVec2(origin.x + 3, labelY + 1), IM_COL32(150, 200, 255, 255), "RSP");
+
+    for(auto it = rspSpans.begin(); it != rspSpans.end(); ++it) {
+      const RspSpan& s = *it;
+      if(s.start > viewEnd) break;
+      if(s.end < viewStart) continue;
+      f32 x0 = origin.x + (f32)(((s64)s.start - (s64)viewStart) * pxPerTick);
+      f32 x1 = origin.x + (f32)(((s64)s.end - (s64)viewStart) * pxPerTick);
+      if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;
+      x0 = std::max(x0, origin.x);
+      x1 = std::min(x1, origin.x + avail.x);
+      if(x1 <= x0) continue;
+      f32 y0 = rspTop;
+      f32 y1 = y0 + rowH - 1.0f;
+      if(y0 > origin.y + avail.y) continue;
+
+      bool isHover = hovered && io.MousePos.x >= x0 && io.MousePos.x < x1
+                             && io.MousePos.y >= y0 && io.MousePos.y < y1;
+      if(isHover) rhover = &s;
+
+      ImU32 col = s.overhead ? IM_COL32(90, 90, 100, 255) : rspOverlayColor(s.overlayId);
+      if(isHover) col = IM_COL32(255, 255, 255, 255);
+      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 2.0f);
+      dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
+      if(x1 - x0 > 28.0f) {
+        string name = rspLabel(s.overheadType, s.overhead, s.overlayId, s.commandId);
+        dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
+        dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
+        dl->PopClipRect();
+      }
+    }
+  }
+
+  dl->PopClipRect();  //lanes clip
+  dl->PopClipRect();  //canvas clip
+
+  // RSP hover tooltip.
+  if(rhover) {
+    string name = rspLabel(rhover->overheadType, rhover->overhead, rhover->overlayId, rhover->commandId);
+    char dbuf[32]; fmtTime((f64)(rhover->end - rhover->start), dbuf, sizeof(dbuf));
+    f64 pct = 100.0 * (f64)(rhover->end - rhover->start) / (f64)frameTicks;
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(name.data());
+    ImGui::Separator();
+    ImGui::Text("RSP  duration: %s  (%.2f%% of frame)", dbuf, pct);
+    ImGui::EndTooltip();
+  }
 
   // Hover tooltip: function name, duration, % of frame.
   if(hover) {

@@ -67,7 +67,7 @@ auto RSP::captureCommandHook(u32 pc) -> void {
   if(cap.segType != RSPCapture::SegNone) {
     u64 delta = now - cap.segStart;
     if(cap.segType == RSPCapture::SegCommand) {
-      cap.push(delta, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords,
+      cap.push(delta, cap.segStart, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords,
                cap.segBytesIn, cap.segBytesOut);
 
       // Step mode: flush GPU so the framebuffer is current, then spin until the
@@ -93,7 +93,7 @@ auto RSP::captureCommandHook(u32 pc) -> void {
       u8 overhead = cap.segType == RSPCapture::SegLoop        ? RSPCapture::OverheadLoop
                   : cap.segType == RSPCapture::SegOverlayLoad ? RSPCapture::OverheadOvlLoad
                   :                                             RSPCapture::OverheadFetch;
-      cap.pushOverhead(delta, cap.segSeq, overhead, cap.segBytesIn, cap.segBytesOut);
+      cap.pushOverhead(delta, cap.segStart, cap.segSeq, overhead, cap.segBytesIn, cap.segBytesOut);
     }
   }
 
