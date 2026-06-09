@@ -4,7 +4,6 @@
 #include <n64/n64.hpp>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <vector>
 
@@ -123,7 +122,6 @@ auto DrawFlameChart() -> void {
   static std::vector<RdpSpan> rdpSpans;
   static std::vector<std::pair<u64, u64>> haltSpans;  //window-relative RSP halt intervals
   static std::vector<u64> viMarks;  //window-relative VI swap times
-  static bool freeze = false;
 
   // Synthetic on-screen width for an RDP flush: the RDP has no per-command timing,
   // so a flush block is sized by its command count
@@ -164,103 +162,101 @@ auto DrawFlameChart() -> void {
   static f64 lastPxPerTick = 0.0; //last frame's pixels-per-tick (0 = not ready)
   if(seenGen.empty()) seenGen.resize((size_t)GCols * GDepth, 0);
 
-  if(!freeze) {
-    u64 rightEdge = prof.now();
-    winStart = rightEdge > windowTicks ? rightEdge - windowTicks : 0;
-    decimGen++;
+  u64 rightEdge = prof.now();
+  winStart = rightEdge > windowTicks ? rightEdge - windowTicks : 0;
+  decimGen++;
 
-    spans.clear();
-    u64 w = prof.timelineWrite.load(std::memory_order_acquire);
-    u64 n = std::min<u64>(w, prof.maxSpans);
-    for(u64 i = 0; i < n; i++) {
-      const Span& s = prof.timeline[(w - 1 - i) % prof.maxSpans];
-      if(s.end < winStart) break;
-      if(lastPxPerTick > 0.0) {  //decimate narrow spans to ~1 per pixel per depth
-        f64 px0 = ((f64)s.start - (f64)lastViewAbs) * lastPxPerTick;
-        f64 px1 = ((f64)s.end   - (f64)lastViewAbs) * lastPxPerTick;
-        if(px1 - px0 < 1.5) {
-          u32 c = (u32)std::clamp(px0, 0.0, (f64)(GCols - 1));
-          u32 d = s.depth < GDepth ? s.depth : GDepth - 1;
-          u32& g = seenGen[(size_t)d * GCols + c];
-          if(g == decimGen) continue;  //cell already has a span
-          g = decimGen;
-        }
-      }
-      Span t = s;
-      t.start = t.start > winStart ? t.start - winStart : 0;
-      t.end   = t.end   > winStart ? t.end   - winStart : 0;
-      spans.push_back(t);
-    }
-    ringFull = (n == prof.maxSpans);  //walked the whole ring; oldest may be dropped
-    std::sort(spans.begin(), spans.end(),
-              [](const Span& a, const Span& b) { return a.start < b.start; });
-
-    rspSpans.clear();
-    u64 rw = rcap.timelineWrite.load(std::memory_order_acquire);
-    u64 rn = std::min<u64>(rw, rcap.maxTimeline);
-    for(u64 i = 0; i < rn; i++) {
-      const auto& s = rcap.timeline[(rw - 1 - i) % rcap.maxTimeline];
-      if(s.end < winStart) break;
-      u64 rs = s.start > winStart ? s.start - winStart : 0;
-      u64 re = s.end   > winStart ? s.end   - winStart : 0;
-      rspSpans.push_back({rs, re, s.overlayId, s.commandId, s.overhead, s.overheadType});
-    }
-    std::sort(rspSpans.begin(), rspSpans.end(),
-              [](const RspSpan& a, const RspSpan& b) { return a.start < b.start; });
-
-    // RSP hardware halt/break intervals (the bar below the command stream). Closed
-    // intervals from the ring, plus the still-open halt drawn live up to the right
-    // edge so a currently-stopped RSP shows immediately.
-    haltSpans.clear();
-    u64 hw = rcap.haltWrite.load(std::memory_order_acquire);
-    u64 hn = std::min<u64>(hw, rcap.maxHaltSpans);
-    for(u64 i = 0; i < hn; i++) {
-      const auto& s = rcap.haltSpans[(hw - 1 - i) % rcap.maxHaltSpans];
-      if(s.end < winStart) break;
-      u64 hs = s.start > winStart ? s.start - winStart : 0;
-      u64 he = s.end   > winStart ? s.end   - winStart : 0;
-      haltSpans.emplace_back(hs, he);
-    }
-    if(rcap.haltOpen.load(std::memory_order_acquire)) {
-      u64 hStart = rcap.haltStartWall.load(std::memory_order_relaxed);
-      if(hStart <= rightEdge) {
-        u64 hs = hStart > winStart ? hStart - winStart : 0;
-        haltSpans.emplace_back(hs, rightEdge - winStart);
+  spans.clear();
+  u64 w = prof.timelineWrite.load(std::memory_order_acquire);
+  u64 n = std::min<u64>(w, prof.maxSpans);
+  for(u64 i = 0; i < n; i++) {
+    const Span& s = prof.timeline[(w - 1 - i) % prof.maxSpans];
+    if(s.end < winStart) break;
+    if(lastPxPerTick > 0.0) {  //decimate narrow spans to ~1 per pixel per depth
+      f64 px0 = ((f64)s.start - (f64)lastViewAbs) * lastPxPerTick;
+      f64 px1 = ((f64)s.end   - (f64)lastViewAbs) * lastPxPerTick;
+      if(px1 - px0 < 1.5) {
+        u32 c = (u32)std::clamp(px0, 0.0, (f64)(GCols - 1));
+        u32 d = s.depth < GDepth ? s.depth : GDepth - 1;
+        u32& g = seenGen[(size_t)d * GCols + c];
+        if(g == decimGen) continue;  //cell already has a span
+        g = decimGen;
       }
     }
+    Span t = s;
+    t.start = t.start > winStart ? t.start - winStart : 0;
+    t.end   = t.end   > winStart ? t.end   - winStart : 0;
+    spans.push_back(t);
+  }
+  ringFull = (n == prof.maxSpans);  //walked the whole ring; oldest may be dropped
+  std::sort(spans.begin(), spans.end(),
+            [](const Span& a, const Span& b) { return a.start < b.start; });
 
-    // RDP: one block per DP flush, anchored at its real submit time with a
-    // count-proportional synthetic width. Walk back from newest; entries are
-    // start-ordered, so once a block's synthetic end falls before the window the
-    // rest are too.
-    auto& dcap = ares::Nintendo64::rdp.capture;
-    rdpSpans.clear();
-    u64 dw = dcap.timelineWrite.load(std::memory_order_acquire);
-    u64 dn = std::min<u64>(dw, dcap.maxTimeline);
-    for(u64 i = 0; i < dn; i++) {
-      const auto& s = dcap.timeline[(dw - 1 - i) % dcap.maxTimeline];
-      u64 end = s.start + (u64)s.count * rdpTicksPerCmd;
-      if(end < winStart) break;
-      u64 ds = s.start > winStart ? s.start - winStart : 0;
-      u64 de = end     > winStart ? end     - winStart : 0;
-      rdpSpans.push_back({ds, de, s.count});
-    }
-    std::sort(rdpSpans.begin(), rdpSpans.end(),
-              [](const RdpSpan& a, const RdpSpan& b) { return a.start < b.start; });
-    // Clamp each flush so it never overruns the next one (synthetic widths can
-    // overlap when flushes are dense); keeps blocks readable and start times true.
-    for(size_t i = 0; i + 1 < rdpSpans.size(); i++)
-      rdpSpans[i].end = std::min(rdpSpans[i].end, rdpSpans[i + 1].start);
+  rspSpans.clear();
+  u64 rw = rcap.timelineWrite.load(std::memory_order_acquire);
+  u64 rn = std::min<u64>(rw, rcap.maxTimeline);
+  for(u64 i = 0; i < rn; i++) {
+    const auto& s = rcap.timeline[(rw - 1 - i) % rcap.maxTimeline];
+    if(s.end < winStart) break;
+    u64 rs = s.start > winStart ? s.start - winStart : 0;
+    u64 re = s.end   > winStart ? s.end   - winStart : 0;
+    rspSpans.push_back({rs, re, s.overlayId, s.commandId, s.overhead, s.overheadType});
+  }
+  std::sort(rspSpans.begin(), rspSpans.end(),
+            [](const RspSpan& a, const RspSpan& b) { return a.start < b.start; });
 
-    // VI framebuffer-swap markers within the window.
-    viMarks.clear();
-    u64 vw = prof.viMarkWrite.load(std::memory_order_acquire);
-    u64 vn = std::min<u64>(vw, prof.maxViMarks);
-    for(u64 i = 0; i < vn; i++) {
-      u64 m = prof.viMarks[(vw - 1 - i) % prof.maxViMarks];
-      if(m < winStart) break;
-      if(m <= rightEdge) viMarks.push_back(m - winStart);
+  // RSP hardware halt/break intervals (the bar below the command stream). Closed
+  // intervals from the ring, plus the still-open halt drawn live up to the right
+  // edge so a currently-stopped RSP shows immediately.
+  haltSpans.clear();
+  u64 hw = rcap.haltWrite.load(std::memory_order_acquire);
+  u64 hn = std::min<u64>(hw, rcap.maxHaltSpans);
+  for(u64 i = 0; i < hn; i++) {
+    const auto& s = rcap.haltSpans[(hw - 1 - i) % rcap.maxHaltSpans];
+    if(s.end < winStart) break;
+    u64 hs = s.start > winStart ? s.start - winStart : 0;
+    u64 he = s.end   > winStart ? s.end   - winStart : 0;
+    haltSpans.emplace_back(hs, he);
+  }
+  if(rcap.haltOpen.load(std::memory_order_acquire)) {
+    u64 hStart = rcap.haltStartWall.load(std::memory_order_relaxed);
+    if(hStart <= rightEdge) {
+      u64 hs = hStart > winStart ? hStart - winStart : 0;
+      haltSpans.emplace_back(hs, rightEdge - winStart);
     }
+  }
+
+  // RDP: one block per DP flush, anchored at its real submit time with a
+  // count-proportional synthetic width. Walk back from newest; entries are
+  // start-ordered, so once a block's synthetic end falls before the window the
+  // rest are too.
+  auto& dcap = ares::Nintendo64::rdp.capture;
+  rdpSpans.clear();
+  u64 dw = dcap.timelineWrite.load(std::memory_order_acquire);
+  u64 dn = std::min<u64>(dw, dcap.maxTimeline);
+  for(u64 i = 0; i < dn; i++) {
+    const auto& s = dcap.timeline[(dw - 1 - i) % dcap.maxTimeline];
+    u64 end = s.start + (u64)s.count * rdpTicksPerCmd;
+    if(end < winStart) break;
+    u64 ds = s.start > winStart ? s.start - winStart : 0;
+    u64 de = end     > winStart ? end     - winStart : 0;
+    rdpSpans.push_back({ds, de, s.count});
+  }
+  std::sort(rdpSpans.begin(), rdpSpans.end(),
+            [](const RdpSpan& a, const RdpSpan& b) { return a.start < b.start; });
+  // Clamp each flush so it never overruns the next one (synthetic widths can
+  // overlap when flushes are dense); keeps blocks readable and start times true.
+  for(size_t i = 0; i + 1 < rdpSpans.size(); i++)
+    rdpSpans[i].end = std::min(rdpSpans[i].end, rdpSpans[i + 1].start);
+
+  // VI framebuffer-swap markers within the window.
+  viMarks.clear();
+  u64 vw = prof.viMarkWrite.load(std::memory_order_acquire);
+  u64 vn = std::min<u64>(vw, prof.maxViMarks);
+  for(u64 i = 0; i < vn; i++) {
+    u64 m = prof.viMarks[(vw - 1 - i) % prof.maxViMarks];
+    if(m < winStart) break;
+    if(m <= rightEdge) viMarks.push_back(m - winStart);
   }
 
   u64 frameTicks = windowTicks;  //axis/view length (kept name for the renderer below)
@@ -279,8 +275,6 @@ auto DrawFlameChart() -> void {
 
   // --- toolbar ---------------------------------------------------------------
   if(ImGui::Button("Fit")) { fit(); userAdjusted = false; }
-  ImGui::SameLine();
-  ImGui::Checkbox("Freeze", &freeze);
   ImGui::SameLine();
   ImGui::SetNextItemWidth(150.0f);
   ImGui::Combo("Window", &windowIdx, windowItems, IM_ARRAYSIZE(windowItems));
