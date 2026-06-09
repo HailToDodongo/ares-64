@@ -4,6 +4,7 @@
 #include <n64/n64.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <vector>
 
@@ -146,9 +147,27 @@ auto DrawFlameChart() -> void {
   // 0 (they were already running at the window's left edge).
   static u64 winStart = 0;
   bool ringFull = false;
+
+  // Collection-time decimation. A wide window can hold hundreds of thousands of CPU
+  // spans (the ring caps at maxSpans), and copying + sorting all of them every UI
+  // frame is the dominant cost. At any zoom only ~1 span per (depth, screen
+  // pixel) is visible, so we drop narrow spans that land in an already-occupied
+  // cell, using the PREVIOUS frame's view (computed below, stored at end of frame)
+  // in absolute ticks so it doesn't drift as the window slides. Wide spans (the
+  // overview structure) are always kept. The exact per-pixel merge still happens at
+  // draw time; this is just a count cap so the sort stays cheap. One-frame-stale
+  // zoom is imperceptible.
+  static constexpr u32 GCols = 4096, GDepth = 96;
+  static std::vector<u32> seenGen;
+  static u32 decimGen = 0;
+  static u64 lastViewAbs = 0;     //absolute tick at the left edge of last frame's view
+  static f64 lastPxPerTick = 0.0; //last frame's pixels-per-tick (0 = not ready)
+  if(seenGen.empty()) seenGen.resize((size_t)GCols * GDepth, 0);
+
   if(!freeze) {
     u64 rightEdge = prof.now();
     winStart = rightEdge > windowTicks ? rightEdge - windowTicks : 0;
+    decimGen++;
 
     spans.clear();
     u64 w = prof.timelineWrite.load(std::memory_order_acquire);
@@ -156,12 +175,23 @@ auto DrawFlameChart() -> void {
     for(u64 i = 0; i < n; i++) {
       const Span& s = prof.timeline[(w - 1 - i) % prof.maxSpans];
       if(s.end < winStart) break;
+      if(lastPxPerTick > 0.0) {  //decimate narrow spans to ~1 per pixel per depth
+        f64 px0 = ((f64)s.start - (f64)lastViewAbs) * lastPxPerTick;
+        f64 px1 = ((f64)s.end   - (f64)lastViewAbs) * lastPxPerTick;
+        if(px1 - px0 < 1.5) {
+          u32 c = (u32)std::clamp(px0, 0.0, (f64)(GCols - 1));
+          u32 d = s.depth < GDepth ? s.depth : GDepth - 1;
+          u32& g = seenGen[(size_t)d * GCols + c];
+          if(g == decimGen) continue;  //cell already has a span
+          g = decimGen;
+        }
+      }
       Span t = s;
       t.start = t.start > winStart ? t.start - winStart : 0;
       t.end   = t.end   > winStart ? t.end   - winStart : 0;
       spans.push_back(t);
     }
-    ringFull = (n == prof.maxSpans && spans.size() == n);  //oldest in-window dropped
+    ringFull = (n == prof.maxSpans);  //walked the whole ring; oldest may be dropped
     std::sort(spans.begin(), spans.end(),
               [](const Span& a, const Span& b) { return a.start < b.start; });
 
@@ -255,7 +285,7 @@ auto DrawFlameChart() -> void {
   ImGui::SetNextItemWidth(150.0f);
   ImGui::Combo("Window", &windowIdx, windowItems, IM_ARRAYSIZE(windowItems));
   ImGui::SameLine();
-  ImGui::Text("cpu: %zu (d%u)   rsp: %zu   rdp: %zu   halt: %zu", spans.size(), maxDepth + 1, rspSpans.size(), rdpSpans.size(), haltSpans.size());
+  ImGui::Text("cpu: %zu (max depth: %u)   rsp: %zu   rdp: %zu   halt: %zu", spans.size(), maxDepth + 1, rspSpans.size(), rdpSpans.size(), haltSpans.size());
   if(ringFull) {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "(span cap hit)");
@@ -333,6 +363,9 @@ auto DrawFlameChart() -> void {
 
   f64 pxPerTick = avail.x / (f64)viewSpan;
   u64 viewEnd = viewStart + viewSpan;
+  // Publish this frame's view (in absolute ticks) for next frame's collection-time decimation grid.
+  lastViewAbs = winStart + viewStart;
+  lastPxPerTick = pxPerTick;
   f32 lanesTop = origin.y + axisH - laneScroll;
   f32 clipTop = origin.y + axisH;  //lanes are clipped below the pinned axis
 
@@ -360,8 +393,17 @@ auto DrawFlameChart() -> void {
   dl->PushClipRect(ImVec2(origin.x, clipTop), ImVec2(origin.x + avail.x, origin.y + avail.y), true);
 
   // Spans, sorted by start: iterate and cull. Break once a span starts past the
-  // view (nothing later can overlap); skip those entirely left of it. A frame
-  // holds at most a few tens of thousands of spans, so a linear scan is fine.
+  // view (nothing later can overlap); skip those entirely left of it.
+  //
+  // Pixel coalescing: when zoomed out, thousands of spans fall into the same pixels.
+  // rowMaxX tracks the last drawn right edge per depth; a span
+  // that would add less than a pixel of new content in its row is skipped. This
+  // caps the rect count at ~canvas-width * depth regardless of how many spans the
+  // window holds. Hovering individual spans only matters when zoomed in (where spans are wider than a pixel and nothing coalesces).
+  static std::vector<f32> rowMaxX;
+  rowMaxX.assign((size_t)maxDepth + 2, -1e9f);
+  f32 canvasR = origin.x + avail.x;
+  f32 canvasB = origin.y + avail.y;
   const Span* hover = nullptr;
   for(auto it = spans.begin(); it != spans.end(); ++it) {
     const Span& s = *it;
@@ -369,13 +411,16 @@ auto DrawFlameChart() -> void {
     if(s.end < viewStart) continue;  //entirely left of the view
     f32 x0 = origin.x + (f32)(((s64)s.start - (s64)viewStart) * pxPerTick);
     f32 x1 = origin.x + (f32)(((s64)s.end - (s64)viewStart) * pxPerTick);
-    if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;  //keep sub-pixel spans visible
+    f32& lx = rowMaxX[s.depth];
+    if(x1 <= lx + 1.0f) continue;    //less than a pixel of new content in this row
+    if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;
     x0 = std::max(x0, origin.x);
-    x1 = std::min(x1, origin.x + avail.x);
+    x1 = std::min(x1, canvasR);
     if(x1 <= x0) continue;
+    lx = x1;
     f32 y0 = lanesTop + s.depth * rowH;
     f32 y1 = y0 + rowH - 1.0f;
-    if(y0 > origin.y + avail.y) continue;
+    if(y0 > canvasB) continue;
 
     bool isHover = hovered && io.MousePos.x >= x0 && io.MousePos.x < x1
                            && io.MousePos.y >= y0 && io.MousePos.y < y1;
@@ -383,10 +428,11 @@ auto DrawFlameChart() -> void {
 
     ImU32 col = spanColor(s.funcAddr, s.isException);
     if(isHover) col = IM_COL32(255, 255, 255, 255);
-    dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 2.0f);
-    dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
+    f32 w = x1 - x0;
+    dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0f ? 2.0f : 0.0f);
+    if(w > 3.0f) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
 
-    if(x1 - x0 > 28.0f) {
+    if(w > 28.0f) {
       string name = prof.labelFor(s.funcAddr);
       dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
       dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
@@ -404,19 +450,22 @@ auto DrawFlameChart() -> void {
     dl->AddLine(ImVec2(origin.x, labelY), ImVec2(origin.x + avail.x, labelY), IM_COL32(70, 70, 80, 200));
     dl->AddText(ImVec2(origin.x + 3, labelY + 1), IM_COL32(150, 200, 255, 255), "RSP");
 
+    f32 rspMaxX = -1e9f;  //per-row pixel coalescing (see CPU lane)
     for(auto it = rspSpans.begin(); it != rspSpans.end(); ++it) {
       const RspSpan& s = *it;
       if(s.start > viewEnd) break;
       if(s.end < viewStart) continue;
       f32 x0 = origin.x + (f32)(((s64)s.start - (s64)viewStart) * pxPerTick);
       f32 x1 = origin.x + (f32)(((s64)s.end - (s64)viewStart) * pxPerTick);
+      if(x1 <= rspMaxX + 1.0f) continue;
       if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;
       x0 = std::max(x0, origin.x);
-      x1 = std::min(x1, origin.x + avail.x);
+      x1 = std::min(x1, canvasR);
       if(x1 <= x0) continue;
+      rspMaxX = x1;
       f32 y0 = rspTop;
       f32 y1 = y0 + rowH - 1.0f;
-      if(y0 > origin.y + avail.y) continue;
+      if(y0 > canvasB) continue;
 
       bool isHover = hovered && io.MousePos.x >= x0 && io.MousePos.x < x1
                              && io.MousePos.y >= y0 && io.MousePos.y < y1;
@@ -424,9 +473,10 @@ auto DrawFlameChart() -> void {
 
       ImU32 col = s.overhead ? IM_COL32(90, 90, 100, 255) : rspOverlayColor(s.overlayId);
       if(isHover) col = IM_COL32(255, 255, 255, 255);
-      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 2.0f);
-      dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
-      if(x1 - x0 > 28.0f) {
+      f32 w = x1 - x0;
+      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0f ? 2.0f : 0.0f);
+      if(w > 3.0f) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
+      if(w > 28.0f) {
         string name = rspLabel(s.overheadType, s.overhead, s.overlayId, s.commandId);
         dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
         dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
