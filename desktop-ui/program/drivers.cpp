@@ -90,8 +90,6 @@ auto Program::audioDriverUpdate() -> void {
   ruby::audio.setDynamic(settings.audio.dynamic);
 }
 
-auto Program::audioDeviceUpdate() -> void {}
-
 auto Program::audioFrequencyUpdate() -> void {
   Program::Guard guard;
   ruby::audio.setFrequency(settings.audio.frequency);
