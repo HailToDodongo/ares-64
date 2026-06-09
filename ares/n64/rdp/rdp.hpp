@@ -27,6 +27,20 @@ struct RDPCapture {
     commands[pos % maxCommands] = {frame, index, opcode, wordCount, word0, word1, captureSequence++};
     writePos.store(pos + 1, std::memory_order_release);
   }
+
+  struct TlSpan {
+    u64 start = 0;   // cpu.profiler.now() when the flush began
+    u32 count = 0;   // commands processed in this flush
+  };
+  static constexpr u32 maxTimeline = 1u << 14;  // 16384 flushes
+  TlSpan timeline[maxTimeline];
+  std::atomic<u64> timelineWrite{0};
+
+  auto pushTimeline(u64 start, u32 count) -> void {
+    auto w = timelineWrite.load(std::memory_order_relaxed);
+    timeline[w % maxTimeline] = {start, count};
+    timelineWrite.store(w + 1, std::memory_order_release);
+  }
 };
 
 struct RDP : Thread, Memory::RCP<RDP> {

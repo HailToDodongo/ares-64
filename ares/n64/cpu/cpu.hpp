@@ -1353,17 +1353,20 @@ struct CPU : Thread {
     std::vector<Frame> callStack;
     u64 frameCount = 0;  //presented frames accumulated into stats since last clear
 
-    // Flame-chart timeline buffers (only written when recordTimeline is set).
-    // Same publish-on-frame-swap model as frameAccum/frameStats: the emu thread
-    // appends to frameAccumSpans, and onFrame() swaps it into frameSpans for the
-    // UI to read (the emu cothread is parked while the UI draws).
+    // Flame-chart timeline: a sliding-window ring of completed-call spans in
+    // absolute master-clock time (now()). The emu thread appends one span per
+    // popFrame() (single producer)
     std::atomic<bool> recordTimeline{false};
-    static constexpr u32 maxSpans = 1u << 18;  //per-frame cap (262144 spans)
-    std::vector<Span> frameAccumSpans;  //spans completed in the frame in progress
-    std::vector<Span> frameSpans;       //published snapshot of the last frame
-    u64 frameStartCycle = 0;            //now() at the current frame's start
-    u64 frameSpanStart = 0;             //start cycle of the published snapshot
-    u64 frameSpanEnd = 0;               //end cycle of the published snapshot
+    static constexpr u32 maxSpans = 1u << 18;  //ring capacity (262144 spans)
+    std::vector<Span> timeline;          //ring buffer, sized to maxSpans when enabled
+    std::atomic<u64> timelineWrite{0};   //monotonic append count
+
+    // VI framebuffer-swap markers for the flame chart, in absolute now() ticks.
+    // Appended in onFrame() (called at each presented swap); the UI draws the ones
+    // that fall within its window as vertical "VI" lines.
+    static constexpr u32 maxViMarks = 256;
+    u64 viMarks[maxViMarks] = {};
+    std::atomic<u64> viMarkWrite{0};
 
     std::vector<Sym> syms;                 //sorted by addr, for enclosing lookup
     std::unordered_map<u32, u32> symByAddr;//exact entry addr -> index into syms
@@ -1385,7 +1388,7 @@ struct CPU : Thread {
     auto onFrame() -> void;       //per framebuffer swap: publish frame snapshot
     auto setEnabled(bool value) -> void;
     auto clearStats() -> void;
-    auto now() -> u64;  //monotonic master-clock timebase
+    auto now() -> u64;   //master-clock wall timebase (the CPU is primary, runs continuously)
   } profiler;
 
   struct EmuxState {

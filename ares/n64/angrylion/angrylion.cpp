@@ -35,13 +35,18 @@ static constexpr u8 commandLength[64] = {
 static auto captureCommands(u32 current, u32 end, bool source) -> void {
   auto& memory = !source ? (Memory::Writable&)rdram.ram : (Memory::Writable&)rsp.dmem;
   u32 addr = current;
+  // Flame-chart: this re-walk is one DP flush at a single wall-clock instant.
+  u64 tlStart = cpu.profiler.now();
+  u32 tlCount = 0;
   while(addr + 8 <= end) {
     u64 word0 = memory.readUnaligned<Dual>(addr);
     u32 code = word0 >> 56 & 0x3f;
     u8 length = commandLength[code];
     rdp.capture.push(0, 0, (u8)code, word0, 0, length);
     addr += (u32)length * 8;
+    tlCount++;
   }
+  if(tlCount) rdp.capture.pushTimeline(tlStart, tlCount);
 }
 
 //Commands the RDP viewer pauses on in step mode (same set Vulkan::render() uses):

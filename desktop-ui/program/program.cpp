@@ -143,13 +143,6 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
           rspCap.writePos.store(0, std::memory_order_release);
           rspCap.frameNumber++;
           rspCap.refreshOverlayNames();
-          // Publish the RSP clock window for the committed frame (flame chart): the
-          // commands just committed span [prev swap clock, this swap clock]. Anchors
-          // the RSP lane to the same VI swap as the CPU lane below.
-          u64 rspClock = ares::Nintendo64::rsp.pipeline.clocksTotal;
-          rspCap.committedClockStart = rspCap.frameClockStart;
-          rspCap.committedClockEnd = rspClock;
-          rspCap.frameClockStart = rspClock;
 
           if(ares::ui::logDump.active()) {
             u32 rspN = min<u32>(rspCap.committedCount.load(std::memory_order_acquire), rspCap.maxCommands);

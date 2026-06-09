@@ -21,7 +21,7 @@
       "id": 0,
       "name": "RSPQ",
       "commands": {
-        "0x00": {"name": "NOP"},
+        "0x00": {"name": "Wait for Cmds."},
         "0x01": {"name": "Write Word", "fmt": "{addr:dmem} = {value:x}", "args": [
           {"name": "addr", "word": 0},
           {"name": "value", "word": 1}

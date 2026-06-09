@@ -115,6 +115,11 @@ auto Vulkan::render() -> bool {
     } while(--length);
   }
 
+  // Flame-chart: this whole render() call is one DP flush, processed at a single
+  // wall-clock instant. Stamp it with now() (the master wall clock) + count commands.
+  u64 tlStart = cpu.profiler.now();
+  u32 tlCount = 0;
+
   while(queueOffset < queueSize) {
     u32 op = buffer[queueOffset * 2];
     u32 code = op >> 24 & 63;
@@ -122,6 +127,8 @@ auto Vulkan::render() -> bool {
 
     if(queueOffset + length > queueSize) {
       command.start = command.current = command.end;
+      if(rdp.capture.enabled.load(std::memory_order_relaxed) && tlCount)
+        rdp.capture.pushTimeline(tlStart, tlCount);
       return true;
     }
 
@@ -129,6 +136,7 @@ auto Vulkan::render() -> bool {
       u64 word0 = (u64)buffer[queueOffset * 2] << 32 | buffer[queueOffset * 2 + 1];
       rdp.capture.push(0, (u32)queueOffset, (u8)code, word0, 0, (u8)length);
     }
+    tlCount++;
 
     if(code >= 8) {
       implementation->processor->enqueue_command(length * 2, buffer + queueOffset * 2);
@@ -174,6 +182,8 @@ auto Vulkan::render() -> bool {
   queueOffset = 0;
   queueSize = 0;
   command.current = command.end;
+  if(rdp.capture.enabled.load(std::memory_order_relaxed) && tlCount)
+    rdp.capture.pushTimeline(tlStart, tlCount);
   return true;
 }
 

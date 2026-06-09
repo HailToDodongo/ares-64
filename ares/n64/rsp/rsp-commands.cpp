@@ -48,6 +48,7 @@ auto RSP::captureCommandHook(u32 pc) -> void {
     return;
   }
 
+
   // Classify which segment is *beginning* at this PC.
   u8 newType;
   if(pc == cap.pcExecCommand)      newType = RSPCapture::SegCommand;
@@ -62,12 +63,29 @@ auto RSP::captureCommandHook(u32 pc) -> void {
   if(newType == cap.segType) return;
 
   u64 now = pipeline.clocksTotal;
-
-  // Close the previous segment, emitting its row with the elapsed cycle delta.
+  // RSP wall position on the shared timeline, lag-corrected (see RSPCapture::TlSpan).
+  //
+  // there is no single global tick counter in the N64 core.
+  // the scheduler runs the CPU through an interval, then replays the RSP to *catch up* over that same interval. 
+  // So at this hook now() is frozen at the END of the interval while the RSP is still somewhere inside it
+  u64 wall = cpu.profiler.now() + (u64)(s64)Thread::clock;
+  // Clamp monotonic: at a scheduler-slice boundary rsp.clock is re-set very
+  // negative, so now()+clock can briefly dip below the previous segment's end
+  // (plus a tiny catch-up overshoot), which would render as overlapping spans.
+  if(wall < cap.lastWall) wall = cap.lastWall;
+  cap.lastWall = wall;
   if(cap.segType != RSPCapture::SegNone) {
-    u64 delta = now - cap.segStart;
+    u64 delta = (u32)((u32)now - (u32)cap.segStart);  //log value (clocksTotal, u32 wrap-safe)
+    cap.pushTimeline(cap.segWall, wall,
+                     cap.segType == RSPCapture::SegCommand ? cap.segOverlay : 0,
+                     cap.segType == RSPCapture::SegCommand ? cap.segCommand : 0,
+                     cap.segType != RSPCapture::SegCommand,
+                     cap.segType == RSPCapture::SegLoop        ? RSPCapture::OverheadLoop
+                   : cap.segType == RSPCapture::SegOverlayLoad ? RSPCapture::OverheadOvlLoad
+                   : cap.segType == RSPCapture::SegFetch       ? RSPCapture::OverheadFetch
+                   :                                             RSPCapture::OverheadNone);
     if(cap.segType == RSPCapture::SegCommand) {
-      cap.push(delta, cap.segStart, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords,
+      cap.push(delta, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords,
                cap.segBytesIn, cap.segBytesOut);
 
       // Step mode: flush GPU so the framebuffer is current, then spin until the
@@ -93,15 +111,17 @@ auto RSP::captureCommandHook(u32 pc) -> void {
       u8 overhead = cap.segType == RSPCapture::SegLoop        ? RSPCapture::OverheadLoop
                   : cap.segType == RSPCapture::SegOverlayLoad ? RSPCapture::OverheadOvlLoad
                   :                                             RSPCapture::OverheadFetch;
-      cap.pushOverhead(delta, cap.segStart, cap.segSeq, overhead, cap.segBytesIn, cap.segBytesOut);
+      cap.pushOverhead(delta, cap.segSeq, overhead, cap.segBytesIn, cap.segBytesOut);
     }
   }
 
   // Open the new segment. Reserve its capture-order slot *now*, at the start of
   // the segment, so the row (emitted only when the next segment begins) still
-  // sorts ahead of any RDP commands it kicks during its execution.
+  // sorts ahead of any RDP commands it kicks during its execution. segWall is this
+  // hook's wall, i.e. the previous segment's end
   cap.segType = newType;
   cap.segStart = now;
+  cap.segWall = wall;
   cap.segSeq = captureSequence++;
   cap.segBytesIn = 0;
   cap.segBytesOut = 0;

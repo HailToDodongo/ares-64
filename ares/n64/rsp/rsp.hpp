@@ -568,6 +568,7 @@ struct RSP : Thread, Memory::RCP<RSP> {
 
   //rsp-commands.cpp
   auto captureCommandHook(u32 pc) -> void;
+  auto captureHaltState() -> void;  //flame chart: emit RSP halt/break intervals
 
   //emux.cpp
   auto XDETECT(r32& rd, u32 code) -> void;

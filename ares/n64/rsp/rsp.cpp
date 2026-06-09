@@ -39,6 +39,7 @@ auto RSP::main() -> void {
   while(Thread::clock < 0) {
     auto clock = Thread::clock;
 
+    captureHaltState();
     if(status.halted) {
       step(128);
     } else {
@@ -47,6 +48,29 @@ auto RSP::main() -> void {
 
     dmaStep(Thread::clock - clock);
   }
+}
+
+// Flame chart: detect SP_STATUS.halted edges and emit a halt interval on the same
+// rspWall axis as the command lane (now() + the RSP scheduler clock; see
+// RSPCapture::TlSpan). While halted the clock still advances via step(), so rspWall
+// tracks real time during the stop and the bar gets its true width. The still-open
+// halt is drawn live by the UI from haltOpen/haltStartWall.
+auto RSP::captureHaltState() -> void {
+  auto& cap = capture;
+  bool h = status.halted;
+  if(!cap.enabled.load(std::memory_order_relaxed)) { cap.lastHalted = h; return; }
+  if(h == cap.lastHalted) return;
+  u64 wall = cpu.profiler.now() + (u64)(s64)Thread::clock;
+  if(wall < cap.lastWall) wall = cap.lastWall;  //monotonic, shared with the command lane
+  cap.lastWall = wall;
+  if(h) {
+    cap.haltStartWall.store(wall, std::memory_order_relaxed);
+    cap.haltOpen.store(true, std::memory_order_release);
+  } else if(cap.haltOpen.load(std::memory_order_relaxed)) {
+    cap.pushHalt(cap.haltStartWall.load(std::memory_order_relaxed), wall);
+    cap.haltOpen.store(false, std::memory_order_release);
+  }
+  cap.lastHalted = h;
 }
 
 auto RSP::instruction() -> void {

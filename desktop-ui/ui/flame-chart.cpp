@@ -16,13 +16,21 @@ static constexpr f64 ticksPerMicrosecond = 187.5;
 
 using Span = ares::Nintendo64::CPU::Profiler::Span;
 
-// A flattened RSP command span, frame-relative (tick 0 = frame start).
+// A flattened RSP command span, window-relative (tick 0 = window start).
 struct RspSpan {
   u64 start = 0, end = 0;
   u16 overlayId = 0;
   u8  commandId = 0;
   bool overhead = false;
   u8  overheadType = 0;
+};
+
+// A flattened RDP "DP flush" block, window-relative. The RDP has no per-command
+// wall-clock timing, so each flush is one block anchored at its real submit time;
+// its width is synthetic (command count * a nominal per-command tick budget).
+struct RdpSpan {
+  u64 start = 0, end = 0;
+  u32 count = 0;
 };
 
 // Stable per-function color from its address (golden-ratio hue hash).
@@ -59,6 +67,14 @@ static auto fmtTime(f64 ticks, char* buf, size_t n) -> void {
   f64 us = ticks / ticksPerMicrosecond;
   if(us < 1000.0) snprintf(buf, n, "%.2f us", us);
   else            snprintf(buf, n, "%.3f ms", us / 1000.0);
+}
+
+// Signed elapsed time (for the measurement marker -> cursor delta readout).
+static auto fmtDelta(f64 ticks, char* buf, size_t n) -> void {
+  char sign = ticks < 0 ? '-' : '+';
+  f64 us = std::abs(ticks) / ticksPerMicrosecond;
+  if(us < 1000.0) snprintf(buf, n, "%c%.2f us", sign, us);
+  else            snprintf(buf, n, "%c%.3f ms", sign, us / 1000.0);
 }
 
 auto DrawFlameChart() -> void {
@@ -101,91 +117,146 @@ auto DrawFlameChart() -> void {
     autoActive = true;
   }
 
-  // Copy + sort the published frame's spans once per emulation frame (keyed by the
-  // frame's end cycle). The live buffer is swapped wholesale on the emu thread; we
-  // work off a local sorted copy so culling can binary-search by start time.
   static std::vector<Span> spans;
   static std::vector<RspSpan> rspSpans;
-  static u64 shownFrameEnd = ~0ull;
-  static u64 frameT0 = 0, frameT1 = 0;
+  static std::vector<RdpSpan> rdpSpans;
+  static std::vector<std::pair<u64, u64>> haltSpans;  //window-relative RSP halt intervals
+  static std::vector<u64> viMarks;  //window-relative VI swap times
   static bool freeze = false;
 
-  // On a new emulation frame, copy its spans and normalize timestamps to be
-  // relative to the frame start (tick 0 = frame start). Working in frame-relative
-  // time means the view's pan/zoom persists across frames (each frame has fresh
-  // absolute timestamps, but a fixed relative window stays meaningful), instead
-  // of being reset every frame. Long calls that began in the previous frame clamp
-  // to 0 (they were already running at frame start).
-  if(!freeze && prof.frameSpanEnd != shownFrameEnd) {
-    shownFrameEnd = prof.frameSpanEnd;
-    frameT0 = prof.frameSpanStart;
-    frameT1 = prof.frameSpanEnd;
-    spans.assign(prof.frameSpans.begin(), prof.frameSpans.end());
-    for(auto& s : spans) {
-      s.start = s.start > frameT0 ? s.start - frameT0 : 0;
-      s.end   = s.end   > frameT0 ? s.end   - frameT0 : 0;
+  // Synthetic on-screen width for an RDP flush: the RDP has no per-command timing,
+  // so a flush block is sized by its command count
+  static constexpr u64 rdpTicksPerCmd = 64;
+
+  // Window length selector: integer multiples of one VI period (~16.67 ms at the NTSC 60 Hz field rate). viTicks = 187.5 MHz / 60.
+  static constexpr u64 viTicks = 3'125'000;
+  static const char* windowItems[] = {
+    "16.7 ms", "33.3 ms", "66.7 ms", "133 ms", "267 ms",
+  };
+  static const u32 windowMul[] = {1, 2, 4, 8, 16};
+  static int windowIdx = 1;  //default: 2 VI
+  u64 windowTicks = (u64)windowMul[windowIdx] * viTicks;
+
+  auto& rcap = ares::Nintendo64::rsp.capture;
+
+  // Collect the spans whose [start,end] intersects the window. Both rings are
+  // appended in end order (now() is monotonic), so we walk back from the newest
+  // entry and stop at the first span that ends before the window
+  // everything older is outside it. Spans that began before the window clamp their start to
+  // 0 (they were already running at the window's left edge).
+  static u64 winStart = 0;
+  bool ringFull = false;
+  if(!freeze) {
+    u64 rightEdge = prof.now();
+    winStart = rightEdge > windowTicks ? rightEdge - windowTicks : 0;
+
+    spans.clear();
+    u64 w = prof.timelineWrite.load(std::memory_order_acquire);
+    u64 n = std::min<u64>(w, prof.maxSpans);
+    for(u64 i = 0; i < n; i++) {
+      const Span& s = prof.timeline[(w - 1 - i) % prof.maxSpans];
+      if(s.end < winStart) break;
+      Span t = s;
+      t.start = t.start > winStart ? t.start - winStart : 0;
+      t.end   = t.end   > winStart ? t.end   - winStart : 0;
+      spans.push_back(t);
     }
+    ringFull = (n == prof.maxSpans && spans.size() == n);  //oldest in-window dropped
     std::sort(spans.begin(), spans.end(),
               [](const Span& a, const Span& b) { return a.start < b.start; });
 
-    // RSP commands for the same frame, normalized to the RSP frame-start clock
-    // (anchored to the same VI swap as the CPU lane). clocksTotal is u32, so the
-    // delta is taken in u32 to stay correct across the ~23s wrap.
-    auto& rcap = ares::Nintendo64::rsp.capture;
-    u32 rn = std::min<u32>(rcap.committedCount.load(std::memory_order_acquire), rcap.maxCommands);
-    u64 rstart = rcap.committedClockStart;
     rspSpans.clear();
-    rspSpans.reserve(rn);
-    for(u32 i = 0; i < rn; i++) {
-      auto& c = rcap.commands[i];
-      u64 rel = (u32)(c.startCycle - rstart);
-      u64 dur = (u32)c.cycle;
-      rspSpans.push_back({rel, rel + dur, c.overlayId, c.commandId, c.isOverhead, c.overheadType});
-    }
-    // The RSP segment model only emits a row on transition. At the VI swap the
-    // current segment (usually SegLoop = idle/dispatch) is still open — its
-    // trailing idle time leaks into the next frame's first overhead row. Fill the
-    // tail gap with a synthetic span so the RSP lane covers the full frame.
-    // Also clamp spans that start before 0 (previous-frame segments whose
-    // startCycle predates the VI swap, wrapping the u32 delta).
-    if(rn > 0) {
-      u64 rspFrameTicks = (u32)(rcap.committedClockEnd - rstart);
-      u64 lastEnd = rspSpans.back().end;
-      if(lastEnd < rspFrameTicks)
-        rspSpans.push_back({lastEnd, rspFrameTicks, 0, 0, true, 1 /*Loop*/});
-      for(auto& s : rspSpans) {
-        if(s.start > rspFrameTicks) s.start = 0;   //wrapped to before frame start
-        if(s.end > rspFrameTicks) s.end = rspFrameTicks;
-      }
+    u64 rw = rcap.timelineWrite.load(std::memory_order_acquire);
+    u64 rn = std::min<u64>(rw, rcap.maxTimeline);
+    for(u64 i = 0; i < rn; i++) {
+      const auto& s = rcap.timeline[(rw - 1 - i) % rcap.maxTimeline];
+      if(s.end < winStart) break;
+      u64 rs = s.start > winStart ? s.start - winStart : 0;
+      u64 re = s.end   > winStart ? s.end   - winStart : 0;
+      rspSpans.push_back({rs, re, s.overlayId, s.commandId, s.overhead, s.overheadType});
     }
     std::sort(rspSpans.begin(), rspSpans.end(),
               [](const RspSpan& a, const RspSpan& b) { return a.start < b.start; });
+
+    // RSP hardware halt/break intervals (the bar below the command stream). Closed
+    // intervals from the ring, plus the still-open halt drawn live up to the right
+    // edge so a currently-stopped RSP shows immediately.
+    haltSpans.clear();
+    u64 hw = rcap.haltWrite.load(std::memory_order_acquire);
+    u64 hn = std::min<u64>(hw, rcap.maxHaltSpans);
+    for(u64 i = 0; i < hn; i++) {
+      const auto& s = rcap.haltSpans[(hw - 1 - i) % rcap.maxHaltSpans];
+      if(s.end < winStart) break;
+      u64 hs = s.start > winStart ? s.start - winStart : 0;
+      u64 he = s.end   > winStart ? s.end   - winStart : 0;
+      haltSpans.emplace_back(hs, he);
+    }
+    if(rcap.haltOpen.load(std::memory_order_acquire)) {
+      u64 hStart = rcap.haltStartWall.load(std::memory_order_relaxed);
+      if(hStart <= rightEdge) {
+        u64 hs = hStart > winStart ? hStart - winStart : 0;
+        haltSpans.emplace_back(hs, rightEdge - winStart);
+      }
+    }
+
+    // RDP: one block per DP flush, anchored at its real submit time with a
+    // count-proportional synthetic width. Walk back from newest; entries are
+    // start-ordered, so once a block's synthetic end falls before the window the
+    // rest are too.
+    auto& dcap = ares::Nintendo64::rdp.capture;
+    rdpSpans.clear();
+    u64 dw = dcap.timelineWrite.load(std::memory_order_acquire);
+    u64 dn = std::min<u64>(dw, dcap.maxTimeline);
+    for(u64 i = 0; i < dn; i++) {
+      const auto& s = dcap.timeline[(dw - 1 - i) % dcap.maxTimeline];
+      u64 end = s.start + (u64)s.count * rdpTicksPerCmd;
+      if(end < winStart) break;
+      u64 ds = s.start > winStart ? s.start - winStart : 0;
+      u64 de = end     > winStart ? end     - winStart : 0;
+      rdpSpans.push_back({ds, de, s.count});
+    }
+    std::sort(rdpSpans.begin(), rdpSpans.end(),
+              [](const RdpSpan& a, const RdpSpan& b) { return a.start < b.start; });
+    // Clamp each flush so it never overruns the next one (synthetic widths can
+    // overlap when flushes are dense); keeps blocks readable and start times true.
+    for(size_t i = 0; i + 1 < rdpSpans.size(); i++)
+      rdpSpans[i].end = std::min(rdpSpans[i].end, rdpSpans[i + 1].start);
+
+    // VI framebuffer-swap markers within the window.
+    viMarks.clear();
+    u64 vw = prof.viMarkWrite.load(std::memory_order_acquire);
+    u64 vn = std::min<u64>(vw, prof.maxViMarks);
+    for(u64 i = 0; i < vn; i++) {
+      u64 m = prof.viMarks[(vw - 1 - i) % prof.maxViMarks];
+      if(m < winStart) break;
+      if(m <= rightEdge) viMarks.push_back(m - winStart);
+    }
   }
 
-  u64 frameTicks = frameT1 > frameT0 ? frameT1 - frameT0 : 1;
+  u64 frameTicks = windowTicks;  //axis/view length (kept name for the renderer below)
   u32 maxDepth = 0;
   for(auto& s : spans) maxDepth = std::max<u32>(maxDepth, s.depth);
 
-  // --- view (pan/zoom) state, in frame-relative ticks ------------------------
+  // --- view (pan/zoom) state, in window-relative ticks -----------------------
   static u64 viewStart = 0;
   static u64 viewSpan = 0;
   static bool userAdjusted = false;  //true once the user pans/zooms
+  static int shownWindowIdx = -1;
   auto fit = [&]() { viewStart = 0; viewSpan = std::max<u64>(1, frameTicks); };
-  // Keep the view fitted to the live frame until the user takes control (then the
-  // view persists across frames). This also self-corrects the bogus oversized
-  // first frame right after recording is enabled.
-  if(viewSpan == 0 || !userAdjusted) fit();
+  // Fit to the whole window until the user takes control; also refit whenever the
+  // window length changes.
+  if(viewSpan == 0 || !userAdjusted || shownWindowIdx != windowIdx) { fit(); shownWindowIdx = windowIdx; }
 
   // --- toolbar ---------------------------------------------------------------
   if(ImGui::Button("Fit")) { fit(); userAdjusted = false; }
   ImGui::SameLine();
   ImGui::Checkbox("Freeze", &freeze);
   ImGui::SameLine();
-  {
-    char b[32]; fmtTime((f64)frameTicks, b, sizeof(b));
-    ImGui::Text("frame: %s   cpu: %zu (d%u)   rsp: %zu", b, spans.size(), maxDepth + 1, rspSpans.size());
-  }
-  if(spans.size() >= ares::Nintendo64::CPU::Profiler::maxSpans) {
+  ImGui::SetNextItemWidth(150.0f);
+  ImGui::Combo("Window", &windowIdx, windowItems, IM_ARRAYSIZE(windowItems));
+  ImGui::SameLine();
+  ImGui::Text("cpu: %zu (d%u)   rsp: %zu   rdp: %zu   halt: %zu", spans.size(), maxDepth + 1, rspSpans.size(), rdpSpans.size(), haltSpans.size());
+  if(ringFull) {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "(span cap hit)");
   }
@@ -205,10 +276,12 @@ auto DrawFlameChart() -> void {
   dl->PushClipRect(origin, ImVec2(origin.x + avail.x, origin.y + avail.y), true);
   dl->AddRectFilled(origin, ImVec2(origin.x + avail.x, origin.y + avail.y), IM_COL32(20, 20, 24, 255));
 
-  // Vertical scroll for the lanes (deep call stacks + the RSP lane below them):
-  // Shift+wheel, or vertical drag. The time axis stays pinned at the top.
+  // Vertical scroll for the lanes (deep call stacks + the RSP/RDP lanes below
+  // them): Shift+wheel, or vertical drag. The time axis stays pinned at the top.
   static f32 laneScroll = 0.0f;
-  f32 contentH = (maxDepth + 1) * rowH + 19.0f /*RSP label gap*/ + rowH;
+  const f32 laneGap = 19.0f;  //divider+label gap above each device lane
+  const f32 haltH = 6.0f;     //thin RSP halt/stopped indicator bar
+  f32 contentH = (maxDepth + 1) * rowH + (laneGap + rowH + haltH) /*RSP + halt bar*/ + (laneGap + rowH) /*RDP*/;
   f32 visibleH = avail.y - axisH;
   f32 maxScroll = std::max(0.0f, contentH - visibleH);
 
@@ -239,12 +312,31 @@ auto DrawFlameChart() -> void {
   }
   laneScroll = std::clamp(laneScroll, 0.0f, maxScroll);
 
+  // Measurement marker: a left click (without a pan drag) drops a marker at the
+  // clicked instant; right click clears it. Stored in absolute master-clock ticks
+  // so it stays pinned to a real moment as the window slides. The marker -> cursor
+  // delta is shown live under the time axis (drawn below).
+  static u64 markerAbs = 0;
+  static bool hasMarker = false;
+  static f32 pressX = 0.0f;
+  {
+    f64 pxPerTickNow = avail.x / (f64)viewSpan;
+    if(ImGui::IsItemActivated()) pressX = io.MousePos.x;
+    if(hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)
+              && std::abs(io.MousePos.x - pressX) < 4.0f) {
+      f64 relTick = (f64)viewStart + (io.MousePos.x - origin.x) / pxPerTickNow;
+      markerAbs = winStart + (u64)std::max<f64>(0.0, relTick);
+      hasMarker = true;
+    }
+    if(hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) hasMarker = false;
+  }
+
   f64 pxPerTick = avail.x / (f64)viewSpan;
   u64 viewEnd = viewStart + viewSpan;
   f32 lanesTop = origin.y + axisH - laneScroll;
   f32 clipTop = origin.y + axisH;  //lanes are clipped below the pinned axis
 
-  // Time axis ticks (~every 120px), labelled in us/ms relative to frame start.
+  // Time axis ticks (~every 120px), labelled in us/ms relative to window start.
   {
     f64 targetPx = 120.0;
     f64 stepTicks = targetPx / pxPerTick;
@@ -258,7 +350,7 @@ auto DrawFlameChart() -> void {
       f32 x = origin.x + (f32)((t - viewStart) * pxPerTick);
       if(x < origin.x || x > origin.x + avail.x) continue;
       dl->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + avail.y), IM_COL32(60, 60, 70, 120));
-      char b[24]; fmtTime((f64)t, b, sizeof(b));  //t is already frame-relative
+      char b[24]; fmtTime((f64)t, b, sizeof(b));  //t is already window-relative
       dl->AddText(ImVec2(x + 3, origin.y + 2), IM_COL32(170, 170, 180, 255), b);
     }
   }
@@ -304,6 +396,7 @@ auto DrawFlameChart() -> void {
 
   // --- RSP lane: command spans on the same axis, below the CPU call stack -----
   const RspSpan* rhover = nullptr;
+  const RdpSpan* dhover = nullptr;
   {
     f32 cpuBottom = lanesTop + (maxDepth + 1) * rowH;
     f32 labelY = cpuBottom + 4.0f;
@@ -340,9 +433,94 @@ auto DrawFlameChart() -> void {
         dl->PopClipRect();
       }
     }
+
+    // RSP hardware-stopped (SP_STATUS.halted / BREAK) bar, directly under the
+    // command stream. Only drawn where halted — running shows no bar.
+    {
+      f32 hy0 = rspTop + rowH;
+      f32 hy1 = hy0 + haltH - 1.0f;
+      for(auto& hsp : haltSpans) {
+        if(hsp.first > viewEnd || hsp.second < viewStart) continue;
+        f32 x0 = origin.x + (f32)(((s64)hsp.first  - (s64)viewStart) * pxPerTick);
+        f32 x1 = origin.x + (f32)(((s64)hsp.second - (s64)viewStart) * pxPerTick);
+        if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;
+        x0 = std::max(x0, origin.x);
+        x1 = std::min(x1, origin.x + avail.x);
+        if(x1 <= x0) continue;
+        if(hy0 > origin.y + avail.y) continue;
+        dl->AddRectFilled(ImVec2(x0, hy0), ImVec2(x1, hy1), IM_COL32(220, 70, 70, 235));
+      }
+    }
+
+    // --- RDP lane: one block per DP flush, below the RSP lane ------------------
+    f32 rdpLabelY = rspTop + rowH + haltH + 4.0f;
+    f32 rdpTop = rdpLabelY + 15.0f;
+    dl->AddLine(ImVec2(origin.x, rdpLabelY), ImVec2(origin.x + avail.x, rdpLabelY), IM_COL32(70, 70, 80, 200));
+    dl->AddText(ImVec2(origin.x + 3, rdpLabelY + 1), IM_COL32(150, 255, 200, 255), "RDP");
+
+    for(auto it = rdpSpans.begin(); it != rdpSpans.end(); ++it) {
+      const RdpSpan& s = *it;
+      if(s.start > viewEnd) break;
+      if(s.end < viewStart) continue;
+      f32 x0 = origin.x + (f32)(((s64)s.start - (s64)viewStart) * pxPerTick);
+      f32 x1 = origin.x + (f32)(((s64)s.end - (s64)viewStart) * pxPerTick);
+      if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;
+      x0 = std::max(x0, origin.x);
+      x1 = std::min(x1, origin.x + avail.x);
+      if(x1 <= x0) continue;
+      f32 y0 = rdpTop;
+      f32 y1 = y0 + rowH - 1.0f;
+      if(y0 > origin.y + avail.y) continue;
+
+      bool isHover = hovered && io.MousePos.x >= x0 && io.MousePos.x < x1
+                             && io.MousePos.y >= y0 && io.MousePos.y < y1;
+      if(isHover) dhover = &s;
+
+      ImU32 col = isHover ? IM_COL32(255, 255, 255, 255) : IM_COL32(90, 200, 160, 255);
+      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 2.0f);
+      dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
+      if(x1 - x0 > 28.0f) {
+        string name = {"DP ", s.count, " cmds"};
+        dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
+        dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
+        dl->PopClipRect();
+      }
+    }
   }
 
   dl->PopClipRect();  //lanes clip
+
+  // VI framebuffer-swap markers: vertical lines over the whole canvas, drawn last
+  // (above the lanes) so frame boundaries stay visible.
+  for(u64 m : viMarks) {
+    if(m < viewStart || m > viewEnd) continue;
+    f32 x = origin.x + (f32)(((s64)m - (s64)viewStart) * pxPerTick);
+    dl->AddLine(ImVec2(x, origin.y + axisH), ImVec2(x, origin.y + avail.y), IM_COL32(255, 90, 90, 150), 1.0f);
+    dl->AddText(ImVec2(x + 2, origin.y + axisH + 1), IM_COL32(255, 120, 120, 255), "VI");
+  }
+
+  // Measurement marker (yellow) + live delta-to-cursor readout under the axis.
+  if(hasMarker) {
+    f64 markerRel = (f64)markerAbs - (f64)winStart;  //window-relative ticks
+    f32 mx = origin.x + (f32)((markerRel - (f64)viewStart) * pxPerTick);
+    if(mx >= origin.x && mx <= origin.x + avail.x)
+      dl->AddLine(ImVec2(mx, origin.y), ImVec2(mx, origin.y + avail.y), IM_COL32(255, 220, 80, 220), 1.5f);
+
+    if(hovered) {
+      f32 cx = std::clamp(io.MousePos.x, origin.x, origin.x + avail.x);
+      dl->AddLine(ImVec2(cx, origin.y + axisH), ImVec2(cx, origin.y + avail.y), IM_COL32(255, 220, 80, 90), 1.0f);
+      //horizontal ruler slightly below the tick labels, marker -> cursor
+      f32 ry = origin.y + 16.0f;
+      f32 lx = std::clamp(mx, origin.x, origin.x + avail.x);
+      dl->AddLine(ImVec2(lx, ry), ImVec2(cx, ry), IM_COL32(255, 220, 80, 200), 1.0f);
+      f64 cursorAbs = (f64)winStart + (f64)viewStart + (io.MousePos.x - origin.x) / pxPerTick;
+      char b[32]; fmtDelta(cursorAbs - (f64)markerAbs, b, sizeof(b));
+      ImVec2 ts = ImGui::CalcTextSize(b);
+      f32 tx = cx + 4.0f; if(tx + ts.x > origin.x + avail.x) tx = cx - 4.0f - ts.x;
+      dl->AddText(ImVec2(tx, ry + 2.0f), IM_COL32(255, 230, 120, 255), b);
+    }
+  }
+
   dl->PopClipRect();  //canvas clip
 
   // RSP hover tooltip.
@@ -353,7 +531,18 @@ auto DrawFlameChart() -> void {
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(name.data());
     ImGui::Separator();
-    ImGui::Text("RSP  duration: %s  (%.2f%% of frame)", dbuf, pct);
+    ImGui::Text("RSP  duration: %s  (%.2f%% of window)", dbuf, pct);
+    ImGui::EndTooltip();
+  }
+
+  // RDP flush tooltip. Width is synthetic (no per-command RDP timing), so report
+  // the command count rather than a duration.
+  if(dhover) {
+    ImGui::BeginTooltip();
+    ImGui::Text("DP flush");
+    ImGui::Separator();
+    ImGui::Text("commands: %u", dhover->count);
+    ImGui::TextDisabled("(submit time exact; width = count, not real RDP time)");
     ImGui::EndTooltip();
   }
 
@@ -365,7 +554,7 @@ auto DrawFlameChart() -> void {
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(name.data());
     ImGui::Separator();
-    ImGui::Text("duration: %s  (%.2f%% of frame)", dbuf, pct);
+    ImGui::Text("duration: %s  (%.2f%% of window)", dbuf, pct);
     ImGui::Text("depth: %u", hover->depth);
     ImGui::EndTooltip();
   }

@@ -30,7 +30,6 @@ struct RSPCapture {
 
   struct Command {
     u64 cycle = 0;        // cycle delta to the previous event (time this row took)
-    u64 startCycle = 0;   // absolute clocksTotal (master ticks) at segment start, for the flame chart
     u64 seq = 0;          // global capture order (see captureSequence)
     u32 frame = 0;        // frame number
     u16 overlayId = 0;
@@ -143,24 +142,71 @@ struct RSPCapture {
   // Per-frame cycle tracking
   u32 frameNumber = 0;
 
-  // Flame-chart frame window: clocksTotal (master ticks) at the VI swaps bounding
-  // the committed frame. Command startCycles are normalized against
-  // committedClockStart so the RSP lane aligns with the CPU lane (both anchored to
-  // the same VI swap). Set on the UI/commit thread at each presented frame.
-  u64 frameClockStart = 0;       //running: clock at the last VI swap
-  u64 committedClockStart = 0;   //published window start of the committed frame
-  u64 committedClockEnd = 0;     //published window end of the committed frame
+  // Flame-chart sliding-window timeline. Unlike the per-command capture above
+  // (which the RSP viewer commits + clears every VI), this is a free-running ring
+  // on the CPU's now() wall-clock axis (the CPU is primary and runs continuously,
+  // so now() is the shared wall clock for all lanes). The RSP runs concurrently
+  // with the CPU but is *replayed* by the scheduler to catch up over the same wall
+  // interval, so now() alone is too coarse for RSP events (it's frozen within a
+  // catch-up slice, collapsing the short RSPQ_Loop/DMA overhead between commands).
+  // The RSP's own scheduler clock (n64.hpp Thread::clock, raw master ticks) is how
+  // far it lags now(): rspWall = now() + (s64)clock (clock <= 0 while catching up).
+  // That single expression gives each event its true, lag-corrected wall position
+  // aligned with the CPU/VI lanes; segment widths come out as the clocksTotal delta
+  // (clock and clocksTotal advance by the same pipeline.clocks), matching the RSP
+  // log, and segments stay contiguous. Halt is automatic: the dispatch loop open
+  // during a BREAK closes after resume with a wall covering the stop. timelineWrite
+  // is the monotonic append count; live slot is timelineWrite % maxTimeline. Single
+  // producer (RSP thread), single consumer (UI); appends are end-ordered.
+  struct TlSpan {
+    u64 start = 0;        // rspWall at segment start
+    u64 end = 0;          // rspWall at segment end
+    u16 overlayId = 0;
+    u8  commandId = 0;
+    bool overhead = false;
+    u8  overheadType = 0;
+  };
+  static constexpr u32 maxTimeline = 1u << 16;  //ring capacity (65536 spans)
+  TlSpan timeline[maxTimeline];
+  std::atomic<u64> timelineWrite{0};
+  u64 segWall = 0;       // rspWall at the previous hook = start of the current segment
+  u64 lastWall = 0;      // monotonic high-water mark for rspWall (no backward steps)
+
+  auto pushTimeline(u64 start, u64 end, u16 overlayId, u8 commandId, bool overhead, u8 overheadType) -> void {
+    auto w = timelineWrite.load(std::memory_order_relaxed);
+    timeline[w % maxTimeline] = {start, end, overlayId, commandId, overhead, overheadType};
+    timelineWrite.store(w + 1, std::memory_order_release);
+  }
+
+  // RSP hardware halt/break intervals for the flame chart, on the same segWall
+  // axis as the command lane. The RSP boots halted and BREAK halts it again until
+  // the CPU clears SP_STATUS.halted; while halted no command hooks fire, so this is
+  // tracked separately (polled in RSP::captureHaltState from the main loop). A
+  // closed interval is emitted on the halted -> running edge; the still-open one
+  // (haltOpen) is drawn live by the UI up to the right edge.
+  struct HaltSpan { u64 start = 0; u64 end = 0; };
+  static constexpr u32 maxHaltSpans = 4096;
+  HaltSpan haltSpans[maxHaltSpans];
+  std::atomic<u64> haltWrite{0};
+  bool lastHalted = true;            // last polled SP_STATUS.halted (RSP boots halted)
+  std::atomic<bool> haltOpen{false}; // currently inside a halt interval (for the live bar)
+  std::atomic<u64> haltStartWall{0}; // rspWall at the start of the current halt
+
+  auto pushHalt(u64 start, u64 end) -> void {
+    auto w = haltWrite.load(std::memory_order_relaxed);
+    haltSpans[w % maxHaltSpans] = {start, end};
+    haltWrite.store(w + 1, std::memory_order_release);
+  }
 
   // JSON config loaded flag
   bool configLoaded = false;
 
-  auto push(u64 cycle, u64 startCycle, u64 seq, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words,
+  auto push(u64 cycle, u64 seq, u32 frame, u16 overlayId, u8 commandId, u8 wordCount, const u32* words,
             u64 bytesIn, u64 bytesOut) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
     auto& cmd = commands[pos % maxCommands];
     cmd.cycle = cycle;
-    cmd.startCycle = startCycle;
     cmd.seq = seq;
     cmd.frame = frame;
     cmd.overlayId = overlayId;
@@ -175,12 +221,11 @@ struct RSPCapture {
     writePos.store(pos + 1, std::memory_order_release);
   }
 
-  auto pushOverhead(u64 cycle, u64 startCycle, u64 seq, u8 overheadType, u64 bytesIn, u64 bytesOut) -> void {
+  auto pushOverhead(u64 cycle, u64 seq, u8 overheadType, u64 bytesIn, u64 bytesOut) -> void {
     if(!enabled.load(std::memory_order_relaxed)) return;
     auto pos = writePos.load(std::memory_order_relaxed);
     auto& cmd = commands[pos % maxCommands];
     cmd.cycle = cycle;
-    cmd.startCycle = startCycle;
     cmd.seq = seq;
     cmd.frame = frameNumber;
     cmd.overlayId = 0;

@@ -261,9 +261,15 @@ auto CPU::Profiler::popFrame() -> bool {
   add(frameAccum);                         //per-frame snapshot is always live
   // Flame-chart span: this call's [entry,now) at its call-stack depth. callStack
   // was just popped, so its current size is exactly this frame's nesting depth.
-  if(recordTimeline.load(std::memory_order_relaxed) && frameAccumSpans.size() < maxSpans) {
-    frameAccumSpans.push_back({frame.entryCycle, nowT, frame.funcAddr,
-                               (u16)min<u32>(callStack.size(), 0xffff), frame.isException});
+  // Timestamps are now() (the CPU is primary, so now() is the wall clock the RSP
+  // and RDP lanes are mapped onto). Appended to the sliding-window ring; oldest
+  // entries are overwritten as the window advances. setEnabled() sizes the ring
+  // before any append, so the size check just skips the brief window before that.
+  if(recordTimeline.load(std::memory_order_relaxed) && timeline.size() == maxSpans) {
+    u64 w = timelineWrite.load(std::memory_order_relaxed);
+    timeline[w % maxSpans] = {frame.entryCycle, nowT, frame.funcAddr,
+                              (u16)min<u32>(callStack.size(), 0xffff), frame.isException};
+    timelineWrite.store(w + 1, std::memory_order_release);
   }
   if(!callStack.empty()) {
     callStack.back().childCycles += incl;
@@ -335,14 +341,12 @@ auto CPU::Profiler::onEret() -> void {
 auto CPU::Profiler::onFrame() -> void {
   frameStats = frameAccum;
   frameAccum.clear();
-  // Publish this frame's flame-chart spans and start the next frame's window.
-  // Swap (not copy) so the live buffer's capacity is retained across frames.
-  u64 nowT = now();
-  frameSpans.swap(frameAccumSpans);
-  frameAccumSpans.clear();
-  frameSpanStart = frameStartCycle;
-  frameSpanEnd = nowT;
-  frameStartCycle = nowT;
+
+  {
+    u64 w = viMarkWrite.load(std::memory_order_relaxed);
+    viMarks[w % maxViMarks] = now();
+    viMarkWrite.store(w + 1, std::memory_order_release);
+  }
   //number of presented frames the continuous totals span, capped at maxFrames so
   //the accumulation stops growing once the window is full (Clear restarts it).
   if(frameCount < maxFrames) frameCount++;
@@ -351,6 +355,7 @@ auto CPU::Profiler::onFrame() -> void {
 auto CPU::Profiler::setEnabled(bool value) -> void {
   enabled.store(value, std::memory_order_relaxed);
   callStack.clear();
+  if(value && timeline.size() != maxSpans) timeline.resize(maxSpans);
   cpu.updatePrologueHook();
 }
 
@@ -360,8 +365,7 @@ auto CPU::Profiler::clearStats() -> void {
   frameAccum.clear();
   callStack.clear();
   frameCount = 0;
-  frameSpans.clear();
-  frameAccumSpans.clear();
+  timelineWrite.store(0, std::memory_order_release);
 }
 
 auto CPU::updatePrologueHook() -> void {
