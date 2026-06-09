@@ -28,7 +28,7 @@ auto DrawCpuProfiler() -> void {
     return;
   }
 
-  ImGui::SetNextWindowSize(ImVec2(720, 440), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(720_px, 440_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("CPU Profiler", &showCpuProfiler)) {
     ImGui::End();
     settings.general.showCpuProfiler = showCpuProfiler;
@@ -58,12 +58,12 @@ auto DrawCpuProfiler() -> void {
 
   static int timeUnit = 0;  // 0 = us, 1 = ms, 2 = Cycles
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(70);
+  ImGui::SetNextItemWidth(70_px);
   ImGui::Combo("##timeUnit", &timeUnit, "us\0ms\0Cycles\0");
 
   static int windowMode = 1;  // 0 = Continuous, 1 = Per-frame
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(110);
+  ImGui::SetNextItemWidth(110_px);
   ImGui::Combo("##window", &windowMode, "Continuous\0Per-frame\0");
 
   // In continuous mode, choose between accumulated totals and per-frame averages,
@@ -71,7 +71,7 @@ auto DrawCpuProfiler() -> void {
   static int contMode = 1;
   if(windowMode == 0) {
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(110);
+    ImGui::SetNextItemWidth(110_px);
     ImGui::Combo("##contMode", &contMode, "Total\0Avg/frame\0");
 
     ImGui::SameLine();
@@ -170,7 +170,7 @@ auto DrawCpuProfiler() -> void {
   f64 invTotal = totalExcl ? 100.0 / (f64)totalExcl : 0.0;
 
   // Reserve room at the bottom for the summary panel.
-  float statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.30f, 120.0f, 260.0f);
+  float statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.30f, 120.0_px, 260.0_px);
 
   // --- main function table ----------------------------------------------------
   // Hideable: right-click any header to toggle column visibility. ImGui persists

@@ -19,7 +19,7 @@ static auto cmdColor(u8 opcode) -> ImU32 {
 auto DrawRdpViewer() -> void {
   if(!showRdpViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(600_px, 400_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("RDP Commands", &showRdpViewer)) {
     ImGui::End();
     settings.general.showRdpViewer = showRdpViewer;
@@ -154,13 +154,13 @@ auto DrawRdpViewer() -> void {
       u8 r = (c >> 24) & 0xff, g = (c >> 16) & 0xff, b = (c >> 8) & 0xff, a = c & 0xff;
       ImVec2 pos = ImGui::GetCursorScreenPos();
       float h  = ImGui::GetTextLineHeight();
-      float sz = h - 2;
+      float sz = h - 2_px;
       ImDrawList* dl = ImGui::GetWindowDrawList();
       dl->AddRectFilled(pos, ImVec2(pos.x+sz, pos.y+sz), IM_COL32(r, g, b, 255));
       dl->AddRect(pos, ImVec2(pos.x+sz, pos.y+sz), IM_COL32(255,255,255,60));
-      dl->AddRectFilled(ImVec2(pos.x+sz+3, pos.y), ImVec2(pos.x+sz*2+3, pos.y+sz), IM_COL32(a, a, a, 255));
-      dl->AddRect(ImVec2(pos.x+sz+3, pos.y), ImVec2(pos.x+sz*2+3, pos.y+sz), IM_COL32(255,255,255,60));
-      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + sz * 2 + 6);
+      dl->AddRectFilled(ImVec2(pos.x+sz+3_px, pos.y), ImVec2(pos.x+sz*2+3_px, pos.y+sz), IM_COL32(a, a, a, 255));
+      dl->AddRect(ImVec2(pos.x+sz+3_px, pos.y), ImVec2(pos.x+sz*2+3_px, pos.y+sz), IM_COL32(255,255,255,60));
+      ImGui::SetCursorPosX(ImGui::GetCursorPosX() + sz * 2 + 6_px);
     }
 
     if(lines == 1) {

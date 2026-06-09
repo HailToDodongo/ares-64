@@ -305,7 +305,7 @@ static auto drawStepTypeCombo() -> void {
   ImGui::Text("Step:");
   ImGui::SameLine();
 
-  ImGui::SetNextItemWidth(80);
+  ImGui::SetNextItemWidth(80_px);
   if(ImGui::Combo("##steptype_bar", &st, stepNames, 3)) {
     program.stepType = (Program::StepType)(st + 1);
   }
@@ -322,7 +322,7 @@ static auto drawRendererCombo() -> void {
   ImGui::Text("RDP:");
   ImGui::SameLine();
 
-  ImGui::SetNextItemWidth(110);
+  ImGui::SetNextItemWidth(110_px);
   if(ImGui::Combo("##rdp_bar", &idx, names, 2)) {
     settings.video.renderer = names[idx];
     using Renderer = ares::Nintendo64::System::Renderer;

@@ -5,6 +5,8 @@
 namespace ares::ui {
 
 ImFont* monoFont = nullptr;
+float dpiScale = 1.0f;          // set during app init; scales the _px literal
+float dpiScaleDetected = 1.0f;  // auto-detected ratio, before user override
 
 bool showManifestViewer = false;
 bool showCheatEditor = false;
@@ -73,7 +75,7 @@ auto RefreshTools() -> void {
 auto DrawManifestViewer() -> void {
   if(!showManifestViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(500, 350), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(500_px, 350_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Manifest Viewer", &showManifestViewer)) {
     ImGui::End();
     settings.general.showManifestViewer = showManifestViewer;
@@ -114,7 +116,7 @@ auto DrawManifestViewer() -> void {
 auto DrawCheatEditor() -> void {
   if(!showCheatEditor) return;
 
-  ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(500_px, 400_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Cheat Editor", &showCheatEditor)) {
     ImGui::End();
     settings.general.showCheatEditor = showCheatEditor;
@@ -129,7 +131,7 @@ auto DrawCheatEditor() -> void {
   }
 
   // Cheat list
-  if(!ImGui::BeginTable("cheats", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg, ImVec2(0, -80))) {
+  if(!ImGui::BeginTable("cheats", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg, ImVec2(0, -80_px))) {
     ImGui::End();
     settings.general.showCheatEditor = true;
     return;
@@ -188,7 +190,7 @@ auto DrawCheatEditor() -> void {
 auto DrawTracerViewer() -> void {
   if(!showTracerViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(500, 300), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(500_px, 300_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Trace Logger", &showTracerViewer)) {
     ImGui::End();
     settings.general.showTracerViewer = showTracerViewer;

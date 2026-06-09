@@ -35,7 +35,7 @@ static auto RefreshMemoryNodes() -> void {
 auto DrawMemoryViewer() -> void {
   if(!showMemoryViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(560_px, 420_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Memory Editor", &showMemoryViewer)) {
     ImGui::End();
     settings.general.showMemoryViewer = showMemoryViewer;
@@ -63,7 +63,7 @@ auto DrawMemoryViewer() -> void {
   if(memSelection >= (int)memoryNodes.size()) memSelection = 0;
 
   // --- Toolbar: memory selector + goto ---
-  ImGui::SetNextItemWidth(160);
+  ImGui::SetNextItemWidth(160_px);
   if(ImGui::BeginCombo("##memsel", memoryNodes[memSelection]->name().data())) {
     for(int i = 0; i < (int)memoryNodes.size(); i++) {
       if(ImGui::Selectable(memoryNodes[i]->name().data(), memSelection == i)) {
@@ -81,7 +81,7 @@ auto DrawMemoryViewer() -> void {
   ImGui::TextDisabled("size 0x%X", memSize);
 
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(90);
+  ImGui::SetNextItemWidth(90_px);
   if(ImGui::InputText("##goto", gotoBuf, sizeof(gotoBuf),
                       ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
     u32 addr = (u32)strtoul(gotoBuf, nullptr, 16);

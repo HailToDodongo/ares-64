@@ -47,6 +47,25 @@ static void DrawVideoPanel() {
   }
   ImGui::Checkbox("Disable VI Processing", &settings.video.disableVideoInterfaceProcessing);
   ImGui::Checkbox("Weave Deinterlacing", &settings.video.weaveDeinterlacing);
+
+  ImGui::SeparatorText("Interface");
+  int detectedPct = (int)(dpiScaleDetected * 100.0f + 0.5f);
+  if(ImGui::Checkbox("Override UI scale", &settings.general.dpiOverride)) {
+    // Seed the percent with the detected value the first time it's enabled.
+    if(settings.general.dpiOverride && settings.general.dpiScalePercent == 0)
+      settings.general.dpiScalePercent = (u32)detectedPct;
+    uiScaleDirty = true;  // toggling override changes the effective scale
+  }
+  ImGui::BeginDisabled(!settings.general.dpiOverride);
+  int pct = (int)settings.general.dpiScalePercent;
+  if(pct <= 0) pct = detectedPct;
+  if(ImGui::InputInt("Scale (%)", &pct, 5, 25)) {
+    pct = pct < 25 ? 25 : pct > 400 ? 400 : pct;  // clamp to a sane range
+    settings.general.dpiScalePercent = (u32)pct;
+    uiScaleDirty = true;  // apply live on the next frame
+  }
+  ImGui::EndDisabled();
+  ImGui::TextDisabled("Detected: %d%%", detectedPct);
 }
 
 // --- Audio panel ---
@@ -220,7 +239,7 @@ static void DrawFirmwarePanel() {
 
   static int selectedFirmware = -1;
 
-  if(!ImGui::BeginTable("firmware", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, -40))) return;
+  if(!ImGui::BeginTable("firmware", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, -40_px))) return;
   ImGui::TableSetupColumn("Emulator");
   ImGui::TableSetupColumn("Type");
   ImGui::TableSetupColumn("Region");
@@ -500,13 +519,13 @@ static void DrawImportExportPanel() {
 auto DrawSettingsWindow() -> void {
   if(!showSettingsWindow) return;
 
-  ImGui::SetNextWindowSize(ImVec2(680, 480), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(680_px, 480_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Settings", &showSettingsWindow)) {
     ImGui::End();
     return;
   }
 
-  ImGui::BeginChild("panels", ImVec2(140, 0), ImGuiChildFlags_Borders);
+  ImGui::BeginChild("panels", ImVec2(140_px, 0), ImGuiChildFlags_Borders);
   for(int i = 0; i < panelCount; i++) {
     if(ImGui::Selectable(panelNames[i], activePanel == i)) {
       activePanel = i;

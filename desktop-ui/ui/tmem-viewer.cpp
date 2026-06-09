@@ -117,7 +117,7 @@ static int  tmemRawWidth = 64; // row width (in pixels) for raw TMEM view
 auto DrawTmemViewer() -> void {
   if(!showTmemViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(420, 340), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(420_px, 340_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("TMEM", &showTmemViewer)) {
     ImGui::End(); settings.general.showTmemViewer = showTmemViewer; return;
   }
@@ -253,7 +253,7 @@ auto DrawTmemViewer() -> void {
     };
 
     int fmtIdx = tmemRawFmt == 3 ? 1 : tmemRawFmt == 4 ? 2 : 0;
-    ImGui::SetNextItemWidth(110);
+    ImGui::SetNextItemWidth(110_px);
     if(ImGui::Combo("Format##rawFmt", &fmtIdx, fmtNames, 3)) tmemRawFmt = fmtCodes[fmtIdx];
 
     // Snap size to a valid one whenever the current format/size pair isn't allowed.
@@ -262,7 +262,7 @@ auto DrawTmemViewer() -> void {
     }
 
     const char* szNames[] = {"4bpp","8bpp","16bpp","32bpp"};
-    ImGui::SetNextItemWidth(110);
+    ImGui::SetNextItemWidth(110_px);
     if(ImGui::BeginCombo("Size##rawSz", szNames[tmemRawSz])) {
       for(int sz = 0; sz < 4; sz++) {
         if(!sizeValid(tmemRawFmt, sz)) continue;
@@ -273,7 +273,7 @@ auto DrawTmemViewer() -> void {
 
     // Row width (in pixels): lets you slice TMEM until the texture lines up.
     // Ctrl+click (or click) the slider to type an exact value; clamped to [1,256].
-    ImGui::SetNextItemWidth(160);
+    ImGui::SetNextItemWidth(160_px);
     ImGui::SliderInt("Width##rawW", &tmemRawWidth, 1, 128, "%d", ImGuiSliderFlags_AlwaysClamp);
 
     ImGui::Text("4096 bytes, %ux%u px", texW, texH);

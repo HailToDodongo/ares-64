@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "../desktop-ui.hpp"  // settings
 #include "../ui/log.hpp"
 #include "../ui/ui.hpp"
 
@@ -7,65 +8,27 @@
 
 #include <cstdio>
 
-auto AresApp::initialize() -> bool {
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-    fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-    return false;
-  }
+namespace ares::ui {
 
-  SDL_DisableScreenSaver();
+bool uiScaleDirty = false;
 
-  window = SDL_CreateWindow("Ares 64", 1024, 768,
-                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-  if (!window) {
-    fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
-    SDL_Quit();
-    return false;
-  }
+// Effective UI scale: the user override (Settings -> Video -> Interface) when
+// enabled, otherwise the DPI auto-detected at startup.
+auto effectiveUiScale() -> float {
+  if(settings.general.dpiOverride && settings.general.dpiScalePercent > 0)
+    return settings.general.dpiScalePercent / 100.0f;
+  return dpiScaleDetected > 0.0f ? dpiScaleDetected : 1.0f;
+}
 
-  gpu = SDL_CreateGPUDevice(
-    SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL,
-    false, nullptr);
-  if (!gpu) {
-    fprintf(stderr, "SDL_CreateGPUDevice failed: %s\n", SDL_GetError());
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return false;
-  }
-
-  if (!SDL_ClaimWindowForGPUDevice(gpu, window)) {
-    fprintf(stderr, "SDL_ClaimWindowForGPUDevice failed: %s\n", SDL_GetError());
-    SDL_DestroyGPUDevice(gpu);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return false;
-  }
-
-  // Default to vsync; the video driver may switch this via setBlocking().
-  SDL_SetGPUSwapchainParameters(gpu, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-                                SDL_GPU_PRESENTMODE_VSYNC);
-
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
-  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-  // Persist docking layout across sessions
-  static char iniPath[1024];
-  char* prefPath = SDL_GetPrefPath("ares-imgui", "ares");
-  if(prefPath) {
-    snprintf(iniPath, sizeof(iniPath), "%simgui.ini", prefPath);
-    SDL_free(prefPath);
-    io.IniFilename = iniPath;
-  }
-
-  // DPI scaling: detect the ratio of framebuffer pixels to window size
-  int fbW, fbH, winW, winH;
-  SDL_GetWindowSizeInPixels(window, &fbW, &winH);
-  SDL_GetWindowSize(window, &winW, &winH);
-  float dpiScale = (float)fbW / (float)winW;
-
-  // Pyrite64 dark theme
+// (Re)build the ImGui dark theme at the given UI scale and publish it to dpiScale
+// (the _px literal). The style is rebuilt from defaults every call so ScaleAllSizes
+// never compounds, which makes this safe to re-run live when the scale changes.
+// Fonts are loaded once at their base sizes; FontScaleMain scales them globally and
+// ImGui 1.92 rasterizes glyphs on demand, so no font-atlas rebuild is needed.
+auto applyUiScale(float scale) -> void {
+  if(!(scale > 0.0f)) scale = 1.0f;
   ImGuiStyle& style = ImGui::GetStyle();
+  style = ImGuiStyle();  // reset to unscaled defaults
   ImVec4* colors = style.Colors;
 
   colors[ImGuiCol_WindowBg] = ImVec4(0.07f, 0.07f, 0.09f, 1.00f);
@@ -119,9 +82,73 @@ auto AresApp::initialize() -> bool {
   style.ItemSpacing = ImVec2(8, 6);
   style.PopupBorderSize = 0.0f;
 
-  // Apply DPI scale to style metrics
-  style.ScaleAllSizes(dpiScale);
-  io.FontGlobalScale = 1.0f;  // font loaded with DPI-aware size below
+  style.ScaleAllSizes(scale);   // widget metrics (padding, rounding, ...)
+  style.FontScaleMain = scale;  // fonts (loaded at base size; scaled globally)
+  dpiScale = scale;             // _px literal (raw-pixel drawing in the viewers)
+}
+
+}  // namespace ares::ui
+
+auto AresApp::initialize() -> bool {
+  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+    return false;
+  }
+
+  SDL_DisableScreenSaver();
+
+  window = SDL_CreateWindow("Ares 64", 1024, 768,
+                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+  if (!window) {
+    fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+    SDL_Quit();
+    return false;
+  }
+
+  gpu = SDL_CreateGPUDevice(
+    SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_DXIL,
+    false, nullptr);
+  if (!gpu) {
+    fprintf(stderr, "SDL_CreateGPUDevice failed: %s\n", SDL_GetError());
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return false;
+  }
+
+  if (!SDL_ClaimWindowForGPUDevice(gpu, window)) {
+    fprintf(stderr, "SDL_ClaimWindowForGPUDevice failed: %s\n", SDL_GetError());
+    SDL_DestroyGPUDevice(gpu);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return false;
+  }
+
+  // Default to vsync; the video driver may switch this via setBlocking().
+  SDL_SetGPUSwapchainParameters(gpu, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                SDL_GPU_PRESENTMODE_VSYNC);
+
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  // Persist docking layout across sessions
+  static char iniPath[1024];
+  char* prefPath = SDL_GetPrefPath("ares-imgui", "ares");
+  if(prefPath) {
+    snprintf(iniPath, sizeof(iniPath), "%simgui.ini", prefPath);
+    SDL_free(prefPath);
+    io.IniFilename = iniPath;
+  }
+
+  // DPI scaling: detect the ratio of framebuffer pixels to window size. The theme
+  // and scale are applied after fonts load (below) via applyUiScale, and can be
+  // changed live from Settings -> Video -> Interface.
+  int fbW, fbH, winW, winH;
+  SDL_GetWindowSizeInPixels(window, &fbW, &winH);
+  SDL_GetWindowSize(window, &winW, &winH);
+  float detected = (winW > 0) ? (float)fbW / (float)winW : 1.0f;
+  if(!(detected > 0.0f)) detected = 1.0f;  // guard against bad detection
+  ares::ui::dpiScaleDetected = detected;   // remember the auto-detected value
 
   if (!ImGui_ImplSDL3_InitForSDLGPU(window)) {
     fprintf(stderr, "ImGui_ImplSDL3_InitForSDLGPU failed\n");
@@ -148,22 +175,25 @@ auto AresApp::initialize() -> bool {
     return false;
   }
 
-  // Load font after backend init (relative to binary)
-  float fontSize = 14.5f * dpiScale;
+  // Load fonts at their base (unscaled) sizes; applyUiScale scales them live via
+  // FontScaleMain. Each font keeps its own base size (proportional 14.5, mono 16),
+  // and the global scale preserves that ratio.
   const char* basePath = SDL_GetBasePath();
   if(basePath) {
     nall::string fontPath = {basePath, "Altinn-DINExp.ttf"};
-    auto imguiFont = io.Fonts->AddFontFromFileTTF(fontPath.data(), fontSize);
+    auto imguiFont = io.Fonts->AddFontFromFileTTF(fontPath.data(), 14.5f);
     assert(imguiFont);
 
     // Monospaced font for numeric columns in viewer tables.
-    float monoSize = 16.0f * dpiScale;
     nall::string monoPath = {basePath, "GoogleSansCode.ttf"};
-    ares::ui::monoFont = io.Fonts->AddFontFromFileTTF(monoPath.data(), monoSize);
+    ares::ui::monoFont = io.Fonts->AddFontFromFileTTF(monoPath.data(), 16.0f);
     if(!ares::ui::monoFont) {
       ares::ui::monoFont = imguiFont;  // fallback to proportional
     }
   }
+
+  // Build the theme at the effective scale (detected, or the saved user override).
+  ares::ui::applyUiScale(ares::ui::effectiveUiScale());
 
   running = true;
   return true;
@@ -201,6 +231,13 @@ auto AresApp::run() -> void {
     }
 
     if (!running) break;
+
+    // Live UI rescale: a settings change sets this flag; apply it before NewFrame so
+    // the new style/font scale takes effect cleanly for the whole frame.
+    if (ares::ui::uiScaleDirty) {
+      ares::ui::uiScaleDirty = false;
+      ares::ui::applyUiScale(ares::ui::effectiveUiScale());
+    }
 
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();

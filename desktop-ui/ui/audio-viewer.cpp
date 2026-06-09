@@ -58,7 +58,7 @@ static auto drawWaveform(ImDrawList* dl, ImVec2 pos, ImVec2 size, const f32* buf
 auto DrawAudioViewer() -> void {
   if(!showAudioViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(500_px, 250_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Audio Viewer", &showAudioViewer)) {
     ImGui::End();
     settings.general.showAudioViewer = showAudioViewer;
@@ -71,9 +71,9 @@ auto DrawAudioViewer() -> void {
   u32 writePos = cap.writePos.load(std::memory_order_acquire);
 
   ImVec2 avail = ImGui::GetContentRegionAvail();
-  avail.y -= 20;
+  avail.y -= 20_px;
   float channelHeight = (avail.y - ImGui::GetTextLineHeight() - ImGui::GetStyle().ItemSpacing.y * 3) / 2.0f;
-  if(channelHeight < 30) channelHeight = 30;
+  if(channelHeight < 30_px) channelHeight = 30_px;
 
   ImDrawList* dl = ImGui::GetWindowDrawList();
 

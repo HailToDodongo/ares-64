@@ -8,6 +8,31 @@ namespace ares::ui {
 
 extern ImFont* monoFont;  // monospaced font for numeric columns
 
+// Global DPI/zoom factor actually in use this session
+extern float dpiScale;
+// The DPI factor auto-detected at startup (framebuffer/window pixel ratio), 
+// before any user override is applied. Shown in the settings UI as the "Detected" value.
+extern float dpiScaleDetected;
+
+extern bool uiScaleDirty;
+// Effective scale = user override (when enabled) else the detected DPI.
+auto effectiveUiScale() -> float;
+// Rebuild the theme + scale the UI (style metrics, fonts, and the _px literal).
+auto applyUiScale(float scale) -> void;
+
+}  // namespace ares::ui
+
+// Pixel literal: scales a hand-tuned pixel size by the current DPI factor so it
+// matches the (already-scaled) font and widgets. e.g. `8_px`, `6.0_px`.
+inline float operator""_px(long double value) {
+  return static_cast<float>(value) * ares::ui::dpiScale;
+}
+inline float operator""_px(unsigned long long value) {
+  return static_cast<float>(value) * ares::ui::dpiScale;
+}
+
+namespace ares::ui {
+
 auto DrawMainMenuBar() -> void;
 auto DrawMenuBar() -> void;
 auto DrawViewport() -> void;

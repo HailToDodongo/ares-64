@@ -14,7 +14,7 @@ auto DrawViewport() -> void {
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
   auto flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-  ImGui::SetNextWindowSize({640, 480}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize({640_px, 480_px}, ImGuiCond_FirstUseEver);
   ImGui::Begin("Output", nullptr, flags);
 
   if(tex) {

@@ -95,7 +95,7 @@ auto DrawFlameChart() -> void {
     return;
   }
 
-  ImGui::SetNextWindowSize(ImVec2(960, 620), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(960_px, 620_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Flame Chart", &showFlameChart)) {
     ImGui::End();
     settings.general.showFlameChart = showFlameChart;
@@ -276,7 +276,7 @@ auto DrawFlameChart() -> void {
   // --- toolbar ---------------------------------------------------------------
   if(ImGui::Button("Fit")) { fit(); userAdjusted = false; }
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(150.0f);
+  ImGui::SetNextItemWidth(150.0_px);
   ImGui::Combo("Window", &windowIdx, windowItems, IM_ARRAYSIZE(windowItems));
   ImGui::SameLine();
   ImGui::Text("cpu: %zu (max depth: %u)   rsp: %zu   rdp: %zu   halt: %zu", spans.size(), maxDepth + 1, rspSpans.size(), rdpSpans.size(), haltSpans.size());
@@ -287,8 +287,8 @@ auto DrawFlameChart() -> void {
   ImGui::Separator();
 
   // --- canvas ----------------------------------------------------------------
-  const f32 rowH = 18.0f;
-  const f32 axisH = 18.0f;
+  const f32 rowH = 18.0_px;
+  const f32 axisH = 18.0_px;
   ImVec2 origin = ImGui::GetCursorScreenPos();
   ImVec2 avail = ImGui::GetContentRegionAvail();
   if(avail.x < 50) avail.x = 50;
@@ -303,8 +303,8 @@ auto DrawFlameChart() -> void {
   // Vertical scroll for the lanes (deep call stacks + the RSP/RDP lanes below
   // them): Shift+wheel, or vertical drag. The time axis stays pinned at the top.
   static f32 laneScroll = 0.0f;
-  const f32 laneGap = 19.0f;  //divider+label gap above each device lane
-  const f32 haltH = 6.0f;     //thin RSP halt/stopped indicator bar
+  const f32 laneGap = 19.0_px;  //divider+label gap above each device lane
+  const f32 haltH = 6.0_px;     //thin RSP halt/stopped indicator bar
   f32 contentH = (maxDepth + 1) * rowH + (laneGap + rowH + haltH) /*RSP + halt bar*/ + (laneGap + rowH) /*RDP*/;
   f32 visibleH = avail.y - axisH;
   f32 maxScroll = std::max(0.0f, contentH - visibleH);
@@ -347,7 +347,7 @@ auto DrawFlameChart() -> void {
     f64 pxPerTickNow = avail.x / (f64)viewSpan;
     if(ImGui::IsItemActivated()) pressX = io.MousePos.x;
     if(hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)
-              && std::abs(io.MousePos.x - pressX) < 4.0f) {
+              && std::abs(io.MousePos.x - pressX) < 4.0_px) {
       f64 relTick = (f64)viewStart + (io.MousePos.x - origin.x) / pxPerTickNow;
       markerAbs = winStart + (u64)std::max<f64>(0.0, relTick);
       hasMarker = true;
@@ -365,7 +365,7 @@ auto DrawFlameChart() -> void {
 
   // Time axis ticks (~every 120px), labelled in us/ms relative to window start.
   {
-    f64 targetPx = 120.0;
+    f64 targetPx = 120.0_px;
     f64 stepTicks = targetPx / pxPerTick;
     // round step to a "nice" 1/2/5 * 10^k value
     f64 mag = std::pow(10.0, std::floor(std::log10(std::max(1.0, stepTicks))));
@@ -378,7 +378,7 @@ auto DrawFlameChart() -> void {
       if(x < origin.x || x > origin.x + avail.x) continue;
       dl->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + avail.y), IM_COL32(60, 60, 70, 120));
       char b[24]; fmtTime((f64)t, b, sizeof(b));  //t is already window-relative
-      dl->AddText(ImVec2(x + 3, origin.y + 2), IM_COL32(170, 170, 180, 255), b);
+      dl->AddText(ImVec2(x + 3_px, origin.y + 2_px), IM_COL32(170, 170, 180, 255), b);
     }
   }
 
@@ -423,13 +423,13 @@ auto DrawFlameChart() -> void {
     ImU32 col = spanColor(s.funcAddr, s.isException);
     if(isHover) col = IM_COL32(255, 255, 255, 255);
     f32 w = x1 - x0;
-    dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0f ? 2.0f : 0.0f);
-    if(w > 3.0f) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
+    dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0_px ? 2.0_px : 0.0f);
+    if(w > 3.0_px) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0_px);
 
-    if(w > 28.0f) {
+    if(w > 28.0_px) {
       string name = prof.labelFor(s.funcAddr);
-      dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
-      dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
+      dl->PushClipRect(ImVec2(x0 + 2_px, y0), ImVec2(x1 - 1_px, y1), true);
+      dl->AddText(ImVec2(x0 + 3_px, y0 + 2_px), IM_COL32(15, 15, 18, 255), name.data());
       dl->PopClipRect();
     }
   }
@@ -439,10 +439,10 @@ auto DrawFlameChart() -> void {
   const RdpSpan* dhover = nullptr;
   {
     f32 cpuBottom = lanesTop + (maxDepth + 1) * rowH;
-    f32 labelY = cpuBottom + 4.0f;
-    f32 rspTop = labelY + 15.0f;
+    f32 labelY = cpuBottom + 4.0_px;
+    f32 rspTop = labelY + 15.0_px;
     dl->AddLine(ImVec2(origin.x, labelY), ImVec2(origin.x + avail.x, labelY), IM_COL32(70, 70, 80, 200));
-    dl->AddText(ImVec2(origin.x + 3, labelY + 1), IM_COL32(150, 200, 255, 255), "RSP");
+    dl->AddText(ImVec2(origin.x + 3_px, labelY + 1_px), IM_COL32(150, 200, 255, 255), "RSP");
 
     f32 rspMaxX = -1e9f;  //per-row pixel coalescing (see CPU lane)
     for(auto it = rspSpans.begin(); it != rspSpans.end(); ++it) {
@@ -468,12 +468,12 @@ auto DrawFlameChart() -> void {
       ImU32 col = s.overhead ? IM_COL32(90, 90, 100, 255) : rspOverlayColor(s.overlayId);
       if(isHover) col = IM_COL32(255, 255, 255, 255);
       f32 w = x1 - x0;
-      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0f ? 2.0f : 0.0f);
-      if(w > 3.0f) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
-      if(w > 28.0f) {
+      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0_px ? 2.0_px : 0.0f);
+      if(w > 3.0_px) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0_px);
+      if(w > 28.0_px) {
         string name = rspLabel(s.overheadType, s.overhead, s.overlayId, s.commandId);
-        dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
-        dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
+        dl->PushClipRect(ImVec2(x0 + 2_px, y0), ImVec2(x1 - 1_px, y1), true);
+        dl->AddText(ImVec2(x0 + 3_px, y0 + 2_px), IM_COL32(15, 15, 18, 255), name.data());
         dl->PopClipRect();
       }
     }
@@ -497,10 +497,10 @@ auto DrawFlameChart() -> void {
     }
 
     // --- RDP lane: one block per DP flush, below the RSP lane ------------------
-    f32 rdpLabelY = rspTop + rowH + haltH + 4.0f;
-    f32 rdpTop = rdpLabelY + 15.0f;
+    f32 rdpLabelY = rspTop + rowH + haltH + 4.0_px;
+    f32 rdpTop = rdpLabelY + 15.0_px;
     dl->AddLine(ImVec2(origin.x, rdpLabelY), ImVec2(origin.x + avail.x, rdpLabelY), IM_COL32(70, 70, 80, 200));
-    dl->AddText(ImVec2(origin.x + 3, rdpLabelY + 1), IM_COL32(150, 255, 200, 255), "RDP");
+    dl->AddText(ImVec2(origin.x + 3_px, rdpLabelY + 1_px), IM_COL32(150, 255, 200, 255), "RDP");
 
     for(auto it = rdpSpans.begin(); it != rdpSpans.end(); ++it) {
       const RdpSpan& s = *it;
@@ -521,12 +521,12 @@ auto DrawFlameChart() -> void {
       if(isHover) dhover = &s;
 
       ImU32 col = isHover ? IM_COL32(255, 255, 255, 255) : IM_COL32(90, 200, 160, 255);
-      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 2.0f);
-      dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0f);
-      if(x1 - x0 > 28.0f) {
+      dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 2.0_px);
+      dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0_px);
+      if(x1 - x0 > 28.0_px) {
         string name = {"DP ", s.count, " cmds"};
-        dl->PushClipRect(ImVec2(x0 + 2, y0), ImVec2(x1 - 1, y1), true);
-        dl->AddText(ImVec2(x0 + 3, y0 + 2), IM_COL32(15, 15, 18, 255), name.data());
+        dl->PushClipRect(ImVec2(x0 + 2_px, y0), ImVec2(x1 - 1_px, y1), true);
+        dl->AddText(ImVec2(x0 + 3_px, y0 + 2_px), IM_COL32(15, 15, 18, 255), name.data());
         dl->PopClipRect();
       }
     }
@@ -539,8 +539,8 @@ auto DrawFlameChart() -> void {
   for(u64 m : viMarks) {
     if(m < viewStart || m > viewEnd) continue;
     f32 x = origin.x + (f32)(((s64)m - (s64)viewStart) * pxPerTick);
-    dl->AddLine(ImVec2(x, origin.y + axisH), ImVec2(x, origin.y + avail.y), IM_COL32(255, 90, 90, 150), 1.0f);
-    dl->AddText(ImVec2(x + 2, origin.y + axisH + 1), IM_COL32(255, 120, 120, 255), "VI");
+    dl->AddLine(ImVec2(x, origin.y + axisH), ImVec2(x, origin.y + avail.y), IM_COL32(255, 90, 90, 150), 1.0_px);
+    dl->AddText(ImVec2(x + 2_px, origin.y + axisH + 1_px), IM_COL32(255, 120, 120, 255), "VI");
   }
 
   // Measurement marker (yellow) + live delta-to-cursor readout under the axis.
@@ -548,20 +548,20 @@ auto DrawFlameChart() -> void {
     f64 markerRel = (f64)markerAbs - (f64)winStart;  //window-relative ticks
     f32 mx = origin.x + (f32)((markerRel - (f64)viewStart) * pxPerTick);
     if(mx >= origin.x && mx <= origin.x + avail.x)
-      dl->AddLine(ImVec2(mx, origin.y), ImVec2(mx, origin.y + avail.y), IM_COL32(255, 220, 80, 220), 1.5f);
+      dl->AddLine(ImVec2(mx, origin.y), ImVec2(mx, origin.y + avail.y), IM_COL32(255, 220, 80, 220), 1.5_px);
 
     if(hovered) {
       f32 cx = std::clamp(io.MousePos.x, origin.x, origin.x + avail.x);
-      dl->AddLine(ImVec2(cx, origin.y + axisH), ImVec2(cx, origin.y + avail.y), IM_COL32(255, 220, 80, 90), 1.0f);
+      dl->AddLine(ImVec2(cx, origin.y + axisH), ImVec2(cx, origin.y + avail.y), IM_COL32(255, 220, 80, 90), 1.0_px);
       //horizontal ruler slightly below the tick labels, marker -> cursor
-      f32 ry = origin.y + 16.0f;
+      f32 ry = origin.y + 16.0_px;
       f32 lx = std::clamp(mx, origin.x, origin.x + avail.x);
-      dl->AddLine(ImVec2(lx, ry), ImVec2(cx, ry), IM_COL32(255, 220, 80, 200), 1.0f);
+      dl->AddLine(ImVec2(lx, ry), ImVec2(cx, ry), IM_COL32(255, 220, 80, 200), 1.0_px);
       f64 cursorAbs = (f64)winStart + (f64)viewStart + (io.MousePos.x - origin.x) / pxPerTick;
       char b[32]; fmtDelta(cursorAbs - (f64)markerAbs, b, sizeof(b));
       ImVec2 ts = ImGui::CalcTextSize(b);
-      f32 tx = cx + 4.0f; if(tx + ts.x > origin.x + avail.x) tx = cx - 4.0f - ts.x;
-      dl->AddText(ImVec2(tx, ry + 2.0f), IM_COL32(255, 230, 120, 255), b);
+      f32 tx = cx + 4.0_px; if(tx + ts.x > origin.x + avail.x) tx = cx - 4.0_px - ts.x;
+      dl->AddText(ImVec2(tx, ry + 2.0_px), IM_COL32(255, 230, 120, 255), b);
     }
   }
 

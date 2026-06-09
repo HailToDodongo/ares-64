@@ -91,6 +91,8 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
   bind(boolean, "General/ShowTmemViewer", general.showTmemViewer);
   bind(boolean, "General/ShowMemoryViewer", general.showMemoryViewer);
+  bind(boolean, "General/DpiOverride", general.dpiOverride);
+  bind(natural, "General/DpiScalePercent", general.dpiScalePercent);
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);

@@ -32,7 +32,7 @@ static auto overlayColor(u8 overlayId) -> ImU32 {
 auto DrawRspViewer() -> void {
   if(!showRspViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(700, 400), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(700_px, 400_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("RSP Commands", &showRspViewer)) {
     ImGui::End();
     settings.general.showRspViewer = showRspViewer;
@@ -67,7 +67,7 @@ auto DrawRspViewer() -> void {
   // Timing unit selector: microseconds (us) or raw RCP master-clock ticks.
   static int timeUnit = 0;  // 0 = us (default)
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(70);
+  ImGui::SetNextItemWidth(70_px);
   ImGui::Combo("##timeUnit", &timeUnit, "us\0Cycles\0");
 
   // Config status
@@ -195,7 +195,7 @@ auto DrawRspViewer() -> void {
   // Reserve room at the bottom for the statistics panel (when enabled).
   float statsH = 0.0f;
   if(showStats) {
-    statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.34f, 140.0f, 320.0f);
+    statsH = std::clamp(ImGui::GetContentRegionAvail().y * 0.34f, 140.0_px, 320.0_px);
   }
 
   if(!ImGui::BeginTable("rsp_cmds", 7,

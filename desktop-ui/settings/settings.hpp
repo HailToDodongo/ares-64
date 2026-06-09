@@ -78,6 +78,11 @@ struct Settings : Markup::Node {
     bool showFramebufferViewer = false;
     bool showTmemViewer = false;
     bool showMemoryViewer = false;
+
+    // UI/DPI scaling. When dpiOverride is set, dpiScalePercent (e.g. 150 = 1.5x)
+    // replaces the auto-detected DPI at startup. Applied in AresApp::initialize().
+    bool dpiOverride = false;
+    u32  dpiScalePercent = 100;
   } general;
 
   struct Rewind {

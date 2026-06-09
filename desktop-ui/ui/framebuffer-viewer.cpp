@@ -327,7 +327,7 @@ static auto heatmapToRGBA(u32* dst, u32 w, u32 h, u32 addr, u32 bpp,
 auto DrawFramebufferViewer() -> void {
   if(!showFramebufferViewer) return;
 
-  ImGui::SetNextWindowSize(ImVec2(360, 320), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(360_px, 320_px), ImGuiCond_FirstUseEver);
   if(!ImGui::Begin("Framebuffer", &showFramebufferViewer)) {
     ImGui::End();
     settings.general.showFramebufferViewer = showFramebufferViewer;
@@ -379,19 +379,19 @@ auto DrawFramebufferViewer() -> void {
   u32 colorPos = stickyColorPos;
 
   // View mode selector
-  ImGui::SetNextItemWidth(80);
+  ImGui::SetNextItemWidth(80_px);
   const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta", "D-Hist", "Overdraw", "Z-Overdraw"};
   ImGui::Combo("##fbmode", &fbViewMode, modes, 7);
   ImGui::SameLine();
   // Scale mode selector
-  ImGui::SetNextItemWidth(100);
+  ImGui::SetNextItemWidth(100_px);
   const char* scales[] = {"Integer", "Linear"};
   ImGui::Combo("##fbscale", &fbScaleMode, scales, 2);
 
   // Depth range sliders — visible in depth / histogram mode.
   if(fbViewMode == 2 || fbViewMode == 4) {
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(200_px);
     ImGui::DragFloatRange2("##depthRange", &fbDepthMin, &fbDepthMax, 0.1f, 0.0f, 100.0f,
                            "%.2f%%", "%.2f%%", ImGuiSliderFlags_AlwaysClamp);
     if(fbDepthMin < 0.0f)   fbDepthMin = 0.0f;
@@ -401,7 +401,7 @@ auto DrawFramebufferViewer() -> void {
   // Delta multiplier — visible only in D-Delta mode.
   if(fbViewMode == 3) {
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(120_px);
     ImGui::SliderInt("##deltaMul", &fbDeltaMul, 1, 128, "x%d");
   }
   // Overdraw heatmap controls — visible in either heatmap mode (Overdraw / Z-Overdraw).
@@ -411,7 +411,7 @@ auto DrawFramebufferViewer() -> void {
     ImGui::SameLine();
     ImGui::Checkbox("Reads", &fbHeatReads);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(120_px);
     ImGui::SliderInt("##heatScale", &fbHeatScale, 1, 64, "max %d");
   }
   ImGui::SameLine();
