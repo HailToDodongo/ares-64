@@ -12,6 +12,10 @@ auto InputManager::createHotkeys() -> void {
     program.videoPseudoFullScreenToggle();
   }));
 
+  hotkeys.push_back(InputHotkey("Toggle Play Mode").onPress([&] {
+    ares::ui::playMode = !ares::ui::playMode;
+  }));
+
   hotkeys.push_back(InputHotkey("Toggle Mouse Capture").onPress([&] {
     Program::Guard guard;
     if(!emulator) return;

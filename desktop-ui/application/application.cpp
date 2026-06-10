@@ -256,12 +256,16 @@ auto AresApp::run() -> void {
       ImGuiWindowFlags dockFlags = ImGuiWindowFlags_NoDocking |
           ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
           ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-          ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
-          ImGuiWindowFlags_MenuBar;
+          ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+      // In play mode there is no menu bar and no docked tool windows: the game output
+      // is drawn straight into this window, so skip both the menu bar and the dockspace.
+      if (!ares::ui::playMode) dockFlags |= ImGuiWindowFlags_MenuBar;
 
       ImGui::Begin("MainDockSpace", nullptr, dockFlags);
       ImGui::PopStyleVar(3);
-      ImGui::DockSpace(ImGui::GetID("MainDockSpace"), ImVec2(0, 0));
+      
+      ImGui::DockSpace(ImGui::GetID("MainDockSpace"), ImVec2(0, 0),
+                       ares::ui::playMode ? ImGuiDockNodeFlags_KeepAliveOnly : ImGuiDockNodeFlags_None);
 
       if (onMain) onMain();
 

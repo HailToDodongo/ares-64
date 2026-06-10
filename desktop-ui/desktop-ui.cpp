@@ -96,6 +96,10 @@ auto nall::main(Arguments arguments) -> void {
     program.noFilePrompt = true;
   }
 
+  if(arguments.take("--play-mode")) {
+    ares::ui::playMode = true;
+  }
+
   settings.filePath = locate("settings.bml");
   if(string settingsFile; arguments.take("--settings-file", settingsFile)) {
     settings.filePath = settingsFile;
@@ -186,6 +190,7 @@ auto nall::main(Arguments arguments) -> void {
     print("  --setting name=value  Specify a value for a setting\n");
     print("  --dump-all-settings   Show a list of all existing settings and exit\n");
     print("  --no-file-prompt      Do not prompt to load (optional) additional roms (eg: 64DD)\n");
+    print("  --play-mode           Start in play mode: hide all UI, game output only (toggle via hotkey)\n");
     print("  --settings-file path  Specify a settings file override (settings.bml)\n");
     print("  --save-state slot     Specify a save state slot to load (1-9)\n");
     print("  --dump-log spec       Dump the N64 RSP/RDP command log to stdout, then quit.\n");
@@ -280,6 +285,11 @@ auto nall::main(Arguments arguments) -> void {
   AresApp::onMain = [=] {
     ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
     program.main();
+
+    if(ares::ui::playMode) {
+      ares::ui::DrawPlayMode();
+      return;
+    }
 
     ares::ui::DrawMenuBar();
     ares::ui::DrawViewport();

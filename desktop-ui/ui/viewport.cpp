@@ -52,4 +52,30 @@ auto DrawViewport() -> void {
   ImGui::PopStyleVar();
 }
 
+// Play mode: draw only the game output, filling the host window while keeping the
+// emulator's aspect ratio (centered, letterboxed by the black render-pass clear).
+// Called directly inside the full-viewport MainDockSpace window, so the available
+// content region is the entire window.
+auto DrawPlayMode() -> void {
+  ruby::video.renderFrame();
+  auto tex = ruby::video.outputTexture();
+  if(!tex) return;
+
+  ImVec2 avail = ImGui::GetContentRegionAvail();
+  ImVec2 origin = ImGui::GetCursorScreenPos();
+  if(avail.x <= 0 || avail.y <= 0) return;
+
+  u32 outW = 0, outH = 0;
+  if(emulator) { outW = emulator->latch.width; outH = emulator->latch.height; }
+
+  ImVec2 p0 = origin, p1 = ImVec2(origin.x + avail.x, origin.y + avail.y);
+  if(outW && outH) {
+    float scale = std::min(avail.x / (float)outW, avail.y / (float)outH);
+    ImVec2 sz(outW * scale, outH * scale);
+    p0 = ImVec2(origin.x + (avail.x - sz.x) * 0.5f, origin.y + (avail.y - sz.y) * 0.5f);
+    p1 = ImVec2(p0.x + sz.x, p0.y + sz.y);
+  }
+  ImGui::GetWindowDrawList()->AddImage((ImTextureID)(intptr_t)tex, p0, p1);
+}
+
 }  // namespace ares::ui

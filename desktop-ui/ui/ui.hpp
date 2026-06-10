@@ -15,6 +15,9 @@ extern float dpiScale;
 extern float dpiScaleDetected;
 
 extern bool uiScaleDirty;
+
+extern bool playMode;
+
 // Effective scale = user override (when enabled) else the detected DPI.
 auto effectiveUiScale() -> float;
 // Rebuild the theme + scale the UI (style metrics, fonts, and the _px literal).
@@ -36,6 +39,7 @@ namespace ares::ui {
 auto DrawMainMenuBar() -> void;
 auto DrawMenuBar() -> void;
 auto DrawViewport() -> void;
+auto DrawPlayMode() -> void;
 auto DrawSettingsWindow() -> void;
 auto DrawManifestViewer() -> void;
 auto DrawCheatEditor() -> void;

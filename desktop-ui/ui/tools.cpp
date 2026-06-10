@@ -7,6 +7,7 @@ namespace ares::ui {
 ImFont* monoFont = nullptr;
 float dpiScale = 1.0f;          // set during app init; scales the _px literal
 float dpiScaleDetected = 1.0f;  // auto-detected ratio, before user override
+bool playMode = false;          // distraction-free mode; hotkey-toggled, not saved
 
 bool showManifestViewer = false;
 bool showCheatEditor = false;
