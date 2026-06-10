@@ -289,12 +289,12 @@ static void DrawToolsMenu() {
   ImGui::EndMenu();
 }
 
-static void DrawHelpMenu() {
-  if(!ImGui::BeginMenu("Help")) return;
-  if(ImGui::MenuItem("About" "...")) {
+// "About" is a single action, so it's a direct menu-bar button rather than a Help
+// menu containing one entry.
+static void DrawAboutButton() {
+  if(ImGui::MenuItem("About")) {
     showAboutDialog = true;
   }
-  ImGui::EndMenu();
 }
 
 static auto drawStepTypeCombo() -> void {
@@ -343,7 +343,7 @@ auto DrawMainMenuBar() -> void {
   if(emulator) DrawSystemMenu();
   DrawSettingsMenu();
   if(emulator) DrawToolsMenu();
-  DrawHelpMenu();
+  DrawAboutButton();
 
   if(emulator) {
     // Right-align, from the VPS counter leftward: [RDP combo] [Step combo] [VPS].
@@ -375,7 +375,7 @@ auto DrawMenuBar() -> void {
   if(emulator) DrawSystemMenu();
   DrawSettingsMenu();
   if(emulator) DrawToolsMenu();
-  DrawHelpMenu();
+  DrawAboutButton();
 
   // VPS counter on the right, with the Step and RDP-renderer combos just left of it.
   if(emulator) {

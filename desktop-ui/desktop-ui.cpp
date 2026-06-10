@@ -301,10 +301,33 @@ auto nall::main(Arguments arguments) -> void {
       ares::ui::showAboutDialog = false;
     }
     if(ImGui::BeginPopupModal("About ares", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+
+      auto link = [](const char* url) {
+        const ImU32 col = IM_COL32(96, 165, 250, 255);
+        ImGui::PushStyleColor(ImGuiCol_Text, col);
+        ImGui::TextUnformatted(url);
+        ImGui::PopStyleColor();
+        if(ImGui::IsItemHovered()) {
+          ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+          ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+          ImGui::GetWindowDrawList()->AddLine(ImVec2(mn.x, mx.y), ImVec2(mx.x, mx.y), col);
+        }
+        if(ImGui::IsItemClicked()) SDL_OpenURL(url);
+      };
+
       ImGui::TextUnformatted(ares::Name);
       ImGui::Separator();
       ImGui::TextUnformatted(string{"Version: ", ares::Version}.data());
       ImGui::TextUnformatted(ares::Copyright);
+      ImGui::Spacing();
+
+      ImGui::TextUnformatted("Upstream project:");
+      link("https://github.com/ares-emulator/ares");
+
+      ImGui::SeparatorText("This fork (ares-64)");
+      ImGui::TextUnformatted("Added N64 debugging tools, maintained by Max Bebök.");
+      link("https://github.com/HailToDodongo/ares-64");
+
       ImGui::Spacing();
       if(ImGui::Button("Close")) ImGui::CloseCurrentPopup();
       ImGui::EndPopup();
