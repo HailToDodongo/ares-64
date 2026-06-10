@@ -17,11 +17,11 @@ static void DrawFileMenu() {
   // Recent Games
   if(ImGui::BeginMenu("Recent Games")) {
     u32 count = 0;
-    for(u32 i : range(9)) {
+    for(u32 i : range(settings.recent.count)) {
       if(settings.recent.game[i].length() > 0) count++;
     }
     if(count > 0) {
-      for(u32 i : range(9)) {
+      for(u32 i : range(settings.recent.count)) {
         auto entry = settings.recent.game[i];
         if(!entry.length()) continue;
         auto parts = nall::split(entry, ";", 1L);
@@ -43,7 +43,7 @@ static void DrawFileMenu() {
       }
       ImGui::Separator();
       if(ImGui::MenuItem("Clear History")) {
-        for(u32 i : range(9)) settings.recent.game[i] = {};
+        for(u32 i : range(settings.recent.count)) settings.recent.game[i] = {};
       }
     } else {
       ImGui::TextDisabled("No recent games");

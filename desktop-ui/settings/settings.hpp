@@ -105,7 +105,8 @@ struct Settings : Markup::Node {
   } paths;
 
   struct Recent {
-    string game[9];
+    static constexpr u32 count = 9;
+    string game[count];
   } recent;
 
   struct DebugServer {

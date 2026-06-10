@@ -156,10 +156,15 @@ auto Program::load(string location) -> bool {
     };
   }
 
-  for(s32 index = 7; index >= 0; index--) {
+  string recentEntry = {emulator->name, ";", location};
+  s32 last = Settings::Recent::count - 1;
+  for(s32 index = 0; index < (s32)Settings::Recent::count; index++) {
+    if(settings.recent.game[index] == recentEntry) { last = index; break; }
+  }
+  for(s32 index = last - 1; index >= 0; index--) {
     settings.recent.game[index + 1] = settings.recent.game[index];
   }
-  settings.recent.game[0] = {emulator->name, ";", location};
+  settings.recent.game[0] = recentEntry;
   if(!_imguiMode) presentation.loadEmulators();
 
   configuration = emulator->root->attribute("configuration");
