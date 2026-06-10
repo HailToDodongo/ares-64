@@ -70,6 +70,20 @@ auto RefreshTools() -> void {
   RefreshTracerNodes();
 }
 
+auto SyncWindowVisibility() -> void {
+  settings.general.showAudioViewer       = showAudioViewer;
+  settings.general.showManifestViewer    = showManifestViewer;
+  settings.general.showCheatEditor       = showCheatEditor;
+  settings.general.showTracerViewer      = showTracerViewer;
+  settings.general.showRdpViewer         = showRdpViewer;
+  settings.general.showRspViewer         = showRspViewer;
+  settings.general.showCpuProfiler       = showCpuProfiler;
+  settings.general.showFlameChart        = showFlameChart;
+  settings.general.showFramebufferViewer = showFramebufferViewer;
+  settings.general.showTmemViewer        = showTmemViewer;
+  settings.general.showMemoryViewer      = showMemoryViewer;
+}
+
 // --- Manifest Viewer ---
 
 auto DrawManifestViewer() -> void {

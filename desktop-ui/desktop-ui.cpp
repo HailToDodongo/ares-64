@@ -314,6 +314,7 @@ auto nall::main(Arguments arguments) -> void {
   AresApp::run();
 
   program.quit();
+  ares::ui::SyncWindowVisibility();
   settings.save();
   AresApp::shutdown();
 }

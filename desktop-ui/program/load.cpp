@@ -180,6 +180,7 @@ auto Program::unload() -> void {
   nall::GDB::server.close();
   nall::GDB::server.reset();
 
+  ares::ui::SyncWindowVisibility();
   settings.save();
   clearUndoStates();
   showMessage({"Unloaded ", Location::prefix(emulator->game->location)});

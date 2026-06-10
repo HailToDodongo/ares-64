@@ -52,6 +52,7 @@ auto DrawStatusBar() -> void;
 
 // Refresh functions called from Program::main() in imgui mode
 auto RefreshTools() -> void;
+auto SyncWindowVisibility() -> void;
 
 struct LogDumpState {
   bool rsp = false;          // dump the RSP command log
