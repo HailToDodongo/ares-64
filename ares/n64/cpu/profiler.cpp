@@ -182,6 +182,24 @@ auto CPU::Profiler::resolve(u32 addr) -> Sym* {
 auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
   u32 pc32 = (u32)address;
 
+  // Per-thread call-stack tracking. The live $sp identifies which stack we are on.
+  // Suppressed while an exception handler is open: its code runs on the kernel/interrupt stack
+  // but is meant to nest under the interrupted function, so we keep it on the active
+  // stack and let the eret below hand off to the resumed thread on the next step.
+  u32 sp = (u32)cpu.ipu.r[29].u64;  //$sp
+  if(excActive == 0) {
+    if(!haveSp) { haveSp = true; spLo = spHi = sp; }
+    else if(sp + regionSlack < spLo || sp > spHi + regionSlack) switchStack(sp);
+    else { if(sp < spLo) spLo = sp; if(sp > spHi) spHi = sp; }
+  }
+
+  // Stack-pointer backstop for returns the retAddr match can never see (missed `jr` hooks, longjmp, a thread blocking mid-call): 
+  // once the live $sp has risen above a frame's recorded caller-$sp, that call and everything nested in it have unwound, so pop them. 
+  // Stops at exception frames (carry no $sp, popped by onEret), keeping the interrupted thread's frames beneath a handler intact
+  while(!callStack.empty() && !callStack.back().isException && sp > callStack.back().sp) {
+    popFrame();
+  }
+
   // Return detection by *arrival* at a call's return address, rather than by
   // catching the `jr $ra` instruction. The JIT does not reliably emit the
   // per-instruction hook for a `jr` reached as the fall-through of a preceding
@@ -211,6 +229,7 @@ auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
     Frame f;
     f.funcAddr = target;
     f.retAddr = pc32 + 8;  //where the callee returns to (after the delay slot)
+    f.sp = sp;             //caller's $sp at the call site (see the unwind backstop above)
     f.entryCycle = now();
     callStack.push_back(f);
   }
@@ -232,6 +251,7 @@ auto CPU::Profiler::onBusAccess(bool toRDRAM, u64 bytes) -> void {
 auto CPU::Profiler::popFrame() -> bool {
   Frame frame = callStack.back();
   callStack.pop_back();
+  if(frame.isException && excActive) excActive--;  //handler frame closed
   u64 nowT = now();
   u64 incl = nowT > frame.entryCycle ? nowT - frame.entryCycle : 0;  //guard sync-boundary -1
   u64 excl = incl > frame.childCycles ? incl - frame.childCycles : 0;
@@ -280,6 +300,33 @@ auto CPU::Profiler::popFrame() -> bool {
   return frame.isException;
 }
 
+// Discontinuous $sp jump (bigger than any single instruction's stack adjustment)
+auto CPU::Profiler::switchStack(u32 sp) -> void {
+  suspended.push_back({spLo, spHi, ++stackClock, std::move(callStack)});
+  callStack.clear();  //callStack was moved-from; make it valid+empty
+
+  s32 found = -1;
+  for(u32 i = 0; i + 1 < suspended.size(); i++) {  //skip the entry just parked (last)
+    auto& s = suspended[i];
+    if(sp + regionSlack >= s.lo && sp <= s.hi + regionSlack) { found = (s32)i; break; }
+  }
+  if(found >= 0) {
+    auto& s = suspended[(u32)found];
+    callStack = std::move(s.frames);
+    spLo = s.lo; spHi = s.hi;
+    suspended.erase(suspended.begin() + found);
+  } else {
+    spLo = spHi = sp;  //unseen thread: observe its calls fresh
+  }
+
+  // Bound memory: drop the least-recently-active parked thread's frames.
+  while(suspended.size() > maxStacks) {
+    u32 oldest = 0;
+    for(u32 i = 1; i < suspended.size(); i++) if(suspended[i].used < suspended[oldest].used) oldest = i;
+    suspended.erase(suspended.begin() + oldest);
+  }
+}
+
 auto CPU::Profiler::exceptionEntryAddr(u32 code) -> u32 {
   if(code != 0) return kExcBase | (0x40 + (code & 0x3f));  //synchronous exception
   // Interrupt: identify the firing CPU interrupt source (and RCP sub-source).
@@ -323,6 +370,7 @@ auto CPU::Profiler::onException(u32 code) -> void {
   f.entryCycle = now();
   f.isException = true;
   callStack.push_back(f);
+  excActive++;  //freeze stack-switching until the matching eret (see onInstruction)
 }
 
 auto CPU::Profiler::onEret() -> void {
@@ -355,6 +403,8 @@ auto CPU::Profiler::onFrame() -> void {
 auto CPU::Profiler::setEnabled(bool value) -> void {
   enabled.store(value, std::memory_order_relaxed);
   callStack.clear();
+  suspended.clear();
+  haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
   if(value && timeline.size() != maxSpans) timeline.resize(maxSpans);
   cpu.updatePrologueHook();
 }
@@ -364,6 +414,8 @@ auto CPU::Profiler::clearStats() -> void {
   frameStats.clear();
   frameAccum.clear();
   callStack.clear();
+  suspended.clear();
+  haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
   frameCount = 0;
   timelineWrite.store(0, std::memory_order_release);
 }

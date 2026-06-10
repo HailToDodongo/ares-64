@@ -115,4 +115,7 @@ add_custom_command(TARGET desktop-ui POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/rspq-libdragon.json"
     "${RESOURCE_DIR}/rspq-libdragon.json"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/ui/rsp-overlays/f3dex2.json"
+    "${RESOURCE_DIR}/f3dex2.json"
 )

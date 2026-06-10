@@ -55,9 +55,9 @@ static auto rspOverlayColor(u8 overlayId) -> ImU32 {
 }
 
 static auto rspLabel(u8 overheadType, bool overhead, u16 overlayId, u8 commandId) -> string {
-  static const char* overheadNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};
+  static const char* overheadNames[] = {"?", "Dispatch", "DMA ucode", "DMA cmd.", "Unknown"};
   auto& rcap = ares::Nintendo64::rsp.capture;
-  if(overhead) return string{overheadNames[overheadType < 4 ? overheadType : 0]};
+  if(overhead) return string{overheadNames[overheadType < 5 ? overheadType : 0]};
   auto& name = rcap.commandNameMap[overlayId & 15][commandId];
   if(name) return name;
   return string{"ovl", hex(overlayId, 1L), ":", hex(commandId, 2L)};
@@ -465,7 +465,9 @@ auto DrawFlameChart() -> void {
                              && io.MousePos.y >= y0 && io.MousePos.y < y1;
       if(isHover) rhover = &s;
 
-      ImU32 col = s.overhead ? IM_COL32(90, 90, 100, 255) : rspOverlayColor(s.overlayId);
+      ImU32 col = !s.overhead ? rspOverlayColor(s.overlayId)
+                : s.overheadType == ares::Nintendo64::RSPCapture::OverheadUnknown ? IM_COL32(80, 60, 95, 255)  // Unknown: muted purple
+                :                                                                   IM_COL32(90, 90, 100, 255); // dispatch/DMA: gray
       if(isHover) col = IM_COL32(255, 255, 255, 255);
       f32 w = x1 - x0;
       dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0_px ? 2.0_px : 0.0f);

@@ -573,6 +573,9 @@ struct RSP : Thread, Memory::RCP<RSP> {
 
   //rsp-commands.cpp
   auto captureCommandHook(u32 pc) -> void;
+  auto captureF3DCommandHook(u32 pc) -> void;  //F3DEX2 display-list dispatch (see RSPCapture::Mode)
+  auto captureF3DFlush(u64 wall) -> void;      //emit + close the open F3D segment at `wall`
+  auto captureStepWait() -> void;              //RSP single-step: render + spin until the UI advances
   auto captureHaltState() -> void;  //flame chart: emit RSP halt/break intervals
 
   //emux.cpp

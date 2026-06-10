@@ -1320,6 +1320,7 @@ struct CPU : Thread {
     struct Frame {
       u32 funcAddr = 0;
       u32 retAddr = 0;      //expected $ra on return (call address + 8); 0 for exception frames
+      u32 sp = 0;           //caller's $sp at the call site; used to unwind across OS thread switches
       u64 entryCycle = 0;
       u64 childCycles = 0;  //inclusive time of callees that have returned
       u64 childWait = 0;    //subtree wait time of callees that have returned
@@ -1354,8 +1355,24 @@ struct CPU : Thread {
     std::unordered_map<u32, FuncStat> stats;       //continuous totals
     std::unordered_map<u32, FuncStat> frameStats;  //last fully-completed frame
     std::unordered_map<u32, FuncStat> frameAccum;  //frame in progress
-    std::vector<Frame> callStack;
+    std::vector<Frame> callStack;        //the active thread's call stack (see Suspended)
     u64 frameCount = 0;  //presented frames accumulated into stats since last clear
+
+    // Multi-stack tracking / thread handling. $sp says which stack we're on. callStack holds the running thread.
+    // the others are parked here keyed by the $sp region they occupy, and swapped in when $sp jumps to their region.
+    struct Suspended {
+      u32 lo = 0, hi = 0;          //observed $sp extent of this parked stack
+      u64 used = 0;                //LRU stamp (stackClock at the time it was parked)
+      std::vector<Frame> frames;
+    };
+    std::vector<Suspended> suspended;
+    u32  spLo = 0, spHi = 0;       //observed $sp extent of the active stack
+    bool haveSp = false;           //active region initialized
+    u32  excActive = 0;            //exception/interrupt handlers open on the active stack
+    u64  stackClock = 0;           //monotonic LRU counter for parked stacks
+
+    static constexpr u32 regionSlack = 0x8000;
+    static constexpr u32 maxStacks = 16;  //parked stacks retained (LRU beyond this)
 
     // Flame-chart timeline: a sliding-window ring of completed-call spans in
     // absolute master-clock time (now()). The emu thread appends one span per
@@ -1389,6 +1406,7 @@ struct CPU : Thread {
     auto onException(u32 code) -> void;  //exception/interrupt entry: push handler frame
     auto onEret() -> void;               //exception return: pop handler frame
     auto popFrame() -> bool;             //record+propagate top frame; returns isException
+    auto switchStack(u32 sp) -> void;    //park the active call stack and resume/create the one $sp belongs to
     auto onFrame() -> void;       //per framebuffer swap: publish frame snapshot
     auto setEnabled(bool value) -> void;
     auto clearStats() -> void;

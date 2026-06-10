@@ -66,11 +66,31 @@ auto RSP::captureHaltState() -> void {
   if(wall < cap.lastWall) wall = cap.lastWall;  //monotonic, shared with the command lane
   cap.lastWall = wall;
   if(h) {
+    // BREAK / task end.
+    if(cap.mode == RSPCapture::ModeF3DEX2) {
+      // Close the last command's segment at the halt so it shows its true width
+      // instead of stretching across the idle gap.
+      captureF3DFlush(wall);
+      // If this run produced no F3D command it was some other ucode we don't decode (e.g. audio) show the whole run as one "Unknown"
+      if(cap.inTask && !cap.f3dSeenThisTask && wall > cap.taskStartWall) {
+        u32 delta = (u32)((u32)pipeline.clocksTotal - (u32)cap.taskStartClocks);
+        cap.pushTimeline(cap.taskStartWall, wall, 0, 0, true, RSPCapture::OverheadUnknown);
+        cap.pushOverhead(delta, captureSequence++, RSPCapture::OverheadUnknown, 0, 0);
+      }
+    }
+    cap.inTask = false;
     cap.haltStartWall.store(wall, std::memory_order_relaxed);
     cap.haltOpen.store(true, std::memory_order_release);
-  } else if(cap.haltOpen.load(std::memory_order_relaxed)) {
-    cap.pushHalt(cap.haltStartWall.load(std::memory_order_relaxed), wall);
-    cap.haltOpen.store(false, std::memory_order_release);
+  } else {
+    // A new RSP task begins, start classifying it (Unknown until an F3D command fires).
+    cap.inTask = true;
+    cap.f3dSeenThisTask = false;
+    cap.taskStartWall = wall;
+    cap.taskStartClocks = pipeline.clocksTotal;
+    if(cap.haltOpen.load(std::memory_order_relaxed)) {
+      cap.pushHalt(cap.haltStartWall.load(std::memory_order_relaxed), wall);
+      cap.haltOpen.store(false, std::memory_order_release);
+    }
   }
   cap.lastHalted = h;
 }

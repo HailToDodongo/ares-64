@@ -30,6 +30,96 @@ static auto rspReadPendingCommand(RSP& rsp) -> void {
   for(u32 i = 0; i < cap.segWordCount; i++) cap.segWords[i] = rsp.dmem.read<Word>(base + i * 4);
 }
 
+// RSP single-step: at a real command boundary, flush the GPU so the framebuffer is
+// current, publish the captured commands so far, then spin until the UI advances
+// (stepPending) or step mode is turned off. Shared by the RSPQ and F3D paths.
+auto RSP::captureStepWait() -> void {
+  auto& cap = capture;
+  if(!cap.stepMode.load(std::memory_order_relaxed)) return;
+  vulkan.render();
+  vulkan.flush();
+  rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
+  while(!cap.stepPending.load(std::memory_order_acquire)
+        && cap.stepMode.load(std::memory_order_relaxed)) {
+    if(cap.requestClear.exchange(false, std::memory_order_acq_rel)) {
+      cap.committedCount.store(0, std::memory_order_release);
+      cap.writePos.store(0, std::memory_order_release);
+      // Also wipe the RDP command log so both viewers clear together.
+      rdp.capture.committedCount.store(0, std::memory_order_release);
+      rdp.capture.writePos.store(0, std::memory_order_release);
+    }
+    usleep(1000);
+  }
+  cap.stepPending.store(false, std::memory_order_release);
+}
+
+// Emit the currently-open F3D segment (a command handler or a dispatch-loop stretch)
+// ending at `wall`, then mark nothing open. Shared by the dispatch hook and the halt
+// path (so the last command before a BREAK doesn't absorb the idle time until the
+// next task).
+auto RSP::captureF3DFlush(u64 wall) -> void {
+  auto& cap = capture;
+  if(cap.segType == RSPCapture::SegNone) return;
+  u32 delta = (u32)((u32)pipeline.clocksTotal - (u32)cap.segStart);
+  if(cap.segType == RSPCapture::SegCommand) {
+    cap.pushTimeline(cap.segWall, wall, cap.segOverlay, cap.segCommand, false, RSPCapture::OverheadNone);
+    cap.push(delta, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount,
+             cap.segWords, cap.segBytesIn, cap.segBytesOut);
+  } else {
+    cap.pushTimeline(cap.segWall, wall, 0, 0, true, RSPCapture::OverheadLoop);
+    cap.pushOverhead(delta, cap.segSeq, RSPCapture::OverheadLoop, cap.segBytesIn, cap.segBytesOut);
+  }
+  cap.segType = RSPCapture::SegNone;
+}
+
+// F3DEX2 display-list dispatch hook. Fast3D is a flat display-list interpreter, but
+// like RSPQ it alternates between executing a command handler and running the small
+// dispatch loop that fetches + decodes the next command (where buffer-refill DMAs
+// also happen). Two hooks bracket that: f3dLoopPC (the loop's cmd-word fetch) ends a
+// handler and begins the loop segment; f3dDispatchPC (the `jr`) ends the loop and
+// begins the next handler, with the command words live in t9/t8. We emit one row per
+// segment: a named command, or a synthetic loop-overhead row. See detectF3DEX2.
+auto RSP::captureF3DCommandHook(u32 pc) -> void {
+  auto& cap = capture;
+  // The recompiler emitted these hooks for fixed IMEM addresses; a different ucode
+  // (the audio task) can reach the same PC, so re-confirm the dispatch signature.
+  if(cap.f3dSigPC >= 0x1000 || imem.read<Word>(cap.f3dSigPC) != cap.dl.sig[0]) return;
+  cap.f3dSeenThisTask = true;  // this run is the F3D ucode (not an Unknown task)
+  bool isDispatch = (pc == cap.f3dDispatchPC);
+
+  u64 now = pipeline.clocksTotal;
+  // Lag-corrected wall position on the shared CPU timeline (see RSPCapture::TlSpan).
+  u64 wall = cpu.profiler.now() + (u64)(s64)Thread::clock;
+  if(wall < cap.lastWall) wall = cap.lastWall;
+  cap.lastWall = wall;
+
+  // Close the segment that just ended (command handler or dispatch-loop stretch).
+  bool wasCommand = (cap.segType == RSPCapture::SegCommand);
+  captureF3DFlush(wall);
+  // RSP single-step: stop after each real command (at the loop hook that closes it).
+  if(wasCommand) captureStepWait();
+
+  // Open the next segment.
+  cap.segStart = now;
+  cap.segWall = wall;
+  cap.segSeq = captureSequence++;
+  cap.segBytesIn = 0;
+  cap.segBytesOut = 0;
+  if(isDispatch) {
+    u32 w0 = ipu.r[cap.dl.word0Reg].u32;  // command word0 (opcode in the high bits)
+    u32 w1 = ipu.r[cap.dl.word1Reg].u32;  // command word1
+    u8  opcode = w0 >> cap.dl.opcodeShift;
+    cap.segType = RSPCapture::SegCommand;
+    cap.segOverlay = cap.dl.commandColor[opcode];  // flame-chart colour class (from JSON)
+    cap.segCommand = opcode;
+    cap.segWordCount = 2;
+    cap.segWords[0] = w0;
+    cap.segWords[1] = w1;
+  } else {
+    cap.segType = RSPCapture::SegLoop;
+  }
+}
+
 // Called from both the interpreter and the recompiler at every hooked RSPQ
 // dispatch PC. Rather than capturing a command at every hook (which produced
 // duplicates), we model the RSP as moving through a series of timed segments:
@@ -40,13 +130,16 @@ static auto rspReadPendingCommand(RSP& rsp) -> void {
 // timestamped with the cycle delta since it began) and open the next one. This
 // yields exactly one row per real command, plus synthetic "overhead" rows for
 // the time spent dispatching in the loop, switching overlays, and refetching
-// the command buffer.
+// the command buffer. (Display-list microcodes like F3DEX2 use a simpler two-hook
+// path instead; see captureF3DCommandHook.)
 auto RSP::captureCommandHook(u32 pc) -> void {
   auto& cap = capture;
   if(!cap.enabled.load(std::memory_order_relaxed)) {
     cap.segType = RSPCapture::SegNone;  // re-arm on next enable, avoids a stale delta
     return;
   }
+
+  if(cap.mode == RSPCapture::ModeF3DEX2) { captureF3DCommandHook(pc); return; }
 
 
   // Classify which segment is *beginning* at this PC.
@@ -88,25 +181,7 @@ auto RSP::captureCommandHook(u32 pc) -> void {
       cap.push(delta, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords,
                cap.segBytesIn, cap.segBytesOut);
 
-      // Step mode: flush GPU so the framebuffer is current, then spin until the
-      // UI advances. Only meaningful at real command boundaries.
-      if(cap.stepMode.load(std::memory_order_relaxed)) {
-        vulkan.render();
-        vulkan.flush();
-        rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
-        while(!cap.stepPending.load(std::memory_order_acquire)
-              && cap.stepMode.load(std::memory_order_relaxed)) {
-          if(cap.requestClear.exchange(false, std::memory_order_acq_rel)) {
-            cap.committedCount.store(0, std::memory_order_release);
-            cap.writePos.store(0, std::memory_order_release);
-            // Also wipe the RDP command log so both viewers clear together.
-            rdp.capture.committedCount.store(0, std::memory_order_release);
-            rdp.capture.writePos.store(0, std::memory_order_release);
-          }
-          usleep(1000);
-        }
-        cap.stepPending.store(false, std::memory_order_release);
-      }
+      captureStepWait();  // RSP single-step: pause here until the UI advances
     } else {
       u8 overhead = cap.segType == RSPCapture::SegLoop        ? RSPCapture::OverheadLoop
                   : cap.segType == RSPCapture::SegOverlayLoad ? RSPCapture::OverheadOvlLoad

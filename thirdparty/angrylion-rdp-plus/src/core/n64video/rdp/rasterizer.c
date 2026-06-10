@@ -1981,8 +1981,18 @@ render_spans_copy(struct rdp_state *wstate, int start, int end, int tilenum, int
             int k;
             uint32_t tempdword;
             for (tempdword = fbptr, k = 7; copywmask > 0; copywmask--, k--, tempdword += xinc) {
-                if (alphamask & (1 << k))
+                if (alphamask & (1 << k)) {
                     rdram_write_pair8(tempdword, copyqword >> (k << 3), flip, &delayedhbwidx);
+#ifdef N64VIDEO_METRICS
+                    // Copy mode writes raw bytes here and bypasses fbwrite_*, so the
+                    // overdraw heatmap must be bumped explicitly (otherwise copy-mode
+                    // blits like SM64's HUD/text show no overdraw at all). Count one
+                    // write per framebuffer pixel: a 16-bit pixel spans two consecutive
+                    // bytes (k and k-1), so only bump on the high byte to match fbwrite_16.
+                    if (wstate->fb_size != PIXEL_SIZE_16BIT || (k & 1))
+                        fb_heatmap_bump(fb_heatmap_writes, tempdword >> 1);
+#endif
+                }
             }
 
             // Increment attributes/pointer

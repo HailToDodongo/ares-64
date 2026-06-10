@@ -11,12 +11,33 @@ struct RSPCapture {
   static constexpr u32 maxCommandWords = 16;
   static constexpr u32 maxHookAddresses = 16;
 
+  enum Mode : u8 { ModeRSPQ = 0, ModeF3DEX2 = 1 };
+  Mode mode = ModeRSPQ;
+
+  struct DLConfig {
+    bool loaded = false;
+    bool tried = false;          // load attempted (don't retry a missing file each frame)
+    string name;                 // microcode name shown in the viewer
+    u32 sig[4] = {};             // consecutive IMEM words identifying the dispatch
+    u32 sigCount = 0;
+    s32 loopOffset = 0;          // loop-fetch PC = sigPC + loopOffset
+    s32 dispatchOffset = 0;      // dispatch  PC = sigPC + dispatchOffset
+    u8  word0Reg = 25, word1Reg = 24, opcodeShift = 24;
+    string commandNames[256];
+    u8  commandColor[256] = {};  // flame-chart colour class (0..7)
+  };
+  DLConfig dl;
+  u32  f3dSigPC = ~0u;       // located signature address (for the per-hook ucode gate)
+  u32  f3dDispatchPC = ~0u;  // IMEM PC of the command dispatch `jr` (sigPC + dispatchOffset)
+  u32  f3dLoopPC = ~0u;      // IMEM PC of the loop's cmd-word fetch (sigPC + loopOffset)
+
   // Internal "overhead" categories (rows that are not real commands).
   enum OverheadType : u8 {
     OverheadNone    = 0,
     OverheadLoop    = 1,  // time spent in RSPQ_Loop dispatch, outside of any command
     OverheadOvlLoad = 2,  // time spent saving/loading overlay ucode + state
     OverheadFetch   = 3,  // time spent DMAing the next command buffer from RDRAM
+    OverheadUnknown = 4,  // an RSP task we don't decode (e.g. the audio ucode under F3D)
   };
 
   // What the RSP is currently doing, tracked between hook transitions.
@@ -81,6 +102,14 @@ struct RSPCapture {
   u8  segCommand = 0;
   u8  segWordCount = 0;
   u32 segWords[maxCommandWords] = {};
+
+  // F3D task classification (RSP thread). A running period (resume -> BREAK) that
+  // emits no real F3D command is some other ucode (audio, ...) we don't decode; it is
+  // shown as one "Unknown" span. Tracked across captureHaltState edges.
+  bool inTask = false;          // currently between a resume and the next BREAK
+  bool f3dSeenThisTask = false; // a real F3D command was captured during this run
+  u64  taskStartWall = 0;       // rspWall at the task's resume edge
+  u64  taskStartClocks = 0;     // pipeline.clocksTotal at the task's resume edge
 
   // DMEM layout from JSON config
   u32 dmemCmdsOffset = 0;
@@ -256,9 +285,12 @@ struct RSPCapture {
   }
 
   auto loadConfig(const string& jsonPath) -> bool;
+  auto loadDLConfig(const string& jsonPath) -> bool;  //display-list microcode descriptor (F3DEX2 ...)
   auto autoDetect(const string& romPath) -> bool;
   auto detectRspq() -> bool;
   auto refreshOverlayNames() -> void;
+  // Poll IMEM for the Fast3D (F3DEX2) command dispatch and, once found, switch the capture into F3DEX2 mode-
+  auto detectF3DEX2() -> void;
 
   // Compose the human-readable argument string for a captured command, using the
   // JSON descriptor. Returns {} if the command has no descriptor.

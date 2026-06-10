@@ -320,12 +320,13 @@ auto DrawRspViewer() -> void {
 
     // Internal/overhead rows (loop dispatch, overlay load, buffer fetch) are not
     // real commands, so don't decode them as ovl 0 / cmd 0.
-    static const char* overheadNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};
+    static const char* overheadNames[] = {"?", "Dispatch", "DMA ucode", "DMA cmd.", "Unknown"};
     static const char* overheadDesc[] = {
       "",
-      "RSPQ_Loop / command overhead",
+      "Dispatch loop / command overhead",
       "Load/Save ucode + state",
       "DMA new commands",
+      "RSP task we don't decode (e.g. audio)",
     };
     const ImVec4 overheadCol(0.55f, 0.55f, 0.55f, 1);
 
@@ -346,7 +347,7 @@ auto DrawRspViewer() -> void {
     ImGui::TableNextColumn();
     if(cmd.isOverhead) {
       ImGui::TextColored(overheadCol, "%s",
-        overheadNames[cmd.overheadType < 4 ? cmd.overheadType : 0]);
+        overheadNames[cmd.overheadType < 5 ? cmd.overheadType : 0]);
     } else {
       auto& name = cap.commandNameMap[cmd.overlayId][cmd.commandId];
       if(name) {
@@ -360,7 +361,7 @@ auto DrawRspViewer() -> void {
     ImGui::TableNextColumn();
     if(cmd.isOverhead) {
       ImGui::TextColored(overheadCol, "%s",
-        overheadDesc[cmd.overheadType < 4 ? cmd.overheadType : 0]);
+        overheadDesc[cmd.overheadType < 5 ? cmd.overheadType : 0]);
     } else {
       // Custom per-command argument text from the JSON descriptor, if any.
       string desc = cap.formatArgs(cmd.overlayId, cmd.commandId, cmd.words, cmd.wordCount);
@@ -409,8 +410,8 @@ auto DrawRspViewer() -> void {
     std::unordered_map<OvlKey, u32, OvlKeyHash> ovlCnt;
     std::unordered_map<CmdKey, u64, CmdKeyHash> cmdTime, cmdIn, cmdOut;
     std::unordered_map<CmdKey, u32, CmdKeyHash> cmdCnt;
-    u64 ohTime[4] = {}; u32 ohCnt[4] = {};
-    u64 ohIn[4] = {}, ohOut[4] = {};
+    u64 ohTime[5] = {}; u32 ohCnt[5] = {};
+    u64 ohIn[5] = {}, ohOut[5] = {};
 
     u64 totalTime = 0, totalIn = 0, totalOut = 0;
     for(u32 i = 0; i < displayCount; i++) {
@@ -418,7 +419,7 @@ auto DrawRspViewer() -> void {
       totalTime += c.cycle;
       totalIn += c.bytesIn; totalOut += c.bytesOut;
       if(c.isOverhead) {
-        u8 t = c.overheadType < 4 ? c.overheadType : 0;
+        u8 t = c.overheadType < 5 ? c.overheadType : 0;
         ohTime[t] += c.cycle; ohCnt[t]++;
         ohIn[t] += c.bytesIn; ohOut[t] += c.bytesOut;
       } else {
@@ -450,7 +451,7 @@ auto DrawRspViewer() -> void {
       ImGui::PopFont();
     };
 
-    static const char* ohNames[] = {"?", "RSPQ_Loop", "DMA ucode", "DMA cmd."};
+    static const char* ohNames[] = {"?", "Dispatch", "DMA ucode", "DMA cmd.", "Unknown"};
     const char* timeHdr = timeUnit == 0 ? "us" : "Cycles";
 
     ImGui::BeginChild("##stats", ImVec2(0, 0), ImGuiChildFlags_None);
@@ -463,7 +464,7 @@ auto DrawRspViewer() -> void {
         for(auto& [ok, t] : ovlTime) {
           rows.push_back({ok.name, overlayColor(ok.slot), ovlCnt[ok], t, ovlIn[ok], ovlOut[ok]});
         }
-        for(u32 t = 1; t < 4; t++) {
+        for(u32 t = 1; t < 5; t++) {
           if(!ohCnt[t]) continue;
           rows.push_back({string{ohNames[t]}, IM_COL32(150, 150, 150, 255), ohCnt[t], ohTime[t], ohIn[t], ohOut[t]});
         }

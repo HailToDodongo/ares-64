@@ -105,6 +105,8 @@ auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
     auto j = nlohmann::json::parse(data.data());
 
     // Reset state
+    mode = ModeRSPQ;
+    f3dDispatchPC = ~0u;
     hookCount = 0;
     pcLoop = pcExecCommand = pcLoadOverlay = pcFetchBuffer = pcFetchBufferPtr = ~0u;
     dmemCmdsOffset = 0;
@@ -424,6 +426,126 @@ auto RSPCapture::refreshOverlayNames() -> void {
 auto RSPCapture::detectRspq() -> bool {
   if(!configLoaded) return false;
   return true;
+}
+
+// Parse a display-list microcode descriptor (e.g. f3dex2.json): the dispatch
+// signature/offsets/register layout used to locate + decode the command loop at
+// runtime, plus the opcode -> name/colour table. Kept separate from loadConfig (the
+// RSPQ schema); selected by "mode": "displaylist".
+auto RSPCapture::loadDLConfig(const string& jsonPath) -> bool {
+  string data = string::read(jsonPath);
+  if(!data) return false;
+  try {
+    auto j = nlohmann::json::parse(data.data());
+    if(j.value("mode", std::string{}) != "displaylist") return false;
+
+    DLConfig cfg;
+    cfg.name = j.value("name", std::string{"Fast3D"}).c_str();
+    if(j.contains("banner")) cfg.name = j["banner"].get<std::string>().c_str();
+
+    // Signed hex like "0x14" or "-0x0C".
+    auto hexS = [](const std::string& s) -> s32 {
+      bool neg = !s.empty() && s[0] == '-';
+      s32 v = (s32)std::strtol(neg ? s.c_str() + 1 : s.c_str(), nullptr, 16);
+      return neg ? -v : v;
+    };
+
+    if(j.contains("dispatch")) {
+      auto& d = j["dispatch"];
+      if(d.contains("signature")) for(auto& w : d["signature"]) {
+        if(cfg.sigCount < 4) cfg.sig[cfg.sigCount++] = (u32)std::strtoul(w.get<std::string>().c_str(), nullptr, 16);
+      }
+      cfg.loopOffset     = hexS(d.value("loopOffset", std::string{"0"}));
+      cfg.dispatchOffset = hexS(d.value("dispatchOffset", std::string{"0"}));
+      cfg.word0Reg    = (u8)d.value("word0Reg", 25);
+      cfg.word1Reg    = (u8)d.value("word1Reg", 24);
+      cfg.opcodeShift = (u8)d.value("opcodeShift", 24);
+    }
+    if(cfg.sigCount == 0) return false;  //unusable without a dispatch signature
+
+    // Colour-class name -> palette index (0..7).
+    std::unordered_map<std::string, u8> classColor;
+    if(j.contains("classColors")) for(auto& [k, v] : j["classColors"].items()) classColor[k] = (u8)v.get<int>();
+
+    if(j.contains("commands")) for(auto& [key, cmd] : j["commands"].items()) {
+      u32 op = (u32)std::strtoul(key.c_str(), nullptr, 16);
+      if(op >= 256) continue;
+      if(cmd.contains("name")) cfg.commandNames[op] = cmd["name"].get<std::string>().c_str();
+      if(cmd.contains("class")) {
+        auto it = classColor.find(cmd["class"].get<std::string>());
+        if(it != classColor.end()) cfg.commandColor[op] = it->second & 7;
+      } else if(cmd.contains("color")) {
+        cfg.commandColor[op] = (u8)(cmd["color"].get<int>() & 7);
+      }
+    }
+
+    cpuWaitPatterns.clear();
+    if(j.contains("cpuWaitFunctions")) for(auto& v : j["cpuWaitFunctions"])
+      cpuWaitPatterns.push_back(string{v.get<std::string>().c_str()});
+
+    cfg.loaded = true;
+    dl = cfg;
+    return true;
+  } catch(const nlohmann::json::exception& e) {
+    print("RSP: loadDLConfig: JSON parse error: ", e.what(), "\n");
+    return false;
+  }
+}
+
+auto RSPCapture::detectF3DEX2() -> void {
+  if(!enabled.load(std::memory_order_relaxed)) return;  // only while a viewer is open
+  if(mode == ModeF3DEX2) return;                         // already set up
+  if(ovlOffsetLocked) return;                            // a real RSPQ overlay set is in use; don't override
+
+  // Lazily load the descriptor (shipped next to the binary / ELF). Try once.
+  if(!dl.loaded) {
+    if(dl.tried) return;
+    dl.tried = true;
+    string paths[] = {
+      {stringDirname(elfPath), "/f3dex2.json"},
+      {Path::program(), "f3dex2.json"},
+      {stringDirname(Path::program()), "f3dex2.json"},
+    };
+    for(auto& p : paths) if(loadDLConfig(p)) break;
+    if(!dl.loaded) return;
+  }
+
+  auto& r = ares::Nintendo64::rsp;
+  // Scan IMEM for the descriptor's dispatch signature (consecutive words). Specific
+  // enough not to false-positive on the audio ucode.
+  s32 found = -1;
+  for(u32 a = 0; a + dl.sigCount * 4 <= 0x1000; a += 4) {
+    bool ok = true;
+    for(u32 i = 0; i < dl.sigCount; i++) if(r.imem.read<Word>(a + i * 4) != dl.sig[i]) { ok = false; break; }
+    if(ok) { found = (s32)a; break; }
+  }
+  if(found < 0) return;
+
+  // Two hooks per command: the loop's cmd-word fetch (sigPC+loopOffset) ends a handler
+  // and begins the dispatch loop; the `jr` (sigPC+dispatchOffset) ends the loop and
+  // begins the next handler. Alternating them splits command time from loop overhead.
+  f3dSigPC      = (u32)found;
+  f3dDispatchPC = (u32)((s32)found + dl.dispatchOffset);
+  f3dLoopPC     = (u32)((s32)found + dl.loopOffset);
+  hookCount = 0;
+  hookAddresses[hookCount++] = f3dLoopPC;
+  hookAddresses[hookCount++] = f3dDispatchPC;
+  pcLoop = pcExecCommand = pcLoadOverlay = pcFetchBuffer = pcFetchBufferPtr = ~0u;
+
+  // The flame chart colours a span by overlayId and names it via
+  // commandNameMap[overlayId][commandId], so to colour by class while still resolving
+  // names we mirror the descriptor's name table into every colour-class row.
+  for(u32 c = 0; c < 16; c++) {
+    overlayNameMap[c] = dl.name;
+    for(u32 op = 0; op < 256; op++) if(dl.commandNames[op]) commandNameMap[c][op] = dl.commandNames[op];
+  }
+
+  banner = dl.name;
+  mode = ModeF3DEX2;
+  configLoaded = true;
+  segType = SegNone;        // re-arm so the first command does not emit a stale delta
+  r.recompiler.reset();     // recompile RSP blocks so the dispatch hooks are emitted
+  print("RSP: ", dl.name, " microcode detected; command dispatch hooked at IMEM +", hex(f3dDispatchPC), "\n");
 }
 
 // Extract a single field's value from the command words: mask the bit range,

@@ -143,6 +143,7 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
           rspCap.writePos.store(0, std::memory_order_release);
           rspCap.frameNumber++;
           rspCap.refreshOverlayNames();
+          rspCap.detectF3DEX2();  //Fast3D (SM64 etc.): auto-hook the DL dispatch once seen
 
           if(ares::ui::logDump.active()) {
             u32 rspN = min<u32>(rspCap.committedCount.load(std::memory_order_acquire), rspCap.maxCommands);
