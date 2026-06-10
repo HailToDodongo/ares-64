@@ -300,7 +300,11 @@ auto RSP::Recompiler::block(u12 address) -> Block* {
     dirty = 0;
   }
 
+#if ARES_DEBUG_TOOLS
   bool traceMode = self.debugger.tracer.instruction->enabled();
+#else
+  bool traceMode = false;
+#endif
   bool callInstructionPrologue = traceMode;
   u32 index = contextIndex(address, callInstructionPrologue);
   if(auto block = context[index]) return block;
@@ -443,10 +447,12 @@ auto RSP::Recompiler::emit(u12 address, bool callInstructionPrologue) -> Block* 
       callf(&RSP::instructionPrologue, imm(instruction));
     }
     // RSP command viewer: per-instruction PC hook (recompiler-safe)
+#if ARES_DEBUG_TOOLS
     if(self.capture.configLoaded && self.capture.hasHook(address)) {
       flushDeferredForCallf();
       callf(&RSP::captureCommandHook, imm((u32)address));
     }
+#endif
     if(delaySlot) mov32(BranchReg(nstate), imm(0));
     pipeline.begin();
     OpInfo op0 = self.decoderEXECUTE(instruction);
@@ -470,10 +476,12 @@ auto RSP::Recompiler::emit(u12 address, bool callInstructionPrologue) -> Block* 
           callf(&RSP::instructionPrologue, imm(instruction));
         }
         // Hook check for dual-issued second op
+#if ARES_DEBUG_TOOLS
         if(self.capture.configLoaded && self.capture.hasHook(address + 4)) {
           flushDeferredForCallf();
           callf(&RSP::captureCommandHook, imm((u32)u12(address + 4)));
         }
+#endif
         checkHalted |= op1.mayHalt();
         address += 4;
         if(delaySlot) mov32(BranchReg(nstate), imm(0));

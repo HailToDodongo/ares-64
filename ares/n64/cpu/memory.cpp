@@ -130,9 +130,11 @@ auto CPU::devirtualizeDebug(u64 vaddr) -> u64 {
 // the profiler's memory-bandwidth stats; MMIO registers and RDRAM registers are
 // excluded. The Size enum value is the transfer size in bytes (Byte=1 .. ICache=32).
 inline auto CPU::profileBusAccess(bool toRDRAM, u32 address, u64 bytes) -> void {
+#if ARES_DEBUG_TOOLS
   if(!profiler.enabled.load(std::memory_order_relaxed)) return;
   if(address > 0x03ef'ffff) return;
   profiler.onBusAccess(toRDRAM, bytes);
+#endif
 }
 
 template<u32 Size>
@@ -179,7 +181,9 @@ auto CPU::fetch(PhysAccess access) -> maybe<u32> {
 template<u32 Size>
 auto CPU::read(PhysAccess access) -> maybe<u64> {
   if(!access) return nothing;
+#if ARES_DEBUG_TOOLS
   GDB::server.reportMemRead(access.vaddr, Size);
+#endif
   u32 paddr = access.paddr;
   if(context.littleEndian()) paddr = reverseEndianPaddr<Size>(paddr);
   if(access.cache) return dcache.read<Size>(access.vaddr, paddr);
@@ -199,7 +203,9 @@ auto CPU::readDebug(u64 vaddr) -> u64 {
 template<u32 Size>
 auto CPU::write(PhysAccess access, u64 data) -> bool {
   if(!access) return false;
+#if ARES_DEBUG_TOOLS
   GDB::server.reportMemWrite(access.vaddr, Size);
+#endif
   u32 paddr = access.paddr;
   if(context.littleEndian()) paddr = reverseEndianPaddr<Size>(paddr);
   if(access.cache) return dcache.write<Size>(access.vaddr, paddr, data), true;
@@ -211,7 +217,9 @@ auto CPU::writeDebug(u64 vaddr, u64 data) -> bool {
   Thread dummyThread{};
   auto access = devirtualize<Write, Size>(vaddr, false, false);
   if(!access) return false;
+#if ARES_DEBUG_TOOLS
   GDB::server.reportMemWrite(access.vaddr, Size);
+#endif
   u32 paddr = access.paddr;
   if(context.littleEndian()) paddr = reverseEndianPaddr<Size>(paddr);
   if(access.cache) return dcache.writeDebug<Size>(access.vaddr, paddr, data), true;

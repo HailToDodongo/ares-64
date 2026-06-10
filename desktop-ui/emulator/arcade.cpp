@@ -142,7 +142,12 @@ auto Arcade::load() -> LoadResult {
 #else
     ares::Nintendo64::option("Enable GPU acceleration", false);
 #endif
+#if ARES_DEBUG_TOOLS
     ares::Nintendo64::option("RDP Renderer", settings.video.renderer);
+#else
+    // Play build: paraLLEl-RDP is forced as the only RDP renderer (see nintendo-64.cpp).
+    ares::Nintendo64::option("RDP Renderer", "paraLLEl-RDP");
+#endif
     ares::Nintendo64::option("Disable Video Interface Processing", settings.video.disableVideoInterfaceProcessing);
     ares::Nintendo64::option("Weave Deinterlacing", settings.video.weaveDeinterlacing);
     ares::Nintendo64::option("Homebrew Mode", settings.general.homebrewMode);

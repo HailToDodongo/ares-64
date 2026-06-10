@@ -1,5 +1,12 @@
 #pragma once
 
+// Master switch for the debugging/profiling tools (set by CMake via ares::ares's
+// PUBLIC compile definitions). Default on as a safety net. When 0, the desktop UI is
+// locked to a debug-free play mode and all tool windows/menus are compiled out.
+#ifndef ARES_DEBUG_TOOLS
+  #define ARES_DEBUG_TOOLS 1
+#endif
+
 #include <imgui.h>
 #include <nall/stdint.hpp>
 #include "assign.hpp"

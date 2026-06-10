@@ -256,7 +256,11 @@ auto CPU::Recompiler::computeStateKey() const -> u64 {
   stateKey.setGpAligned8((gp & 7) == 0);
   stateKey.setSpAligned4((sp & 3) == 0);
   stateKey.setSpAligned8((sp & 7) == 0);
+#if ARES_DEBUG_TOOLS
   stateKey.setWatchpointsActive(GDB::server.hasWatchpoints());
+#else
+  stateKey.setWatchpointsActive(false);
+#endif
   return stateKey;
 }
 
@@ -715,11 +719,13 @@ auto CPU::Recompiler::emit(u64 vaddr, u32 address, u64 stateKey) -> Block* {
       }
     }
 
+#if ARES_DEBUG_TOOLS
     if(callInstructionPrologue) {
       // Optional debugger/profiler instruction hook.
       flushDeferredCycles();
       callf(&CPU::instructionPrologue, imm64(ii.vaddr), imm(instruction));
     }
+#endif
 
     if(firstInstruction || (ii.vaddr & 0x1f) == 0) {
       // Keep icache tag/coherency checks in sync with interpreter behavior.

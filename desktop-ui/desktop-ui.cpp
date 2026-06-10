@@ -96,9 +96,15 @@ auto nall::main(Arguments arguments) -> void {
     program.noFilePrompt = true;
   }
 
+#if ARES_DEBUG_TOOLS
   if(arguments.take("--play-mode")) {
     ares::ui::playMode = true;
   }
+#else
+  // Play build (ARES_ENABLE_DEBUG_TOOLS=OFF): all debug UI is compiled out, so play
+  // mode is permanent and cannot be toggled off.
+  ares::ui::playMode = true;
+#endif
 
   settings.filePath = locate("settings.bml");
   if(string settingsFile; arguments.take("--settings-file", settingsFile)) {
@@ -115,6 +121,8 @@ auto nall::main(Arguments arguments) -> void {
   // logs to stdout, exactly as the viewer windows show them. After <after>
   // presented frames, dump <count> frames (default 1) of the selected log(s),
   // then quit. <targets> contains "rsp", "rdp", or both (e.g. "rsp+rdp", "all").
+  // Depends on the command-capture hooks, so it only exists in a tools build.
+#if ARES_DEBUG_TOOLS
   if(string spec; arguments.take("--dump-log", spec)) {
     auto parts = nall::split(spec, ":");
     if(parts.size() >= 2) {
@@ -130,6 +138,7 @@ auto nall::main(Arguments arguments) -> void {
       return;
     }
   }
+#endif
 
   inputManager.create();
   Emulator::construct();
@@ -190,12 +199,16 @@ auto nall::main(Arguments arguments) -> void {
     print("  --setting name=value  Specify a value for a setting\n");
     print("  --dump-all-settings   Show a list of all existing settings and exit\n");
     print("  --no-file-prompt      Do not prompt to load (optional) additional roms (eg: 64DD)\n");
+#if ARES_DEBUG_TOOLS
     print("  --play-mode           Start in play mode: hide all UI, game output only (toggle via hotkey)\n");
+#endif
     print("  --settings-file path  Specify a settings file override (settings.bml)\n");
     print("  --save-state slot     Specify a save state slot to load (1-9)\n");
+#if ARES_DEBUG_TOOLS
     print("  --dump-log spec       Dump the N64 RSP/RDP command log to stdout, then quit.\n");
     print("                        spec = <rsp|rdp|rsp+rdp>:<after-frames>[:<frame-count>]\n");
     print("                        e.g. --dump-log rsp+rdp:120:3\n");
+#endif
     print("\n");
     print("Available Systems:\n");
     print("  ");
@@ -286,6 +299,12 @@ auto nall::main(Arguments arguments) -> void {
     ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
     program.main();
 
+#if !ARES_DEBUG_TOOLS
+    // Play build: no debug UI is compiled in; always show only the game output.
+    ares::ui::DrawPlayMode();
+    return;
+  };
+#else
     if(ares::ui::playMode) {
       ares::ui::DrawPlayMode();
       return;
@@ -343,6 +362,7 @@ auto nall::main(Arguments arguments) -> void {
       ImGui::EndPopup();
     }
   };
+#endif  // ARES_DEBUG_TOOLS
 
   AresApp::run();
 

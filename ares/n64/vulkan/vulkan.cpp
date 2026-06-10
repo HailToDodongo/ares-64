@@ -108,17 +108,21 @@ auto Vulkan::render() -> bool {
     do {
       buffer[queueSize * 2 + 0] = rsp.dmem.read<Word>(current); current += 4;
       buffer[queueSize * 2 + 1] = rsp.dmem.read<Word>(current); current += 4;
+#if ARES_DEBUG_TOOLS
       if(system.homebrewMode) {
         rsp.debugger.dmemReadWord(current - 8, 8, "RDP XBUS");
       }
+#endif
       queueSize++;
     } while(--length);
   }
 
+#if ARES_DEBUG_TOOLS
   // Flame-chart: this whole render() call is one DP flush, processed at a single
   // wall-clock instant. Stamp it with now() (the master wall clock) + count commands.
   u64 tlStart = cpu.profiler.now();
   u32 tlCount = 0;
+#endif
 
   while(queueOffset < queueSize) {
     u32 op = buffer[queueOffset * 2];
@@ -127,16 +131,20 @@ auto Vulkan::render() -> bool {
 
     if(queueOffset + length > queueSize) {
       command.start = command.current = command.end;
+#if ARES_DEBUG_TOOLS
       if(rdp.capture.enabled.load(std::memory_order_relaxed) && tlCount)
         rdp.capture.pushTimeline(tlStart, tlCount);
+#endif
       return true;
     }
 
+#if ARES_DEBUG_TOOLS
     if(rdp.capture.enabled.load(std::memory_order_relaxed)) {
       u64 word0 = (u64)buffer[queueOffset * 2] << 32 | buffer[queueOffset * 2 + 1];
       rdp.capture.push(0, (u32)queueOffset, (u8)code, word0, 0, (u8)length);
     }
     tlCount++;
+#endif
 
     if(code >= 8) {
       implementation->processor->enqueue_command(length * 2, buffer + queueOffset * 2);
@@ -147,6 +155,7 @@ auto Vulkan::render() -> bool {
       rdp.syncFull();
     }
 
+#if ARES_DEBUG_TOOLS
     // Step mode: pause on interesting commands without leaving render()
     if(rdp.capture.stepMode.load(std::memory_order_relaxed)) {
       bool interesting = (code >= 0x08 && code <= 0x0f) || // triangles
@@ -175,6 +184,7 @@ auto Vulkan::render() -> bool {
         }
       }
     }
+#endif
 
     queueOffset += length;
   }
@@ -182,8 +192,10 @@ auto Vulkan::render() -> bool {
   queueOffset = 0;
   queueSize = 0;
   command.current = command.end;
+#if ARES_DEBUG_TOOLS
   if(rdp.capture.enabled.load(std::memory_order_relaxed) && tlCount)
     rdp.capture.pushTimeline(tlStart, tlCount);
+#endif
   return true;
 }
 

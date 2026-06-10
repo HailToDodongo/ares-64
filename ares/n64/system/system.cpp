@@ -120,12 +120,14 @@ auto System::switchRenderer(Renderer renderer) -> void {
   bool wantAngrylion = renderer == Renderer::Angrylion;
   bool isReload = wantAngrylion == angrylion.enable.load(std::memory_order_relaxed);
 
+#if ARES_DEBUG_TOOLS
   //Don't switch while the RDP command viewer is single-stepping: both render paths
   //block in a spin-loop there and the capture buffers are user-controlled.
   if(rdp.capture.stepMode.load(std::memory_order_relaxed)) {
     platform->status("Cannot switch RDP renderer while RDP stepping is active");
     return;
   }
+#endif
 
   //Perform the swap while holding the screen refresh mutex so the screen thread
   //(VI::refresh) can't be mid-map into a backend we're about to unload.
@@ -230,13 +232,16 @@ auto System::load(Node::System& root, string name) -> bool {
   if(_DD()) dd.load(node);
   if(model() == Model::Aleck64) aleck64.load(node);
 
+#if ARES_DEBUG_TOOLS
   initDebugHooks();
+#endif
   _vulkanNeedsLoad = true;
 
   return true;
 }
 
 auto System::initDebugHooks() -> void {
+#if ARES_DEBUG_TOOLS
 
   // See: https://sourceware.org/gdb/onlinedocs/gdb/Target-Description-Format.html#Target-Description-Format
   GDB::server.hooks.targetXML = []() -> string {
@@ -466,6 +471,7 @@ auto System::initDebugHooks() -> void {
       cpu.recompiler.invalidateSection((u32)address);
     };
   }
+#endif  // ARES_DEBUG_TOOLS
 }
 
 auto System::unload() -> void {

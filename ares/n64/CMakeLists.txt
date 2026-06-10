@@ -456,8 +456,11 @@ set_target_properties(angrylion-rdp-plus PROPERTIES
   C_STANDARD 11
   POSITION_INDEPENDENT_CODE ON
 )
-# Enable the per-pixel/per-command metric counters (overdraw etc.).
-target_compile_definitions(angrylion-rdp-plus PRIVATE N64VIDEO_METRICS)
+# Enable the per-pixel/per-command metric counters (overdraw etc.) only when the
+# debugging tools are built; the heatmap viewer that consumes them is gated too.
+if(ARES_ENABLE_DEBUG_TOOLS)
+  target_compile_definitions(angrylion-rdp-plus PRIVATE N64VIDEO_METRICS)
+endif()
 target_include_directories(angrylion-rdp-plus PUBLIC ${_angrylion_root})
 target_link_libraries(ares PUBLIC angrylion-rdp-plus)
 # angrylion calls into ares, fix link order by informing cmake

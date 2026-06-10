@@ -79,9 +79,11 @@ auto Program::load(std::shared_ptr<Emulator> emulator, string location) -> bool 
 /// Loads a ROM for an already-loaded emulator.
 auto Program::load(string location) -> bool {
   Program::Guard guard;
+#if ARES_DEBUG_TOOLS
   if(settings.debugServer.enabled) {
     nall::GDB::server.reset();
   }
+#endif
 
   if(!emulator->load(location)) {
     emulator.reset();
@@ -109,6 +111,7 @@ auto Program::load(string location) -> bool {
 
   runAheadUpdate();
 
+#if ARES_DEBUG_TOOLS
   // Auto-detect RSPQ from ELF alongside the ROM
   if(emulator && emulator->name == "Nintendo 64") {
     ares::Nintendo64::rsp.capture.autoDetect(location);
@@ -119,6 +122,7 @@ auto Program::load(string location) -> bool {
     }
     ares::Nintendo64::cpu.profiler.loadSymbols(location);
   }
+#endif
 
   if(!_imguiMode) {
     presentation.loadEmulator();
@@ -148,6 +152,7 @@ auto Program::load(string location) -> bool {
 
   showMessage({"Loaded ", Location::prefix(location)});
 
+#if ARES_DEBUG_TOOLS
   if(settings.debugServer.enabled) {
     nall::GDB::server.open(settings.debugServer.port, settings.debugServer.useIPv4);
     nall::GDB::server.onClientConnectCallback = []() {
@@ -155,6 +160,7 @@ auto Program::load(string location) -> bool {
         program.pause(false);
     };
   }
+#endif
 
   string recentEntry = {emulator->name, ";", location};
   s32 last = Settings::Recent::count - 1;
@@ -182,8 +188,10 @@ auto Program::unload() -> void {
   Program::Guard guard;
   if(!emulator) return;
 
+#if ARES_DEBUG_TOOLS
   nall::GDB::server.close();
   nall::GDB::server.reset();
+#endif
 
   ares::ui::SyncWindowVisibility();
   settings.save();

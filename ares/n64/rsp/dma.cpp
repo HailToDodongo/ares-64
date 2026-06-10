@@ -18,7 +18,9 @@ auto RSP::dmaTransferStart(Thread& thread) -> void {
     dma.busy    = dma.full;
     dma.full    = {0,0};
 
+#if ARES_DEBUG_TOOLS
     capture.onDMA(dma.busy.write, (u64)(dma.current.count + 1) * (dma.current.length + 8));
+#endif
     dmaQueue((dma.current.length+8) / 8 * 3, thread);
   }
 }

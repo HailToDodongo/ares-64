@@ -39,7 +39,9 @@ auto RSP::main() -> void {
   while(Thread::clock < 0) {
     auto clock = Thread::clock;
 
+#if ARES_DEBUG_TOOLS
     captureHaltState();
+#endif
     if(status.halted) {
       step(128);
       profile.cycles += 128;
@@ -58,6 +60,7 @@ auto RSP::main() -> void {
 // tracks real time during the stop and the bar gets its true width. The still-open
 // halt is drawn live by the UI from haltOpen/haltStartWall.
 auto RSP::captureHaltState() -> void {
+#if ARES_DEBUG_TOOLS
   auto& cap = capture;
   bool h = status.halted;
   if(!cap.enabled.load(std::memory_order_relaxed)) { cap.lastHalted = h; return; }
@@ -93,6 +96,7 @@ auto RSP::captureHaltState() -> void {
     }
   }
   cap.lastHalted = h;
+#endif
 }
 
 auto RSP::instruction() -> void {
@@ -137,12 +141,14 @@ auto RSP::instruction() -> void {
 auto RSP::instructionPrologue(u32 instruction) -> void {
   pipeline.address = ipu.pc;
   pipeline.instruction = instruction;
+#if ARES_DEBUG_TOOLS
   debugger.instruction();
 
   // RSP command viewer: check if this PC is a hooked RSPQ dispatch address
   if(capture.configLoaded && capture.hasHook(ipu.pc)) {
     captureCommandHook(ipu.pc);
   }
+#endif
 }
 
 auto RSP::instructionBranchEpilogue() -> s32 {

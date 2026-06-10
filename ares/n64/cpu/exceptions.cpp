@@ -1,4 +1,5 @@
 auto CPU::Exception::trigger(u32 code, u32 coprocessor, bool tlbMiss) -> void {
+#if ARES_DEBUG_TOOLS
   self.debugger.exception(code);
   // Only push a profiler frame for a fresh exception (EXL=0). A fault taken while
   // already in a handler (EXL=1) saves no new EPC and is cleared by the same
@@ -6,8 +7,9 @@ auto CPU::Exception::trigger(u32 code, u32 coprocessor, bool tlbMiss) -> void {
   if(unlikely(self.profiler.enabled.load(std::memory_order_relaxed)) && !self.scc.status.exceptionLevel)
     self.profiler.onException(code);
   if (code != 0) {  //ignore interrupt exceptions
-    reportGDBException(code, self.ipu.pc); 
+    reportGDBException(code, self.ipu.pc);
   }
+#endif
 
   u64 vectorBase = !self.scc.status.vectorLocation ? (s32)0x8000'0000 : (s32)0xbfc0'0200;
 
@@ -70,6 +72,7 @@ auto CPU::Exception::nmi() -> void {
 }
 
 auto CPU::Exception::reportGDBException(int code, u64 pc) -> void {
+#if ARES_DEBUG_TOOLS
   switch(code) {
   case 0:  GDB::server.reportSignal(GDB::Signal::WINCH, pc); break; // ignored by default
   case 1:  GDB::server.reportSignal(GDB::Signal::SEGV,  pc); break;
@@ -88,4 +91,5 @@ auto CPU::Exception::reportGDBException(int code, u64 pc) -> void {
   case 15: GDB::server.reportSignal(GDB::Signal::FPE,   pc); break;
   case 23: GDB::server.reportSignal(GDB::Signal::LOST,  pc); break;
   }
+#endif
 }

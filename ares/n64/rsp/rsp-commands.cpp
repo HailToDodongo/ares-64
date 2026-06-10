@@ -1,6 +1,7 @@
 // RSP live command capture — the dispatch hook that turns hooked RSPQ PCs into
 // timed command/overhead rows (see RSPCapture in rsp-capture.hpp; config and
 // overlay/argument decoding live in rsp-capture.cpp).
+#if ARES_DEBUG_TOOLS
 
 // Read the command currently pointed to by gp (rspq_dmem_buf_ptr) into the
 // pending-command slot of the capture state.
@@ -202,3 +203,5 @@ auto RSP::captureCommandHook(u32 pc) -> void {
   cap.segBytesOut = 0;
   if(newType == RSPCapture::SegCommand) rspReadPendingCommand(*this);
 }
+
+#endif  // ARES_DEBUG_TOOLS

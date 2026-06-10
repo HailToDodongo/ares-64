@@ -298,7 +298,9 @@ auto CPU::ERET() -> void {
     pipeline.setPc(scc.epc);
     scc.status.exceptionLevel = 0;
   }
+#if ARES_DEBUG_TOOLS
   if(unlikely(profiler.enabled.load(std::memory_order_relaxed))) profiler.onEret();
+#endif
   pipeline.exception();
   scc.llbit = 0;
   context.setMode();

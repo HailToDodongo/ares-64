@@ -216,6 +216,7 @@ auto RDP::render() -> void {
     u64 op = fetch();
     auto opCode = op >> 56 & 0x3f;
 
+#if ARES_DEBUG_TOOLS
     if(debugger.tracer.command->enabled()) {
       auto commandName = opCode < 64 ? commandNames[opCode] : "Invalid";
       auto message = string{ hex(op, 16L), "  ", commandName };
@@ -226,6 +227,7 @@ auto RDP::render() -> void {
       u8 wc = rdpCommandWordCounts[opCode];
       capture.push(0, 0, (u8)opCode, op, 0, wc);
     }
+#endif
 
     switch(opCode) {
 

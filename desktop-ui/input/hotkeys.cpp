@@ -12,9 +12,11 @@ auto InputManager::createHotkeys() -> void {
     program.videoPseudoFullScreenToggle();
   }));
 
+#if ARES_DEBUG_TOOLS
   hotkeys.push_back(InputHotkey("Toggle Play Mode").onPress([&] {
     ares::ui::playMode = !ares::ui::playMode;
   }));
+#endif
 
   hotkeys.push_back(InputHotkey("Toggle Mouse Capture").onPress([&] {
     Program::Guard guard;

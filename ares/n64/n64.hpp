@@ -1,6 +1,13 @@
 #pragma once
 //started: 2020-04-28
 
+// Master switch for all debugging/profiling tooling (CPU profiler, RSP/RDP capture,
+// GDB server, instruction tracer). Set by CMake (ARES_ENABLE_DEBUG_TOOLS); default on
+// so a stray TU built without the define still gets the full-featured behavior.
+#ifndef ARES_DEBUG_TOOLS
+  #define ARES_DEBUG_TOOLS 1
+#endif
+
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 #include <float.h>

@@ -28,6 +28,7 @@ static constexpr u8 commandLength[64] = {
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 };
 
+#if ARES_DEBUG_TOOLS
 //Walk the command stream and push each command to rdp.capture so the RDP command
 //viewer and framebuffer viewer (which derives the FB address from Set_Color_Image)
 //have data, mirroring what Vulkan::render() does inline. angrylion reads the same
@@ -55,6 +56,7 @@ static auto stepInteresting(u32 code) -> bool {
   return (code >= 0x08 && code <= 0x0f) || code == 0x24 || code == 0x25
       || code == 0x29 || code == 0x36 || code == 0x3f;
 }
+#endif  // ARES_DEBUG_TOOLS
 
 struct Angrylion::Implementation {
   Implementation(u8* rdram, u32 rdramSize, u8* dmem);
@@ -124,6 +126,7 @@ auto Angrylion::render() -> bool {
   //scanout sets this flag once per field; we snapshot + clear on the next render()
   //(which aligns with the VI-address-swap "frame" the debug viewers use). Repeated
   //scanouts on the same frame just re-set the flag without clearing.
+#if ARES_DEBUG_TOOLS
   if(implementation->pendingFrameClear) {
     n64video_metrics raw = {};
     n64video_metrics_get(&raw);
@@ -142,6 +145,7 @@ auto Angrylion::render() -> bool {
     implementation->lastMetrics = m;
     implementation->pendingFrameClear = false;
   }
+#endif
 
   auto& command = rdp.command;
   u32 current = command.current & ~7;
@@ -153,6 +157,7 @@ auto Angrylion::render() -> bool {
 
   implementation->dpRegStore[DP_STATUS] = command.source ? DP_STATUS_XBUS_DMA : 0;
 
+#if ARES_DEBUG_TOOLS
   if(rdp.capture.stepMode.load(std::memory_order_relaxed)) {
     //step mode: feed one command at a time so the framebuffer builds up per command.
     renderStepped(current, end, command.source);
@@ -165,12 +170,19 @@ auto Angrylion::render() -> bool {
     n64video_process_list();
     n64video_flush();
   }
+#else
+  implementation->dpRegStore[DP_CURRENT] = current;
+  implementation->dpRegStore[DP_END]     = end;
+  n64video_process_list();
+  n64video_flush();
+#endif
 
   command.current = command.end;
   return true;
 }
 
 auto Angrylion::renderStepped(u32 current, u32 end, bool source) -> void {
+#if ARES_DEBUG_TOOLS
   auto& memory = !source ? (Memory::Writable&)rdram.ram : (Memory::Writable&)rsp.dmem;
   auto& cap = rdp.capture;
 
@@ -203,6 +215,7 @@ auto Angrylion::renderStepped(u32 current, u32 end, bool source) -> void {
     }
     addr = next;
   }
+#endif  // ARES_DEBUG_TOOLS
 }
 
 auto Angrylion::scanout(bool field) -> bool {

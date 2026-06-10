@@ -421,6 +421,7 @@ auto CPU::Profiler::clearStats() -> void {
 }
 
 auto CPU::updatePrologueHook() -> void {
+#if ARES_DEBUG_TOOLS
   if constexpr(Accuracy::CPU::Recompiler) {
     bool want = debugger.tracer.instruction->enabled() || profiler.enabled.load(std::memory_order_relaxed);
     if(recompiler.callInstructionPrologue != want) {
@@ -428,4 +429,5 @@ auto CPU::updatePrologueHook() -> void {
       recompiler.reset();
     }
   }
+#endif
 }

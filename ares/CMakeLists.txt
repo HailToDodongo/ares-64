@@ -7,6 +7,15 @@ add_library(ares::ares ALIAS ares)
 option(ARES_PROFILE_ACCURACY "Build to prefer emulation accuracy over performance in certain specific areas" OFF)
 option(ARES_PRECOMPILE_HEADERS "Precompile ares/ares.hpp header for performance" OFF)
 option(
+  ARES_ENABLE_DEBUG_TOOLS
+  "\
+Build the N64 debugging/profiling tools (CPU profiler, flame chart, RSP/RDP command viewers, framebuffer heatmap) plus \
+the GDB server and instruction tracer. When OFF, every per-instruction/per-access hook is compiled out and the desktop \
+UI is locked to a debug-free play mode.
+"
+  ON
+)
+option(
   ARES_UNITY_CORES
   "\
 Build each core as one translation unit. Decreases cold build times but increases incremental build times. Slightly \
@@ -26,6 +35,10 @@ if(ARES_PROFILE_ACCURACY)
 else()
   target_compile_definitions(ares PUBLIC PROFILE_PERFORMANCE)
 endif()
+
+# Single switch for all debugging/profiling tooling. PUBLIC so it also reaches
+# desktop-ui (which links ares::ares). 1 = full tools, 0 = lean play build.
+target_compile_definitions(ares PUBLIC ARES_DEBUG_TOOLS=$<IF:$<BOOL:${ARES_ENABLE_DEBUG_TOOLS}>,1,0>)
 
 target_sources(
   ares

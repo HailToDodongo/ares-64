@@ -36,6 +36,7 @@ auto CPU::unload() -> void {
 }
 
 auto CPU::main() -> void {
+#if ARES_DEBUG_TOOLS
   while(!vi.refreshed && GDB::server.reportPC(ipu.pc & 0xFFFFFFFF)) {
     if(instruction()) synchronize();
   }
@@ -45,13 +46,21 @@ auto CPU::main() -> void {
   if(GDB::server.hasClient()) {
     queueInsert(Queue::GDB_Poll, (93750000*2)/60/240);
   }
+#else
+  while(!vi.refreshed) {
+    if(instruction()) synchronize();
+  }
+  vi.refreshed = false;
+#endif
 }
 
 auto CPU::gdbPoll() -> void {
+#if ARES_DEBUG_TOOLS
   if(GDB::server.hasClient()) {
     GDB::server.updateLoop();
     queueInsert(Queue::GDB_Poll, (93750000*2)/60/240);
   }
+#endif
 }
 
 auto CPU::queueInsert(u32 event, u32 clocks) -> void {
@@ -174,9 +183,11 @@ auto CPU::instruction() -> bool {
 }
 
 auto CPU::instructionPrologue(u64 address, u32 instruction) -> void {
+#if ARES_DEBUG_TOOLS
   debugger.instruction(address, instruction);
   if(unlikely(profiler.enabled.load(std::memory_order_relaxed)))
     profiler.onInstruction(address, instruction);
+#endif
 }
 
 template<bool Recompiled>
