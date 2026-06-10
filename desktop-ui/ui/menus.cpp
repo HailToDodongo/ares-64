@@ -14,6 +14,17 @@ bool showAboutDialog = false;
 static void DrawFileMenu() {
   if(!ImGui::BeginMenu("File")) return;
 
+  // Open a ROM via a file picker; the system is auto-detected from the file.
+  if(ImGui::MenuItem("Open ROM...")) {
+    if(const char* path = openFileDialog("Open ROM")) {
+      Program::Guard guard;
+      string location = path;
+      if(auto emu = program.identify(location)) program.load(emu, location);
+    }
+  }
+
+  ImGui::Separator();
+
   // Recent Games
   if(ImGui::BeginMenu("Recent Games")) {
     u32 count = 0;
@@ -52,34 +63,6 @@ static void DrawFileMenu() {
   }
 
   ImGui::Separator();
-
-  // System groups, collect unique groups, show Arcade first
-  std::vector<string> groups;
-  for(auto& emulator : emulators) {
-    if(!emulator->configuration.visible) continue;
-    auto g = emulator->group();
-    if(std::ranges::find(groups, g) == groups.end()) groups.push_back(g);
-  }
-  std::ranges::sort(groups, [](auto& a, auto& b) {
-    if(a == "Arcade") return true;
-    if(b == "Arcade") return false;
-    return a < b;
-  });
-
-  for(auto& group : groups) {
-    if(ImGui::BeginMenu(group.data())) {
-      for(auto& emu : emulators) {
-        if(!emu->configuration.visible) continue;
-        if(emu->group() != group) continue;
-        if(ImGui::MenuItem(emu->name.data())) {
-          program.load(emu);
-        }
-      }
-      ImGui::EndMenu();
-    }
-  }
-
-  ImGui::Separator();
   if(ImGui::MenuItem("Quit")) {
     AresApp::quit();
   }
@@ -99,40 +82,6 @@ static void DrawSystemMenu() {
 
 static void DrawSettingsMenu() {
   if(!ImGui::BeginMenu("Settings")) return;
-
-  // Output submenu
-  if(ImGui::BeginMenu("Output")) {
-    if(ImGui::MenuItem("Scale: Best Fit", nullptr, settings.video.output == "Scale")) {
-      settings.video.output = "Scale";
-    }
-    if(ImGui::MenuItem("Scale: Integer (auto)", nullptr, settings.video.output == "Integer")) {
-      settings.video.output = "Integer";
-    }
-    if(ImGui::MenuItem("Scale: Stretch to Fill", nullptr, settings.video.output == "Stretch")) {
-      settings.video.output = "Stretch";
-    }
-    ImGui::Separator();
-    if(ImGui::MenuItem("Aspect: No correction", nullptr, settings.video.aspectCorrection == "None")) {
-      settings.video.aspectCorrection = "None";
-    }
-    if(ImGui::MenuItem("Aspect: Standard", nullptr, settings.video.aspectCorrection == "Standard")) {
-      settings.video.aspectCorrection = "Standard";
-    }
-    if(ImGui::MenuItem("Aspect: Anamorphic (16:9)", nullptr, settings.video.aspectCorrection == "Anamorphic")) {
-      settings.video.aspectCorrection = "Anamorphic";
-    }
-    ImGui::Separator();
-    bool adaptive = settings.video.adaptiveSizing;
-    if(ImGui::MenuItem("Auto resize to content", nullptr, &adaptive)) {
-      settings.video.adaptiveSizing = adaptive;
-    }
-    bool center = settings.video.autoCentering;
-    if(ImGui::MenuItem("Auto center", nullptr, &center)) {
-      settings.video.autoCentering = center;
-    }
-    ImGui::EndMenu();
-  }
-
 
   // Boot Options submenu
   if(ImGui::BeginMenu("Boot Options")) {
