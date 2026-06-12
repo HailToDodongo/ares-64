@@ -16,6 +16,7 @@ add_executable(
   ui/framebuffer-viewer.cpp
   ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
+  ui/register-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   input/input.cpp
@@ -50,6 +51,7 @@ set_source_files_properties(
   ui/framebuffer-viewer.cpp
   ui/tmem-viewer.cpp
   ui/memory-viewer.cpp
+  ui/register-viewer.cpp
   ui/stubs.cpp
   desktop-ui.cpp
   input/input.cpp

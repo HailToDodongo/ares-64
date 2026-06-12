@@ -58,6 +58,7 @@ auto DrawFlameChart() -> void;
 auto DrawFramebufferViewer() -> void;
 auto DrawTmemViewer() -> void;
 auto DrawMemoryViewer() -> void;
+auto DrawRegisterViewer() -> void;
 auto DrawAudioViewer() -> void;
 auto DrawStatusBar() -> void;
 
@@ -90,6 +91,7 @@ extern bool showFlameChart;
 extern bool showFramebufferViewer;
 extern bool showTmemViewer;
 extern bool showMemoryViewer;
+extern bool showRegisterViewer;
 extern bool showAudioViewer;
 extern bool showAboutDialog;
 

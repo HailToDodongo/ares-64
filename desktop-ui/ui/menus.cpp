@@ -233,6 +233,7 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("Framebuffer")) showFramebufferViewer = true;
   if(ImGui::MenuItem("TMEM")) showTmemViewer = true;
   if(ImGui::MenuItem("Memory Editor")) showMemoryViewer = true;
+  if(ImGui::MenuItem("Registers")) showRegisterViewer = true;
   if(ImGui::MenuItem("Audio Viewer")) showAudioViewer = true;
 
   ImGui::EndMenu();

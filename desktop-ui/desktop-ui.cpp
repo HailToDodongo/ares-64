@@ -294,6 +294,7 @@ auto nall::main(Arguments arguments) -> void {
   ares::ui::showFramebufferViewer = settings.general.showFramebufferViewer;
   ares::ui::showTmemViewer = settings.general.showTmemViewer;
   ares::ui::showMemoryViewer = settings.general.showMemoryViewer;
+  ares::ui::showRegisterViewer = settings.general.showRegisterViewer;
 
   AresApp::onMain = [=] {
     ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
@@ -323,6 +324,7 @@ auto nall::main(Arguments arguments) -> void {
     ares::ui::DrawFramebufferViewer();
     ares::ui::DrawTmemViewer();
     ares::ui::DrawMemoryViewer();
+    ares::ui::DrawRegisterViewer();
     ares::ui::DrawAudioViewer();
 
     if(ares::ui::showAboutDialog) {

@@ -48,6 +48,17 @@ static void DrawVideoPanel() {
   ImGui::Checkbox("Disable VI Processing", &settings.video.disableVideoInterfaceProcessing);
   ImGui::Checkbox("Weave Deinterlacing", &settings.video.weaveDeinterlacing);
 
+  float overscan = (float)settings.video.overscanPercent;
+  if(ImGui::SliderFloat("Overscan (%)", &overscan, 0.0f, 15.0f, "%.1f")) {
+    settings.video.overscanPercent = overscan;  // SliderFloat clamps to [0,15]
+  }
+
+  const char* overscanModes[] = {"Scale (crop)", "Overlay (darken)"};
+  int overscanMode = settings.video.overscanOverlay ? 1 : 0;
+  if(ImGui::Combo("Overscan Mode", &overscanMode, overscanModes, 2)) {
+    settings.video.overscanOverlay = (overscanMode == 1);
+  }
+
   ImGui::SeparatorText("Interface");
   int detectedPct = (int)(dpiScaleDetected * 100.0f + 0.5f);
   if(ImGui::Checkbox("Override UI scale", &settings.general.dpiOverride)) {

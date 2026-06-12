@@ -58,6 +58,8 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "Video/Supersampling", video.supersampling);
   bind(boolean, "Video/DisableVideoInterfaceProcessing", video.disableVideoInterfaceProcessing);
   bind(boolean, "Video/WeaveDeinterlacing", video.weaveDeinterlacing);
+  bind(real,    "Video/OverscanPercent", video.overscanPercent);
+  bind(boolean, "Video/OverscanOverlay", video.overscanOverlay);
 
   bind(natural, "Audio/Frequency", audio.frequency);
   bind(natural, "Audio/Latency", audio.latency);
@@ -91,6 +93,8 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
   bind(boolean, "General/ShowTmemViewer", general.showTmemViewer);
   bind(boolean, "General/ShowMemoryViewer", general.showMemoryViewer);
+  bind(boolean, "General/ShowRegisterViewer", general.showRegisterViewer);
+  bind(natural, "General/RegisterViewerComponents", general.registerViewerComponents);
   bind(boolean, "General/DpiOverride", general.dpiOverride);
   bind(natural, "General/DpiScalePercent", general.dpiScalePercent);
 

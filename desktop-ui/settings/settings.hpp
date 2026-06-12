@@ -32,6 +32,13 @@ struct Settings : Markup::Node {
     bool supersampling = false;
     bool disableVideoInterfaceProcessing = false;
     bool weaveDeinterlacing = true;
+
+    // CRT-style overscan: percent of the output image cropped off *each* edge,
+    // applied at display time, not in the framebuffer.
+    f64 overscanPercent = 0.0;
+    // false: scale/crop into the center (zoom in). true: keep the full image but
+    // darken the edge regions that overscan would hide (a non-destructive preview).
+    bool overscanOverlay = false;
   } video;
 
   struct Audio {
@@ -78,6 +85,10 @@ struct Settings : Markup::Node {
     bool showFramebufferViewer = false;
     bool showTmemViewer = false;
     bool showMemoryViewer = false;
+    bool showRegisterViewer = false;
+    // Bitmask of components shown in the register viewer (see RegComponent).
+    // Default: CPU GPR (bit 0) + RSP GPR (bit 3).
+    u32  registerViewerComponents = (1u << 0) | (1u << 3);
 
     // UI/DPI scaling. When dpiOverride is set, dpiScalePercent (e.g. 150 = 1.5x)
     // replaces the auto-detected DPI at startup. Applied in AresApp::initialize().

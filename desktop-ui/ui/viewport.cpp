@@ -7,6 +7,35 @@
 
 namespace ares::ui {
 
+// CRT-style overscan as a fraction cropped off each edge (0..0.45 sanity cap).
+static auto overscanFraction() -> float {
+  float f = (float)settings.video.overscanPercent / 100.0f;
+  if(f < 0.0f) f = 0.0f;
+  if(f > 0.45f) f = 0.45f;
+  return f;
+}
+
+static auto overscanUV(ImVec2& uv0, ImVec2& uv1) -> void {
+  float f = settings.video.overscanOverlay ? 0.0f : overscanFraction();
+  uv0 = ImVec2(f, f);
+  uv1 = ImVec2(1.0f - f, 1.0f - f);
+}
+
+static auto drawOverscanOverlay(ImVec2 pMin, ImVec2 pMax) -> void {
+  if(!settings.video.overscanOverlay) return;
+  float f = overscanFraction();
+  if(f <= 0.0f) return;
+  float w = pMax.x - pMin.x, h = pMax.y - pMin.y;
+  float ix0 = pMin.x + w * f, ix1 = pMax.x - w * f;
+  float iy0 = pMin.y + h * f, iy1 = pMax.y - h * f;
+  const ImU32 col = IM_COL32(0, 0, 0, 175);
+  auto* dl = ImGui::GetWindowDrawList();
+  dl->AddRectFilled(ImVec2(pMin.x, pMin.y), ImVec2(pMax.x, iy0), col);  // top
+  dl->AddRectFilled(ImVec2(pMin.x, iy1), ImVec2(pMax.x, pMax.y), col);  // bottom
+  dl->AddRectFilled(ImVec2(pMin.x, iy0), ImVec2(ix0, iy1), col);        // left
+  dl->AddRectFilled(ImVec2(ix1, iy0), ImVec2(pMax.x, iy1), col);        // right
+}
+
 auto DrawViewport() -> void {
   ruby::video.renderFrame();
   auto tex = ruby::video.outputTexture();
@@ -31,9 +60,13 @@ auto DrawViewport() -> void {
         ImVec2 sz(outW * scale, outH * scale);
         if(avail.x > sz.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - sz.x) * 0.5f);
         if(avail.y - statusH > sz.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - statusH - sz.y) * 0.5f);
-        ImGui::Image((ImTextureID)(intptr_t)tex, sz);
+        ImVec2 uv0, uv1; overscanUV(uv0, uv1);
+        ImGui::Image((ImTextureID)(intptr_t)tex, sz, uv0, uv1);
+        drawOverscanOverlay(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
       } else {
-        ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(avail.x, avail.y - statusH));
+        ImVec2 uv0, uv1; overscanUV(uv0, uv1);
+        ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(avail.x, avail.y - statusH), uv0, uv1);
+        drawOverscanOverlay(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
       }
     }
     if(program.message.text) {
@@ -75,7 +108,9 @@ auto DrawPlayMode() -> void {
     p0 = ImVec2(origin.x + (avail.x - sz.x) * 0.5f, origin.y + (avail.y - sz.y) * 0.5f);
     p1 = ImVec2(p0.x + sz.x, p0.y + sz.y);
   }
-  ImGui::GetWindowDrawList()->AddImage((ImTextureID)(intptr_t)tex, p0, p1);
+  ImVec2 uv0, uv1; overscanUV(uv0, uv1);
+  ImGui::GetWindowDrawList()->AddImage((ImTextureID)(intptr_t)tex, p0, p1, uv0, uv1);
+  drawOverscanOverlay(p0, p1);
 }
 
 }  // namespace ares::ui
