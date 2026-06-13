@@ -371,8 +371,7 @@
         "0x0E": {"name": "Inline Uniform Max"}
       }
     },
-
-      {
+    {
       "name": "gl",
       "commands": {
         "0x00": {"name": "Set Flag"},
