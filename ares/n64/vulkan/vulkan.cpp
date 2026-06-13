@@ -225,7 +225,8 @@ auto Vulkan::scanoutAsync(bool field) -> bool {
     });
   }
 
-  implementation->processor->set_vi_register(::RDP::VIRegister::VCurrentLine, field);
+  bool scanoutField = (weaveDeinterlacing && !supersampleScanout) ? !field : field;
+  implementation->processor->set_vi_register(::RDP::VIRegister::VCurrentLine, scanoutField);
 
   //0 steps if scanning out at upscaled resolution.
   //each downscale step reduces output resolution to [width, height] * max(1, upscale >> downscale_steps)

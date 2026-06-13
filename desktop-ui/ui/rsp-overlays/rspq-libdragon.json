@@ -370,6 +370,36 @@
         "0x0D": {"name": "Inline Uniform 128"},
         "0x0E": {"name": "Inline Uniform Max"}
       }
+    },
+
+      {
+      "name": "gl",
+      "commands": {
+        "0x00": {"name": "Set Flag"},
+        "0x01": {"name": "Set Byte", "fmt": "state[{offset:x}] = {value:x}  update {update}", "args": [{"name": "offset", "word": 0, "bits": [11, 0]}, {"name": "update", "word": 0, "bits": [23, 12]}, {"name": "value", "word": 1}]},
+        "0x02": {"name": "Set Short", "fmt": "state[{offset:x}] = {value:x}  update {update}", "args": [{"name": "offset", "word": 0, "bits": [11, 0]}, {"name": "update", "word": 0, "bits": [23, 12]}, {"name": "value", "word": 1}]},
+        "0x03": {"name": "Set Word", "fmt": "state[{offset:x}] = {value:x}  update {update}", "args": [{"name": "offset", "word": 0, "bits": [11, 0]}, {"name": "update", "word": 0, "bits": [23, 12]}, {"name": "value", "word": 1}]},
+        "0x04": {"name": "Set Long", "fmt": "state[{offset:x}] = {v0:x} {v1:x}  update {update}", "args": [{"name": "offset", "word": 0, "bits": [11, 0]}, {"name": "update", "word": 0, "bits": [23, 12]}, {"name": "v0", "word": 1}, {"name": "v1", "word": 2}]},
+        "0x05": {"name": "Update", "fmt": "update {update}", "args": [{"name": "update", "word": 0, "bits": [23, 12]}]},
+        "0x06": {"name": "Bind Texture", "fmt": "texture[{tex:x}] = {ptr:x}", "args": [{"name": "tex", "word": 0, "bits": [15, 0]}, {"name": "ptr", "word": 1}]},
+        "0x07": {"name": "Get Value", "fmt": "offset {offset:x}  size {size}B  dest {dest:x}", "args": [{"name": "offset", "word": 0, "bits": [11, 0]}, {"name": "size", "word": 0, "bits": [23, 12]}, {"name": "dest", "word": 1}]},
+        "0x08": {"name": "Copy Fill Color", "fmt": "offset {offset:x}", "args": [{"name": "offset", "word": 0}]},
+        "0x09": {"name": "Set Light Pos", "fmt": "offset {offset:x}  [{x:x}, {y:x}, {z:x}, {w:x}]", "args": [{"name": "offset", "word": 0}, {"name": "x", "word": 1, "bits": [31, 16]}, {"name": "y", "word": 1, "bits": [15, 0]}, {"name": "z", "word": 2, "bits": [31, 16]}, {"name": "w", "word": 2, "bits": [15, 0]}]},
+        "0x0A": {"name": "Matrix Push"},
+        "0x0B": {"name": "Matrix Pop"},
+        "0x0C": {"name": "Matrix Load", "fmt": "multiply {mult}", "args": [{"name": "mult", "word": 0, "bits": [1, 0]}]},
+        "0x0D": {"name": "Set Palette Index", "fmt": "index {index:x}", "args": [{"name": "index", "word": 0}]},
+        "0x0E": {"name": "Matrix Copy", "fmt": "matrix {mat:x}", "args": [{"name": "mat", "word": 0}]}
+      }
+    },
+    {
+      "name": "gl2",
+      "commands": {
+        "0x00": {"name": "Pre Init Pipe", "fmt": "prim mode {prim}", "args": [{"name": "prim", "word": 0}]},
+        "0x01": {"name": "Pre Init Pipe Tex"},
+        "0x02": {"name": "Set Pipeline", "fmt": "pipeline[{offset:x}] = code {code:x}  size {size}B", "args": [{"name": "code", "word": 0}, {"name": "offset", "word": 1, "bits": [31, 16]}, {"name": "size", "word": 1, "bits": [15, 0]}]},
+        "0x03": {"name": "Pre Init Magma", "fmt": "magma state {state:x}  client flags {flags:x}", "args": [{"name": "state", "word": 0}, {"name": "flags", "word": 1}]}
+      }
     }
   ]
 }
