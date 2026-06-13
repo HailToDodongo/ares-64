@@ -548,7 +548,11 @@ auto DrawFramebufferViewer() -> void {
     // Center image in available space
     if(avail.x > imgSize.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - imgSize.x) * 0.5f);
     if(avail.y > imgSize.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - imgSize.y) * 0.5f);
-    if(tex) ImGui::Image((ImTextureID)(intptr_t)tex, imgSize);
+    if(tex) {
+      NearestSampler();
+      ImGui::Image((ImTextureID)(intptr_t)tex, imgSize);
+      RestoreSampler();
+    }
   }
 
   ImGui::End();

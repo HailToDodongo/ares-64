@@ -43,6 +43,15 @@ inline float operator""_px(unsigned long long value) {
 
 namespace ares::ui {
 
+inline auto NearestSampler() -> void {
+  if(auto cb = ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest)
+    ImGui::GetWindowDrawList()->AddCallback(cb, nullptr);
+}
+inline auto RestoreSampler() -> void {
+  if(auto cb = ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear)
+    ImGui::GetWindowDrawList()->AddCallback(cb, nullptr);
+}
+
 auto DrawMainMenuBar() -> void;
 auto DrawMenuBar() -> void;
 auto DrawViewport() -> void;

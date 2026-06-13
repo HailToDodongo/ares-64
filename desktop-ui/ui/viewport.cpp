@@ -61,11 +61,15 @@ auto DrawViewport() -> void {
         if(avail.x > sz.x) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - sz.x) * 0.5f);
         if(avail.y - statusH > sz.y) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (avail.y - statusH - sz.y) * 0.5f);
         ImVec2 uv0, uv1; overscanUV(uv0, uv1);
+        NearestSampler();
         ImGui::Image((ImTextureID)(intptr_t)tex, sz, uv0, uv1);
+        RestoreSampler();
         drawOverscanOverlay(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
       } else {
         ImVec2 uv0, uv1; overscanUV(uv0, uv1);
+        NearestSampler();
         ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(avail.x, avail.y - statusH), uv0, uv1);
+        RestoreSampler();
         drawOverscanOverlay(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
       }
     }
@@ -109,7 +113,9 @@ auto DrawPlayMode() -> void {
     p1 = ImVec2(p0.x + sz.x, p0.y + sz.y);
   }
   ImVec2 uv0, uv1; overscanUV(uv0, uv1);
+  NearestSampler();
   ImGui::GetWindowDrawList()->AddImage((ImTextureID)(intptr_t)tex, p0, p1, uv0, uv1);
+  RestoreSampler();
   drawOverscanOverlay(p0, p1);
 }
 
