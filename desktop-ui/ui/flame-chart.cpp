@@ -69,12 +69,21 @@ static auto fmtTime(f64 ticks, char* buf, size_t n) -> void {
   else            snprintf(buf, n, "%.3f ms", us / 1000.0);
 }
 
-// Signed elapsed time (for the measurement marker -> cursor delta readout).
+// Like fmtTime, but also reports the raw cycle count
+static auto fmtTimeCyc(f64 ticks, char* buf, size_t n) -> void {
+  f64 us = ticks / ticksPerMicrosecond;
+  long long cyc = (long long)(ticks + 0.5);
+  if(us < 1000.0) snprintf(buf, n, "%.2f us (%lld cyc)", us, cyc);
+  else            snprintf(buf, n, "%.3f ms (%lld cyc)", us / 1000.0, cyc);
+}
+
+// Signed elapsed time + cycle count (for the measurement marker -> cursor readout).
 static auto fmtDelta(f64 ticks, char* buf, size_t n) -> void {
   char sign = ticks < 0 ? '-' : '+';
   f64 us = std::abs(ticks) / ticksPerMicrosecond;
-  if(us < 1000.0) snprintf(buf, n, "%c%.2f us", sign, us);
-  else            snprintf(buf, n, "%c%.3f ms", sign, us / 1000.0);
+  long long cyc = (long long)(std::abs(ticks) + 0.5);
+  if(us < 1000.0) snprintf(buf, n, "%c%.2f us (%lld cyc)", sign, us, cyc);
+  else            snprintf(buf, n, "%c%.3f ms (%lld cyc)", sign, us / 1000.0, cyc);
 }
 
 auto DrawFlameChart() -> void {
@@ -560,7 +569,7 @@ auto DrawFlameChart() -> void {
       f32 lx = std::clamp(mx, origin.x, origin.x + avail.x);
       dl->AddLine(ImVec2(lx, ry), ImVec2(cx, ry), IM_COL32(255, 220, 80, 200), 1.0_px);
       f64 cursorAbs = (f64)winStart + (f64)viewStart + (io.MousePos.x - origin.x) / pxPerTick;
-      char b[32]; fmtDelta(cursorAbs - (f64)markerAbs, b, sizeof(b));
+      char b[48]; fmtDelta(cursorAbs - (f64)markerAbs, b, sizeof(b));
       ImVec2 ts = ImGui::CalcTextSize(b);
       f32 tx = cx + 4.0_px; if(tx + ts.x > origin.x + avail.x) tx = cx - 4.0_px - ts.x;
       dl->AddText(ImVec2(tx, ry + 2.0_px), IM_COL32(255, 230, 120, 255), b);
@@ -572,7 +581,7 @@ auto DrawFlameChart() -> void {
   // RSP hover tooltip.
   if(rhover) {
     string name = rspLabel(rhover->overheadType, rhover->overhead, rhover->overlayId, rhover->commandId);
-    char dbuf[32]; fmtTime((f64)(rhover->end - rhover->start), dbuf, sizeof(dbuf));
+    char dbuf[48]; fmtTimeCyc((f64)(rhover->end - rhover->start), dbuf, sizeof(dbuf));
     f64 pct = 100.0 * (f64)(rhover->end - rhover->start) / (f64)frameTicks;
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(name.data());
@@ -595,7 +604,7 @@ auto DrawFlameChart() -> void {
   // Hover tooltip: function name, duration, % of frame.
   if(hover) {
     string name = prof.labelFor(hover->funcAddr);
-    char dbuf[32]; fmtTime((f64)(hover->end - hover->start), dbuf, sizeof(dbuf));
+    char dbuf[48]; fmtTimeCyc((f64)(hover->end - hover->start), dbuf, sizeof(dbuf));
     f64 pct = 100.0 * (f64)(hover->end - hover->start) / (f64)frameTicks;
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(name.data());
