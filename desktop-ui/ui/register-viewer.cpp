@@ -61,8 +61,8 @@ static auto beginDetailTable(const char* id) -> bool {
        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
     return false;
   }
-  ImGui::TableSetupColumn("Reg", ImGuiTableColumnFlags_WidthFixed, 170_px);
-  ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 110_px);
+  ImGui::TableSetupColumn("Reg", ImGuiTableColumnFlags_WidthFixed, 150_px);
+  ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 125_px);
   ImGui::TableSetupColumn("Decoded", ImGuiTableColumnFlags_WidthStretch);
   return true;
 }
@@ -126,6 +126,26 @@ static auto drawCpuCop0() -> void {
       regRow("LLAddr", scc.ll, 8);
       regRow("WatchLo", scc.watchLo.physicalAddress, 8);
       snprintf(dec, sizeof(dec), "%u", (u32)scc.wired.index);  regRow("Wired", scc.wired.index, 8, dec);
+      ImGui::EndTable();
+    }
+
+    if(beginDetailTable("##cop0tlb")) {
+      auto& t = scc.tlb;
+      auto& cpu = ares::Nintendo64::cpu;
+      snprintf(dec, sizeof(dec), "VPN2 %07X  ASID %02X  R%u",
+        (u32)t.virtualAddress.bit(13, 39), (u32)t.addressSpaceID, (u32)t.region);
+      regRow("EntryHi", cpu.getControlRegister(10), 16, dec);
+      // EntryLo0/1: PFN + cache algorithm + dirty/valid/global flags.
+      auto entryLo = [&](int i, const char* name, u64 reg) {
+        snprintf(dec, sizeof(dec), "PFN %06X  C%u  %c%c%c",
+          (u32)t.physicalAddress[i].bit(12, 35), (u32)t.cacheAlgorithm[i],
+          t.dirty[i] ? 'D' : '-', t.valid[i] ? 'V' : '-', t.global[i] ? 'G' : '-');
+        regRow(name, reg, 16, dec);
+      };
+      entryLo(0, "EntryLo0", cpu.getControlRegister(2));
+      entryLo(1, "EntryLo1", cpu.getControlRegister(3));
+      snprintf(dec, sizeof(dec), "mask %07X", (u32)t.pageMask);
+      regRow("PageMask", cpu.getControlRegister(5), 8, dec);
       ImGui::EndTable();
     }
     // Status: decoded flags (the packed register is reassembled on read in HW).

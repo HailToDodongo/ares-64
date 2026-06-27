@@ -100,6 +100,11 @@ auto RSPCapture::resolveDmemLabel(u32 offset) const -> string {
 auto RSPCapture::loadConfig(const string& jsonPath) -> bool {
   string data = string::read(jsonPath);
   if(!data) return false;
+  return loadConfigData(data);
+}
+
+auto RSPCapture::loadConfigData(const string& data) -> bool {
+  if(!data) return false;
 
   try {
     auto j = nlohmann::json::parse(data.data());
@@ -262,8 +267,18 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
     if(string::read(parentPath)) { foundElfPath = parentPath; }
   }
 
-  if(!foundElfPath) return false;
+  if(!foundElfPath) {
+    // Not a libdragon ROM (or its ELF isn't shipped alongside): report what we
+    // looked for so users can see why RSP command/overlay capture stays off.
+    print("RSP: autoDetect: no libdragon ELF found for '", romPath, "'.\n");
+    print("RSP:   tried: ", directPath, "\n");
+    print("RSP:          ", string{base, "/build/", stringBasename(base), ".elf"}, "\n");
+    print("RSP:          ", string{stringDirname(base), "/build/", stringBasename(base), ".elf"}, "\n");
+    print("RSP:   RSPQ/F3DEX2 command capture disabled (ROM not detected as libdragon).\n");
+    return false;
+  }
   elfPath = foundElfPath;
+  print("RSP: autoDetect: libdragon ELF found: ", elfPath, "\n");
 
   // Cache the entire ELF in memory so subsequent symbol lookups don't hit disk.
   cachedElfData = string::read(elfPath);
@@ -287,12 +302,30 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
       {stringDirname(Path::program()), "rspq-libdragon.json"},
     };
     for(auto& jp : jsonPaths) {
-      if(loadConfig(jp)) { jsonLoaded = true; break; }
+      if(loadConfig(jp)) {
+        jsonLoaded = true;
+        print("RSP: autoDetect: loaded rspq-libdragon.json from ", jp, "\n");
+        break;
+      }
+      print("RSP: autoDetect: rspq-libdragon.json not found at ", jp, "\n");
+    }
+  }
+
+  // Last resort: the copy compiled into the binary (set by the frontend). This is
+  // why detection can still work on systems where the JSON files weren't installed.
+  if(!jsonLoaded && embeddedRspqJson) {
+    if(loadConfigData(embeddedRspqJson)) {
+      jsonLoaded = true;
+      print("RSP: autoDetect: loaded rspq-libdragon.json from embedded fallback\n");
+    } else {
+      print("RSP: autoDetect: embedded rspq-libdragon.json failed to parse\n");
     }
   }
 
   if(!jsonLoaded) {
-    print("RSP: autoDetect: ELF found but JSON config not loaded\n");
+    print("RSP: autoDetect: ELF found but no rspq-libdragon.json could be loaded ",
+          "(checked paths above", embeddedRspqJson ? " + embedded copy" : "; no embedded copy provided",
+          "); RSP command capture disabled.\n");
     return false;
   }
 
@@ -435,6 +468,11 @@ auto RSPCapture::detectRspq() -> bool {
 auto RSPCapture::loadDLConfig(const string& jsonPath) -> bool {
   string data = string::read(jsonPath);
   if(!data) return false;
+  return loadDLConfigData(data);
+}
+
+auto RSPCapture::loadDLConfigData(const string& data) -> bool {
+  if(!data) return false;
   try {
     auto j = nlohmann::json::parse(data.data());
     if(j.value("mode", std::string{}) != "displaylist") return false;
@@ -506,8 +544,19 @@ auto RSPCapture::detectF3DEX2() -> void {
       {Path::program(), "f3dex2.json"},
       {stringDirname(Path::program()), "f3dex2.json"},
     };
-    for(auto& p : paths) if(loadDLConfig(p)) break;
-    if(!dl.loaded) return;
+    for(auto& p : paths) {
+      if(loadDLConfig(p)) { print("RSP: detectF3DEX2: loaded f3dex2.json from ", p, "\n"); break; }
+      print("RSP: detectF3DEX2: f3dex2.json not found at ", p, "\n");
+    }
+    // Last resort: the copy compiled into the binary (set by the frontend).
+    if(!dl.loaded && embeddedF3dJson) {
+      if(loadDLConfigData(embeddedF3dJson)) print("RSP: detectF3DEX2: loaded f3dex2.json from embedded fallback\n");
+      else                                  print("RSP: detectF3DEX2: embedded f3dex2.json failed to parse\n");
+    }
+    if(!dl.loaded) {
+      print("RSP: detectF3DEX2: no f3dex2.json could be loaded; display-list decoding disabled.\n");
+      return;
+    }
   }
 
   auto& r = ares::Nintendo64::rsp;

@@ -114,7 +114,12 @@ auto Program::load(string location) -> bool {
 #if ARES_DEBUG_TOOLS
   // Auto-detect RSPQ from ELF alongside the ROM
   if(emulator && emulator->name == "Nintendo 64") {
-    ares::Nintendo64::rsp.capture.autoDetect(location);
+    // Provide the compiled-in overlay descriptors as a last-resort fallback for
+    // autoDetect/detectF3DEX2 when the JSON files aren't found on disk.
+    auto& cap = ares::Nintendo64::rsp.capture;
+    if(!cap.embeddedRspqJson) cap.embeddedRspqJson = ares::ui::embeddedRspqJson;
+    if(!cap.embeddedF3dJson)  cap.embeddedF3dJson  = ares::ui::embeddedF3dJson;
+    cap.autoDetect(location);
 
     if(ares::ui::logDump.active()) {
       ares::Nintendo64::rsp.capture.enabled.store(true, std::memory_order_release);

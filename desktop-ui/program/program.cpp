@@ -1,6 +1,9 @@
 #include "../desktop-ui.hpp"
 #include "../ui/ui.hpp"
 #include <n64/n64.hpp>
+#if ARES_DEBUG_TOOLS
+  #include "embedded-overlays.hpp"  // generated: ares::ui::embeddedRspqJson / embeddedF3dJson
+#endif
 #include "platform.cpp"
 #include "load.cpp"
 #include "states.cpp"

@@ -284,8 +284,10 @@ struct RSPCapture {
     return false;
   }
 
-  auto loadConfig(const string& jsonPath) -> bool;
-  auto loadDLConfig(const string& jsonPath) -> bool;  //display-list microcode descriptor (F3DEX2 ...)
+  auto loadConfig(const string& jsonPath) -> bool;          //read file, then parse
+  auto loadConfigData(const string& jsonData) -> bool;      //parse RSPQ schema from memory
+  auto loadDLConfig(const string& jsonPath) -> bool;        //display-list microcode descriptor (F3DEX2 ...)
+  auto loadDLConfigData(const string& jsonData) -> bool;    //parse display-list descriptor from memory
   auto autoDetect(const string& romPath) -> bool;
   auto detectRspq() -> bool;
   auto refreshOverlayNames() -> void;
@@ -312,6 +314,13 @@ struct RSPCapture {
 
   // RDRAM address of the rspq_overlay_ucodes array (found via ELF)
   u64 ovlUcodesAddr = 0;
+
+  // Built-in last-resort copies of the overlay descriptors, injected by the
+  // frontend at startup from compiled-in resources. Used only after every on-disk
+  // path has failed, so a release/installed build still decodes RSPQ / F3DEX2 even
+  // when the JSON files aren't shipped next to the binary.
+  string embeddedRspqJson;
+  string embeddedF3dJson;
 
   // ELF path for lazy overlay name resolution
   string elfPath;
