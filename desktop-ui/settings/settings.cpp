@@ -79,8 +79,6 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/Rewind", general.rewind);
   bind(boolean, "General/RunAhead", general.runAhead);
   bind(boolean, "General/AutoSaveMemory", general.autoSaveMemory);
-  bind(boolean, "General/HomebrewMode", general.homebrewMode);
-  bind(boolean, "General/ForceInterpreter", general.forceInterpreter);
   bind(boolean, "General/NoFilePrompt", general.noFilePrompt);
   bind(boolean, "General/ShowAudioViewer", general.showAudioViewer);
   bind(boolean, "General/ShowManifestViewer", general.showManifestViewer);
@@ -100,6 +98,7 @@ auto Settings::process(bool load) -> void {
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);
+  bind(boolean, "Rewind/Mute", rewind.mute);
 
   bind(string,  "Paths/Home", paths.home);
   bind(string,  "Paths/Firmware", paths.firmware);
@@ -111,14 +110,23 @@ auto Settings::process(bool load) -> void {
   bind(string,  "Paths/SuperFamicom/BSMemory", paths.superFamicom.bsMemory);
   bind(string,  "Paths/SuperFamicom/SufamiTurbo", paths.superFamicom.sufamiTurbo);
 
-  bind(natural, "DebugServer/Port", debugServer.port);
-  bind(boolean, "DebugServer/Enabled", debugServer.enabled);
-  bind(boolean, "DebugServer/UseIPv4", debugServer.useIPv4);
+  bind(natural, "Developer/DebugServerPort", developer.debugServerPort);
+  bind(boolean, "Developer/DebugServerEnabled", developer.debugServerEnabled);
+  bind(boolean, "Developer/DebugServerUseIPv4", developer.debugServerUseIPv4);
+  bind(boolean, "Developer/HomebrewMode", developer.homebrewMode);
+  bind(boolean, "Developer/DeterministicEntropy", developer.deterministicEntropy);
+  bind(boolean, "Developer/ForceInterpreter", developer.forceInterpreter);
 
   bind(boolean, "Nintendo64/ExpansionPak", nintendo64.expansionPak);
-  bind(string, "Nintendo64/ControllerPakBankString", nintendo64.controllerPakBankString);
+  bind(string,  "Nintendo64/ControllerPakBankString", nintendo64.controllerPakBankString);
+  bind(string,  "Nintendo64/Quality", nintendo64.quality);
+  bind(boolean, "Nintendo64/Supersampling", nintendo64.supersampling);
+  bind(boolean, "Nintendo64/DisableVideoInterfaceProcessing", nintendo64.disableVideoInterfaceProcessing);
+  bind(boolean, "Nintendo64/WeaveDeinterlacing", nintendo64.weaveDeinterlacing);
 
   bind(boolean, "GameBoyAdvance/Player", gameBoyAdvance.player);
+
+  bind(boolean, "SuperFamicom/DeepBlackBoost", superFamicom.deepBlackBoost);
 
   bind(boolean, "MegaDrive/TMSS", megadrive.tmss);
 

@@ -28,6 +28,7 @@ enum ResultEnum {
   romNotFoundInDatabase,
   romNotFound,
   invalidROM,
+  wrongMediaType,
   couldNotParseManifest,
   noFirmware,
   otherError
@@ -37,6 +38,7 @@ struct LoadResult {
   ResultEnum result;
 
   string info;
+  string mediaType;
   string firmwareType;
   string firmwareSystemName;
   string firmwareRegion;

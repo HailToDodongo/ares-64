@@ -104,8 +104,8 @@ auto Nintendo64::load() -> LoadResult {
     if(result != successful) return result;
   }
 
-  ares::Nintendo64::option("Quality", settings.video.quality);
-  ares::Nintendo64::option("Supersampling", settings.video.supersampling);
+  ares::Nintendo64::option("Quality", settings.nintendo64.quality);
+  ares::Nintendo64::option("Supersampling", settings.nintendo64.supersampling);
 #if defined(VULKAN)
   ares::Nintendo64::option("Enable GPU acceleration", true);
 #else
@@ -120,8 +120,9 @@ auto Nintendo64::load() -> LoadResult {
 #endif
   ares::Nintendo64::option("Disable Video Interface Processing", settings.video.disableVideoInterfaceProcessing);
   ares::Nintendo64::option("Weave Deinterlacing", settings.video.weaveDeinterlacing);
-  ares::Nintendo64::option("Homebrew Mode", settings.general.homebrewMode);
-  ares::Nintendo64::option("Recompiler", !settings.general.forceInterpreter);
+  ares::Nintendo64::option("Homebrew Mode", settings.developer.homebrewMode);
+  ares::Nintendo64::option("Deterministic Entropy", settings.developer.deterministicEntropy);
+  ares::Nintendo64::option("Recompiler", !settings.developer.forceInterpreter);
   ares::Nintendo64::option("Expansion Pak", settings.nintendo64.expansionPak);
   ares::Nintendo64::option("Controller Pak Banks", settings.nintendo64.controllerPakBankString);
 

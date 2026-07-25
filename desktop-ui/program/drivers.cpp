@@ -108,6 +108,13 @@ auto Program::inputDriverUpdate() -> void {
   ruby::input.create();
   ruby::input.setContext((uintptr)AresApp::window);
   ruby::input.onChange(std::bind_front(&InputManager::eventInput, &inputManager));
+
+  if(!ruby::input.ready()) {
+    string driver = "SDL";
+    driverInitFailed(driver, "input", [&] { driverSettings.inputDriverUpdate(); });
+    return;
+  }
+
   inputManager.poll(true);
 }
 

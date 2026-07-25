@@ -101,6 +101,7 @@ auto CPU::synchronize() -> void {
     case Queue::SI_BUS_Write:  return si.writeFinished();
     case Queue::RTC_Tick:      return cartridge.rtc.tick();
     case Queue::EEPROM_Write:  return cartridge.eepromFinish();
+    case Queue::Flash_Complete: return cartridge.flash.finish();
     case Queue::DD_Clock_Tick:  return dd.rtc.tickClock();
     case Queue::DD_MECHA_Response:  return dd.mechaResponse();
     case Queue::DD_BM_Request:  return dd.bmRequest();
@@ -188,6 +189,10 @@ auto CPU::instructionPrologue(u64 address, u32 instruction) -> void {
   if(unlikely(profiler.enabled.load(std::memory_order_relaxed)))
     profiler.onInstruction(address, instruction);
 #endif
+}
+
+auto CPU::icacheFillLine(u64 vaddr, u32 paddr) -> void {
+  icache.line(vaddr).fill(paddr, *this);
 }
 
 template<bool Recompiled>

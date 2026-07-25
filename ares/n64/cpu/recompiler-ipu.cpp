@@ -92,7 +92,8 @@ auto CPU::Recompiler::jitMemoryOpcode(u32 instruction, u32 size, u32 mode,
   }
   if(emitSlowPath || emitStateKey.watchpointsActive() || (require64 && reservedInstruction64())
   || (store && size == Dual && (partialLeft || partialRight) && system.homebrewMode)
-  || (floating && !emitStateKey.coprocessor1Enabled())) {
+  || (floating && !emitStateKey.coprocessor1Enabled())
+  || !emitStateKey.rdramMapIdentity()) {
     return fallback();
   }
 
@@ -358,7 +359,6 @@ auto CPU::Recompiler::jitMemoryOpcode(u32 instruction, u32 size, u32 mode,
         mov32_u16(mem(reg(2), DcacheLineDirtyOff), imm(1));
       }
     }
-    if(storeConditional && (size == Word || size == Dual)) mov32_u8(SccLlbit, imm(0));
   } else if(floating) {
     and32(reg(3), reg(0), imm(size == Dual ? 0x08 : 0x0c));
     add64(reg(3), reg(2), reg(3));
@@ -2129,8 +2129,13 @@ auto CPU::Recompiler::emitSCC(u32 instruction, EmitPcMode pcMode) -> EmitExecute
     return EmitExecuteResult::MayFault;
   }
 
+  //CFC0
+  case 0x02: {
+    return EmitExecuteResult::Linear;
+  }
+
   //INVALID
-  case range2(0x02, 0x03): {
+  case 0x03: {
     setupCallf();
     callf(&CPU::INVALID);
     return EmitExecuteResult::MayFault;
@@ -2150,8 +2155,25 @@ auto CPU::Recompiler::emitSCC(u32 instruction, EmitPcMode pcMode) -> EmitExecute
     return EmitExecuteResult::MayFault;
   }
 
+  //CTC0
+  case 0x06: {
+    return EmitExecuteResult::Linear;
+  }
+
   //INVALID
-  case range10(0x06, 0x0f): {
+  case 0x07: {
+    setupCallf();
+    callf(&CPU::INVALID);
+    return EmitExecuteResult::MayFault;
+  }
+
+  //BC0
+  case 0x08: {
+    return EmitExecuteResult::Linear;
+  }
+
+  //INVALID
+  case range7(0x09, 0x0f): {
     setupCallf();
     callf(&CPU::INVALID);
     return EmitExecuteResult::MayFault;
@@ -2186,6 +2208,13 @@ auto CPU::Recompiler::emitSCC(u32 instruction, EmitPcMode pcMode) -> EmitExecute
   case 0x08: {
     setupCallf();
     callf(&CPU::TLBP);
+    return EmitExecuteResult::MayFault;
+  }
+
+  //RFE
+  case 0x10: {
+    setupCallf();
+    callf(&CPU::INVALID);
     return EmitExecuteResult::MayFault;
   }
 

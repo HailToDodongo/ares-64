@@ -218,7 +218,7 @@ namespace nall::GDB {
 
       case 'p': // read specific register (e.g.: "p15")
         if(hooks.regRead) {
-          u32 regIdx = cmdName.slice(1).integer();
+          u32 regIdx = cmdName.slice(1).hex();
           return hooks.regRead(regIdx);
         } else {
           return "00000000";
@@ -305,7 +305,7 @@ namespace nall::GDB {
 
       case 's': {
         if(cmdName.size() > 1) {
-          u64 address = cmdName.slice(1).integer();
+          u64 address = cmdName.slice(1).hex();
           printf("stepping at address unsupported, ignore (%016" PRIX64 ")\n", address);
         }
 

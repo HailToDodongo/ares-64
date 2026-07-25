@@ -61,6 +61,7 @@ auto RDP::power(bool reset) -> void {
   fillRectangle_ = {};
   io.bist = {};
   io.test = {};
+  if(!reset) mapIdentityWarned = 0;
 }
 
 }

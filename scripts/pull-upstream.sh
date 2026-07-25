@@ -18,6 +18,18 @@ DELETED=(
   desktop-ui/tools/tape.cpp
   desktop-ui/tools/tools.cpp
   desktop-ui/tools/tracer.cpp
+  # hiro settings panels; ImGui draws all of these now (see desktop-ui/ui).
+  # Only hotkeys.cpp, input.cpp, settings.cpp and settings.hpp are kept.
+  desktop-ui/settings/audio.cpp
+  desktop-ui/settings/cores.cpp
+  desktop-ui/settings/developer.cpp
+  desktop-ui/settings/emulators.cpp
+  desktop-ui/settings/firmware.cpp
+  desktop-ui/settings/home.cpp
+  desktop-ui/settings/importexport.cpp
+  desktop-ui/settings/options.cpp
+  desktop-ui/settings/paths.cpp
+  desktop-ui/settings/video.cpp
   ruby/video/glx.cpp
   ruby/video/wgl.cpp
   ruby/video/cgl.cpp

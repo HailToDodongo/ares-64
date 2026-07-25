@@ -80,7 +80,7 @@ auto Program::load(std::shared_ptr<Emulator> emulator, string location) -> bool 
 auto Program::load(string location) -> bool {
   Program::Guard guard;
 #if ARES_DEBUG_TOOLS
-  if(settings.debugServer.enabled) {
+  if(settings.developer.debugServerEnabled) {
     nall::GDB::server.reset();
   }
 #endif
@@ -156,10 +156,10 @@ auto Program::load(string location) -> bool {
   }
 
   showMessage({"Loaded ", Location::prefix(location)});
-
+  
 #if ARES_DEBUG_TOOLS
-  if(settings.debugServer.enabled) {
-    nall::GDB::server.open(settings.debugServer.port, settings.debugServer.useIPv4);
+  if(settings.developer.debugServerEnabled) {
+    nall::GDB::server.open(settings.developer.debugServerPort, settings.developer.debugServerUseIPv4);
     nall::GDB::server.onClientConnectCallback = []() {
       if (settings.boot.awaitGDBClient)
         program.pause(false);

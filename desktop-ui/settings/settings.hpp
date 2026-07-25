@@ -71,8 +71,6 @@ struct Settings : Markup::Node {
     bool rewind = false;
     bool runAhead = false;
     bool autoSaveMemory = true;
-    bool homebrewMode = false;
-    bool forceInterpreter = false;
     bool noFilePrompt = false;
     bool showAudioViewer = false;
     bool showManifestViewer = false;
@@ -97,8 +95,9 @@ struct Settings : Markup::Node {
   } general;
 
   struct Rewind {
-    u32 length = 100;
-    u32 frequency = 10;
+    u32 length = 80;
+    u32 frequency = 60;
+    bool mute = false;
   } rewind;
 
   struct Paths {
@@ -120,21 +119,32 @@ struct Settings : Markup::Node {
     string game[count];
   } recent;
 
-  struct DebugServer {
-    u32 port = 9123;
-    bool enabled = false;
-    bool useIPv4 = false;
-  } debugServer;
+  struct Developer {
+    u32  debugServerPort = 9123;
+    bool debugServerEnabled = false; // if enabled, server starts with ares
+    bool debugServerUseIPv4 = false; // forces IPv4 over IPv6
+    bool homebrewMode = false;
+    bool deterministicEntropy = false;
+    bool forceInterpreter = false;
+  } developer;
 
   struct Nintendo64 {
     bool expansionPak = true;
     u8 controllerPakBankCount = 1;
     string controllerPakBankString = "32KiB (Default)";
+    string quality = "SD";
+    bool supersampling = false;
+    bool disableVideoInterfaceProcessing = false;
+    bool weaveDeinterlacing = true;
   } nintendo64;
 
   struct GameBoyAdvance {
     bool player = false;
   } gameBoyAdvance;
+
+  struct SuperFamicom {
+    bool deepBlackBoost = false;
+  } superFamicom;
 
   struct MegaDrive {
     bool tmss = false;

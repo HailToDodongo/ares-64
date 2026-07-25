@@ -140,8 +140,8 @@ static void DrawOptionsPanel() {
   ImGui::TextDisabled("(?)");
   if(ImGui::IsItemHovered()) ImGui::SetTooltip("Helps safeguard game saves from being lost");
 
-  ImGui::Checkbox("Homebrew Development Mode", &settings.general.homebrewMode);
-  ImGui::Checkbox("Force Interpreter", &settings.general.forceInterpreter);
+  ImGui::Checkbox("Homebrew Development Mode", &settings.developer.homebrewMode);
+  ImGui::Checkbox("Force Interpreter", &settings.developer.forceInterpreter);
   ImGui::Checkbox("Disable requests for loading additional media", &settings.general.noFilePrompt);
 
   if(ImGui::CollapsingHeader("Nintendo 64 Settings")) {
@@ -178,37 +178,37 @@ static void DrawDebugPanel() {
 
   static char portStr[16] = {};
   if(portStr[0] == 0) {
-    snprintf(portStr, sizeof(portStr), "%d", (int)settings.debugServer.port);
+    snprintf(portStr, sizeof(portStr), "%d", (int)settings.developer.debugServerPort);
   }
 
   if(ImGui::InputText("Port", portStr, sizeof(portStr))) {
-    settings.debugServer.port = nall::string(portStr).integer();
+    settings.developer.debugServerPort = nall::string(portStr).integer();
     char check[16];
-    snprintf(check, sizeof(check), "%d", (int)settings.debugServer.port);
+    snprintf(check, sizeof(check), "%d", (int)settings.developer.debugServerPort);
     if(nall::string(check) != portStr) {
-      snprintf(portStr, sizeof(portStr), "%d", (int)settings.debugServer.port);
+      snprintf(portStr, sizeof(portStr), "%d", (int)settings.developer.debugServerPort);
     }
   }
   ImGui::SameLine();
   ImGui::TextDisabled("(?)");
   if(ImGui::IsItemHovered()) ImGui::SetTooltip("Safe range: 1024 - 32767");
 
-  if(ImGui::Checkbox("Use IPv4", &settings.debugServer.useIPv4)) {
+  if(ImGui::Checkbox("Use IPv4", &settings.developer.debugServerUseIPv4)) {
     nall::GDB::server.close();
-    if(settings.debugServer.enabled) {
-      nall::GDB::server.open(settings.debugServer.port, settings.debugServer.useIPv4);
+    if(settings.developer.debugServerEnabled) {
+      nall::GDB::server.open(settings.developer.debugServerPort, settings.developer.debugServerUseIPv4);
     }
   }
 
-  if(ImGui::Checkbox("Enabled", &settings.debugServer.enabled)) {
+  if(ImGui::Checkbox("Enabled", &settings.developer.debugServerEnabled)) {
     nall::GDB::server.close();
-    if(settings.debugServer.enabled) {
-      nall::GDB::server.open(settings.debugServer.port, settings.debugServer.useIPv4);
+    if(settings.developer.debugServerEnabled) {
+      nall::GDB::server.open(settings.developer.debugServerPort, settings.developer.debugServerUseIPv4);
     }
   }
 
-  if(settings.debugServer.enabled) {
-    ImGui::TextWrapped("%s", settings.debugServer.useIPv4
+  if(settings.developer.debugServerEnabled) {
+    ImGui::TextWrapped("%s", settings.developer.debugServerUseIPv4
       ? "Note: IPv4 mode binds to any device, enabling anyone in your network to access this server"
       : "Note: localhost only (for Windows/WSL: please use IPv4 instead)");
   }
