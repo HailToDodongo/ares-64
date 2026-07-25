@@ -64,11 +64,14 @@ auto Vulkan::load(Node::Object) -> bool {
   } else {
     #if defined(ANGRYLION)
     //angrylion (loaded right after this) provides rendering instead; stay quiet so it
-    //isn't reported as "no RDP rendering support".
+    //isn't reported as "no RDP rendering support", and leave hidden RDRAM to it rather
+    //than clearing a pointer it may already own.
     if(!angrylion.enable)
     #endif
-    platform->status("Vulkan Disabled: No RDP rendering support");
-    rdram.hidden.data = nullptr;
+    {
+      platform->status("Vulkan Disabled: No RDP rendering support");
+      rdram.hidden.data = nullptr;
+    }
   }
 
   return true;

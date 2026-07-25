@@ -111,11 +111,17 @@ auto Angrylion::load(Node::Object) -> bool {
   if(!enable) return true;
   delete implementation;
   implementation = new Angrylion::Implementation(rdram.ram.data, rdram.ram.size, rsp.dmem.data);
+
+  const uint8_t* buf = nullptr;
+  uint32_t entries = 0;
+  n64video_hidden_rdram_get(&buf, &entries);
+  rdram.hidden.data = (u8*)buf;
   platform->status("angrylion-rdp-plus enabled (CPU renderer)");
   return true;
 }
 
 auto Angrylion::unload() -> void {
+  rdram.hidden.data = nullptr;
   delete implementation;
   implementation = nullptr;
 }
