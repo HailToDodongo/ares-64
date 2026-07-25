@@ -113,23 +113,38 @@ static auto n64ToRGBA32(u32* dst, const u8* src, u32 w, u32 h, u8 format, u8 siz
   }
 }
 
-// Show only coverage/alpha channel as grayscale
-static auto coverageToGray(u32* dst, const u8* src, u32 w, u32 h, u8 format, u8 size) -> void {
+static auto coverageToGray(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
+                           u32 w, u32 h, u32 rdramAddr, u8 format, u8 size) -> void {
   u32 pixels = w * h;
   switch(size) {
-  case 3: // RGBA 32bpp: alpha is byte 3
+  case 3: // 32bpp: coverage occupies the top 3 bits of the alpha byte
     for(u32 i = 0; i < pixels; i++) {
-      u8 a = 255 - src[3];
-      dst[i] = 0xFF000000 | (a << 16) | (a << 8) | a;
-      src += 4;
+      u8 cvg = src[i * 4 + 3] >> 5;
+      u8 v = (u8)(cvg * 255 / 7);
+      dst[i] = 0xFF000000 | (v << 16) | (v << 8) | v;
     }
     break;
-  case 2: // RGBA 16bpp: coverage is bit 0
+  case 2: // 16bpp
     for(u32 i = 0; i < pixels; i++) {
-      u16 p = (src[0] << 8) | src[1];
-      u8 a = (p & 1) ? 0 : 255;
-      dst[i] = 0xFF000000 | (a << 16) | (a << 8) | a;
-      src += 2;
+      u32 byteOff = i * 2;
+      u16 p = (src[byteOff] << 8) | src[byteOff + 1];
+      u8 cvg;
+      if(format == 0) {
+        // RGBA 5551: only the coverage MSB fits in the colour word, so the low two
+        // bits have to come from hidden RDRAM (one byte per 16-bit word).
+        u32 hi = (rdramAddr + byteOff) / 2;
+        u8 hb = (hidden && hi < hdrSize) ? hidden[hi] : 0;
+        // angrylion tags entries never written since reset with HB_CLEAN (bit 2) and
+        // derives them from the colour word's LSB on read, do the same so untouched
+        // pixels show what the RDP would actually sample. parallel-RDP only ever
+        // stores 0..3 there, so this branch is inert for it.
+        u8 lo = (hb & 4) ? ((p & 1) ? 3 : 0) : (hb & 3);
+        cvg = (u8)(((p & 1) << 2) | lo);
+      } else {
+        cvg = (p >> 5) & 7;
+      }
+      u8 v = (u8)(cvg * 255 / 7);
+      dst[i] = 0xFF000000 | (v << 16) | (v << 8) | v;
     }
     break;
   default:
@@ -485,7 +500,11 @@ auto DrawFramebufferViewer() -> void {
   static std::vector<u32> pixelBuf;
   pixelBuf.resize(w * h);
   if(fbViewMode == 1) {
-    coverageToGray(pixelBuf.data(), rawBuf.data(), w, h, fmt, sz);
+    const u8* hidden = nullptr;
+    u32 hdrSize = 0;
+    mapHidden(hidden, hdrSize);
+    coverageToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, fmt, sz);
+    unmapHidden();
   } else if(fbViewMode == 2) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
