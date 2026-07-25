@@ -88,13 +88,31 @@ auto Settings::process(bool load) -> void {
   bind(boolean, "General/ShowRspViewer", general.showRspViewer);
   bind(boolean, "General/ShowCpuProfiler", general.showCpuProfiler);
   bind(boolean, "General/ShowFlameChart", general.showFlameChart);
-  bind(boolean, "General/ShowFramebufferViewer", general.showFramebufferViewer);
   bind(boolean, "General/ShowTmemViewer", general.showTmemViewer);
   bind(boolean, "General/ShowMemoryViewer", general.showMemoryViewer);
   bind(boolean, "General/ShowRegisterViewer", general.showRegisterViewer);
   bind(natural, "General/RegisterViewerComponents", general.registerViewerComponents);
   bind(boolean, "General/DpiOverride", general.dpiOverride);
   bind(natural, "General/DpiScalePercent", general.dpiScalePercent);
+
+  //Legacy single-viewer key: seeds viewer 1 so configs written before the viewer pool
+  //existed keep their open state. The per-viewer keys below override it when present.
+  bind(boolean, "General/ShowFramebufferViewer", framebufferViewers.instance[0].open);
+
+  for(u32 index : range(Settings::FramebufferViewers::count)) {
+    auto& fb = framebufferViewers.instance[index];
+    string base = {"FramebufferViewer/Viewer-", 1 + index, "/"};
+    string name;
+    name = {base, "Open"};       bind(boolean, name, fb.open);
+    name = {base, "Mode"};       bind(natural, name, fb.mode);
+    name = {base, "Scale"};      bind(natural, name, fb.scale);
+    name = {base, "DepthMin"};   bind(real,    name, fb.depthMin);
+    name = {base, "DepthMax"};   bind(real,    name, fb.depthMax);
+    name = {base, "DeltaMul"};   bind(natural, name, fb.deltaMul);
+    name = {base, "HeatWrites"}; bind(boolean, name, fb.heatWrites);
+    name = {base, "HeatReads"};  bind(boolean, name, fb.heatReads);
+    name = {base, "HeatScale"};  bind(natural, name, fb.heatScale);
+  }
 
   bind(natural, "Rewind/Length", rewind.length);
   bind(natural, "Rewind/Frequency", rewind.frequency);

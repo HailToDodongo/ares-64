@@ -80,7 +80,6 @@ struct Settings : Markup::Node {
     bool showRspViewer = false;
     bool showCpuProfiler = false;
     bool showFlameChart = false;
-    bool showFramebufferViewer = false;
     bool showTmemViewer = false;
     bool showMemoryViewer = false;
     bool showRegisterViewer = false;
@@ -93,6 +92,25 @@ struct Settings : Markup::Node {
     bool dpiOverride = false;
     u32  dpiScalePercent = 100;
   } general;
+
+  // A fixed pool of independent framebuffer viewer windows, so several can be open
+  // at once showing different views (e.g. colour in one, depth in another). ImGui
+  // persists each window's position/size in imgui.ini keyed on its title, so only
+  // the state ImGui doesn't know about is stored here.
+  struct FramebufferViewers {
+    static constexpr u32 count = 4;
+    struct Instance {
+      bool open = false;
+      u32  mode = 0;   //0=Color 1=Coverage 2=Depth 3=D-Delta 4=D-Hist 5=Overdraw 6=Z-Overdraw
+      u32  scale = 1;  //0=Integer 1=Linear
+      f64  depthMin = 0.0;
+      f64  depthMax = 100.0;
+      u32  deltaMul = 8;
+      bool heatWrites = true;
+      bool heatReads = true;
+      u32  heatScale = 8;
+    } instance[count];
+  } framebufferViewers;
 
   struct Rewind {
     u32 length = 80;

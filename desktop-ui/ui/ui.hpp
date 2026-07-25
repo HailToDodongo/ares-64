@@ -64,6 +64,7 @@ auto DrawRdpViewer() -> void;
 auto DrawRspViewer() -> void;
 auto DrawCpuProfiler() -> void;
 auto DrawFlameChart() -> void;
+// Draws every open framebuffer viewer window (see framebufferViewerCount).
 auto DrawFramebufferViewer() -> void;
 auto DrawTmemViewer() -> void;
 auto DrawMemoryViewer() -> void;
@@ -74,6 +75,14 @@ auto DrawStatusBar() -> void;
 // Refresh functions called from Program::main() in imgui mode
 auto RefreshTools() -> void;
 auto SyncWindowVisibility() -> void;
+
+// Framebuffer viewers. Several independent windows can be open at once, each with
+// its own view mode; the state lives in settings.framebufferViewers, and these
+// accessors keep the SDL_GPU texture bookkeeping private to framebuffer-viewer.cpp.
+inline constexpr u32 framebufferViewerCount = 4;
+auto FramebufferViewerTitle(u32 index) -> const char*;
+auto FramebufferViewerOpen(u32 index) -> bool;
+auto ToggleFramebufferViewer(u32 index) -> void;
 
 struct LogDumpState {
   bool rsp = false;          // dump the RSP command log
@@ -97,7 +106,6 @@ extern bool showRdpViewer;
 extern bool showRspViewer;
 extern bool showCpuProfiler;
 extern bool showFlameChart;
-extern bool showFramebufferViewer;
 extern bool showTmemViewer;
 extern bool showMemoryViewer;
 extern bool showRegisterViewer;

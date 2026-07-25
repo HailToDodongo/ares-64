@@ -7,26 +7,48 @@
 
 namespace ares::ui {
 
-bool showFramebufferViewer = false;
+static_assert(framebufferViewerCount == Settings::FramebufferViewers::count,
+              "UI viewer pool size must match the persisted settings array");
 
-static SDL_GPUTexture* fbTex = nullptr;
-static SDL_GPUTransferBuffer* fbXfer = nullptr;
-static u32  fbTexW = 0, fbTexH = 0;
-static int  fbViewMode = 0; // 0=Color, 1=Coverage, 2=Depth, 3=D-Delta, 4=D-Hist, 5=Overdraw, 6=Z-Overdraw
-static int  fbScaleMode = 1; // 0=Integer, 1=Linear
-static float fbDepthMin = 0.0f, fbDepthMax = 100.0f; // range for depth view
-static int  fbDeltaMul = 8; // multiplier for D-Delta mode (percent)
-static bool fbHeatWrites = true, fbHeatReads = true; // overdraw heatmap: which buffers to show
-static int  fbHeatScale = 8; // access count that maps to full-red in the heatmap
+// Every viewer draws in the same ImGui frame and the images are only sampled when
+// the frame is submitted, so each one needs its own texture: a shared texture would
+// leave all windows showing whichever instance uploaded last.
+struct FbTexture {
+  SDL_GPUTexture* tex = nullptr;
+  SDL_GPUTransferBuffer* xfer = nullptr;
+  u32 w = 0, h = 0;
+};
+static FbTexture fbTextures[framebufferViewerCount];
+
+// Window titles double as the ImGui ini key for each viewer's position/size, so they
+// must stay stable across releases.
+static const char* const fbTitles[framebufferViewerCount] = {
+  "Framebuffer 1", "Framebuffer 2", "Framebuffer 3", "Framebuffer 4",
+};
+
+auto FramebufferViewerTitle(u32 index) -> const char* {
+  return index < framebufferViewerCount ? fbTitles[index] : "Framebuffer";
+}
+
+auto FramebufferViewerOpen(u32 index) -> bool {
+  if(index >= framebufferViewerCount) return false;
+  return settings.framebufferViewers.instance[index].open;
+}
+
+auto ToggleFramebufferViewer(u32 index) -> void {
+  if(index >= framebufferViewerCount) return;
+  auto& open = settings.framebufferViewers.instance[index].open;
+  open = !open;
+}
 
 // Upload an RGBA8 buffer into a persistent SDL_GPU texture, recreating it on resize.
-static auto fbUpload(const u32* pixels, u32 w, u32 h) -> SDL_GPUTexture* {
+static auto fbUpload(FbTexture& t, const u32* pixels, u32 w, u32 h) -> SDL_GPUTexture* {
   SDL_GPUDevice* gpu = AresApp::gpu;
   if(!gpu || w == 0 || h == 0) return nullptr;
 
-  if(!fbTex || fbTexW != w || fbTexH != h) {
-    if(fbXfer) { SDL_ReleaseGPUTransferBuffer(gpu, fbXfer); fbXfer = nullptr; }
-    if(fbTex) { SDL_ReleaseGPUTexture(gpu, fbTex); fbTex = nullptr; }
+  if(!t.tex || t.w != w || t.h != h) {
+    if(t.xfer) { SDL_ReleaseGPUTransferBuffer(gpu, t.xfer); t.xfer = nullptr; }
+    if(t.tex) { SDL_ReleaseGPUTexture(gpu, t.tex); t.tex = nullptr; }
 
     SDL_GPUTextureCreateInfo texInfo = {};
     texInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -37,36 +59,36 @@ static auto fbUpload(const u32* pixels, u32 w, u32 h) -> SDL_GPUTexture* {
     texInfo.layer_count_or_depth = 1;
     texInfo.num_levels = 1;
     texInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    fbTex = SDL_CreateGPUTexture(gpu, &texInfo);
-    if(!fbTex) return nullptr;
+    t.tex = SDL_CreateGPUTexture(gpu, &texInfo);
+    if(!t.tex) return nullptr;
 
     SDL_GPUTransferBufferCreateInfo xferInfo = {};
     xferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     xferInfo.size = w * h * sizeof(u32);
-    fbXfer = SDL_CreateGPUTransferBuffer(gpu, &xferInfo);
-    if(!fbXfer) { SDL_ReleaseGPUTexture(gpu, fbTex); fbTex = nullptr; return nullptr; }
+    t.xfer = SDL_CreateGPUTransferBuffer(gpu, &xferInfo);
+    if(!t.xfer) { SDL_ReleaseGPUTexture(gpu, t.tex); t.tex = nullptr; return nullptr; }
 
-    fbTexW = w; fbTexH = h;
+    t.w = w; t.h = h;
   }
 
-  void* mapped = SDL_MapGPUTransferBuffer(gpu, fbXfer, true);
+  void* mapped = SDL_MapGPUTransferBuffer(gpu, t.xfer, true);
   if(!mapped) return nullptr;
   memcpy(mapped, pixels, w * h * sizeof(u32));
-  SDL_UnmapGPUTransferBuffer(gpu, fbXfer);
+  SDL_UnmapGPUTransferBuffer(gpu, t.xfer);
 
   SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu);
   SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmd);
   SDL_GPUTextureTransferInfo src = {};
-  src.transfer_buffer = fbXfer;
+  src.transfer_buffer = t.xfer;
   src.pixels_per_row = w;
   src.rows_per_layer = h;
   SDL_GPUTextureRegion dst = {};
-  dst.texture = fbTex;
+  dst.texture = t.tex;
   dst.w = w; dst.h = h; dst.d = 1;
   SDL_UploadToGPUTexture(copyPass, &src, &dst, true);
   SDL_EndGPUCopyPass(copyPass);
   SDL_SubmitGPUCommandBuffer(cmd);
-  return fbTex;
+  return t.tex;
 }
 
 static auto n64ToRGBA32(u32* dst, const u8* src, u32 w, u32 h, u8 format, u8 size) -> void {
@@ -166,7 +188,7 @@ static auto zDecompress(u16 z) -> u32 {
 // Decompresses the raw depth buffer, computes horizontal/vertical absolute
 // differences, then normalises to 0..255.
 static auto depthDelta(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
-                       u32 w, u32 h, u32 rdramAddr) -> void {
+                       u32 w, u32 h, u32 rdramAddr, int deltaMul) -> void {
   u32 pixels = w * h;
   std::vector<u64> zVals(pixels);
 
@@ -203,8 +225,8 @@ static auto depthDelta(u32* dst, const u8* src, const u8* hidden, u32 hdrSize,
       u64 cur = zVals[idx];
       u64 dh = (x + 1 < w) ? (cur > zVals[idx + 1] ? cur - zVals[idx + 1] : zVals[idx + 1] - cur) : 0;
       u64 dv = (y + 1 < h) ? (cur > zVals[idx + w] ? cur - zVals[idx + w] : zVals[idx + w] - cur) : 0;
-      u32 r = (u32)((float)dh * s * fbDeltaMul); if(r > 255) r = 255;
-      u32 g = (u32)((float)dv * s * fbDeltaMul); if(g > 255) g = 255;
+      u32 r = (u32)((float)dh * s * deltaMul); if(r > 255) r = 255;
+      u32 g = (u32)((float)dv * s * deltaMul); if(g > 255) g = 255;
       dst[idx] = 0xFF000000 | (r << 16) | (g << 8);
     }
   }
@@ -339,23 +361,17 @@ static auto heatmapToRGBA(u32* dst, u32 w, u32 h, u32 addr, u32 bpp,
   }
 }
 
-auto DrawFramebufferViewer() -> void {
-  if(!showFramebufferViewer) return;
+// The framebuffer/depth target the RDP is currently drawing into. Derived from the
+// shared command capture, so it is identical for every viewer: resolved once per
+// frame rather than per window.
+struct FbSource {
+  u32 addr = 0;       // colour image address
+  u32 depthAddr = 0;  // depth image address
+  u32 fmt = 0, sz = 0;
+  u32 w = 0, h = 0;
+};
 
-  ImGui::SetNextWindowSize(ImVec2(360_px, 320_px), ImGuiCond_FirstUseEver);
-  if(!ImGui::Begin("Framebuffer", &showFramebufferViewer)) {
-    ImGui::End();
-    settings.general.showFramebufferViewer = showFramebufferViewer;
-    return;
-  }
-
-  if(!emulator || emulator->name != "Nintendo 64") {
-    ImGui::TextUnformatted("Only available for Nintendo 64.");
-    ImGui::End();
-    settings.general.showFramebufferViewer = true;
-    return;
-  }
-
+static auto fbResolveSource() -> FbSource {
   auto& cap = ares::Nintendo64::rdp.capture;
   u32 committed = cap.committedCount.load(std::memory_order_acquire);
   if(committed > cap.maxCommands) committed = cap.maxCommands;
@@ -363,6 +379,7 @@ auto DrawFramebufferViewer() -> void {
   // Sticky state: persists across frames until a new Set_*_Image command arrives
   static u32 stickyAddr = 0, stickyFmt = 0, stickySz = 0, stickyW = 0, stickyDepth = 0;
   static u32 stickyColorPos = 0;
+  static u32 stickyH = 0;
 
   for(u32 i = committed; i > 0; i--) {
     auto& cmd = cap.commands[i - 1];
@@ -390,62 +407,111 @@ auto DrawFramebufferViewer() -> void {
     }
   }
 
-  u32 addr = stickyAddr, fmt = stickyFmt, sz = stickySz, w = stickyW, depthAddr = stickyDepth;
-  u32 colorPos = stickyColorPos;
+  // Sticky height from scissor commands (persists across buffer resets)
+  u32 maxY = 0;
+  for(u32 i = stickyColorPos; i < committed; i++) {
+    if(cap.commands[i].opcode == 0x2d) {
+      u32 lry = cap.commands[i].word0 & 0xFFF;
+      if(lry > maxY) maxY = lry;
+    }
+  }
+  if(maxY > 0) stickyH = (maxY >> 2) + 1;
+
+  FbSource s;
+  s.addr = stickyAddr;
+  s.depthAddr = stickyDepth;
+  s.fmt = stickyFmt;
+  s.sz = stickySz;
+  s.w = stickyW;
+  s.h = stickyH > 0 ? stickyH : stickyW * 3 / 4;
+  if(s.h < 1) s.h = 1;
+  return s;
+}
+
+static auto drawFramebufferViewerWindow(u32 index, const FbSource& source) -> void {
+  auto& view = settings.framebufferViewers.instance[index];
+  if(!view.open) return;
+
+  ImGui::SetNextWindowSize(ImVec2(360_px, 320_px), ImGuiCond_FirstUseEver);
+  if(!ImGui::Begin(fbTitles[index], &view.open)) {
+    ImGui::End();
+    return;
+  }
+
+  if(!emulator || emulator->name != "Nintendo 64") {
+    ImGui::TextUnformatted("Only available for Nintendo 64.");
+    ImGui::End();
+    return;
+  }
+
+  // The persisted state is width-typed for the settings file; ImGui wants int/float,
+  // so the widgets work on locals that are written straight back.
+  int viewMode = (int)view.mode;
+  int scaleMode = (int)view.scale;
+  float depthMin = (float)view.depthMin, depthMax = (float)view.depthMax;
+  int deltaMul = (int)view.deltaMul;
+  int heatScale = (int)view.heatScale;
 
   // View mode selector
   ImGui::SetNextItemWidth(80_px);
   const char* modes[] = {"Color", "Coverage", "Depth", "D-Delta", "D-Hist", "Overdraw", "Z-Overdraw"};
-  ImGui::Combo("##fbmode", &fbViewMode, modes, 7);
+  ImGui::Combo("##fbmode", &viewMode, modes, 7);
   ImGui::SameLine();
   // Scale mode selector
   ImGui::SetNextItemWidth(100_px);
   const char* scales[] = {"Integer", "Linear"};
-  ImGui::Combo("##fbscale", &fbScaleMode, scales, 2);
+  ImGui::Combo("##fbscale", &scaleMode, scales, 2);
 
   // Depth range sliders — visible in depth / histogram mode.
-  if(fbViewMode == 2 || fbViewMode == 4) {
+  if(viewMode == 2 || viewMode == 4) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(200_px);
-    ImGui::DragFloatRange2("##depthRange", &fbDepthMin, &fbDepthMax, 0.1f, 0.0f, 100.0f,
+    ImGui::DragFloatRange2("##depthRange", &depthMin, &depthMax, 0.1f, 0.0f, 100.0f,
                            "%.2f%%", "%.2f%%", ImGuiSliderFlags_AlwaysClamp);
-    if(fbDepthMin < 0.0f)   fbDepthMin = 0.0f;
-    if(fbDepthMax > 100.0f) fbDepthMax = 100.0f;
-    if(fbDepthMin > fbDepthMax) { float t = fbDepthMin; fbDepthMin = fbDepthMax; fbDepthMax = t; }
+    if(depthMin < 0.0f)   depthMin = 0.0f;
+    if(depthMax > 100.0f) depthMax = 100.0f;
+    if(depthMin > depthMax) { float t = depthMin; depthMin = depthMax; depthMax = t; }
   }
   // Delta multiplier — visible only in D-Delta mode.
-  if(fbViewMode == 3) {
+  if(viewMode == 3) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120_px);
-    ImGui::SliderInt("##deltaMul", &fbDeltaMul, 1, 128, "x%d");
+    ImGui::SliderInt("##deltaMul", &deltaMul, 1, 128, "x%d");
   }
   // Overdraw heatmap controls — visible in either heatmap mode (Overdraw / Z-Overdraw).
-  if(fbViewMode == 5 || fbViewMode == 6) {
+  if(viewMode == 5 || viewMode == 6) {
     ImGui::SameLine();
-    ImGui::Checkbox("Writes", &fbHeatWrites);
+    ImGui::Checkbox("Writes", &view.heatWrites);
     ImGui::SameLine();
-    ImGui::Checkbox("Reads", &fbHeatReads);
+    ImGui::Checkbox("Reads", &view.heatReads);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120_px);
-    ImGui::SliderInt("##heatScale", &fbHeatScale, 1, 64, "max %d");
+    ImGui::SliderInt("##heatScale", &heatScale, 1, 64, "max %d");
   }
   ImGui::SameLine();
 
+  view.mode = (u32)viewMode;
+  view.scale = (u32)scaleMode;
+  view.depthMin = depthMin;
+  view.depthMax = depthMax;
+  view.deltaMul = (u32)deltaMul;
+  view.heatScale = (u32)heatScale;
+
   // Modes reading the depth/Z buffer: Depth, D-Delta, D-Hist (visualizations) and Z-Overdraw.
-  bool usesDepthAddr = (fbViewMode >= 2 && fbViewMode <= 4) || fbViewMode == 6;
-  u32 readAddr = usesDepthAddr ? depthAddr : addr;
+  bool usesDepthAddr = (viewMode >= 2 && viewMode <= 4) || viewMode == 6;
+  u32 readAddr = usesDepthAddr ? source.depthAddr : source.addr;
+  u32 fmt = source.fmt, sz = source.sz;
+  u32 w = source.w, h = source.h;
 
   if(readAddr == 0) {
     ImGui::TextUnformatted(usesDepthAddr ? "No depth buffer configured." : "No framebuffer configured.");
     ImGui::End();
-    settings.general.showFramebufferViewer = true;
     return;
   }
 
   if(w == 0 || w > 4096) {
     ImGui::TextUnformatted("No framebuffer configured.");
     ImGui::End();
-    settings.general.showFramebufferViewer = true;
     return;
   }
 
@@ -453,24 +519,11 @@ auto DrawFramebufferViewer() -> void {
   if(bpp == 0) {
     ImGui::TextUnformatted("Unsupported pixel size.");
     ImGui::End();
-    settings.general.showFramebufferViewer = true;
     return;
   }
 
-  // Sticky height from scissor commands (persists across buffer resets)
-  static u32 stickyH = 0;
-  u32 maxY = 0;
-  for(u32 i = colorPos; i < committed; i++) {
-    if(cap.commands[i].opcode == 0x2d) {
-      u32 lry = cap.commands[i].word0 & 0xFFF;
-      if(lry > maxY) maxY = lry;
-    }
-  }
-  if(maxY > 0) stickyH = (maxY >> 2) + 1;
-  u32 h = stickyH > 0 ? stickyH : w * 3 / 4;
-  if(h < 1) h = 1;
-
-  // Read from RDRAM
+  // Read from RDRAM. Shared scratch: each viewer consumes these fully before the
+  // next one runs, so reusing them just avoids a realloc per window per frame.
   static std::vector<u8> rawBuf;
   u32 byteCount = w * h * bpp;
   rawBuf.resize(byteCount);
@@ -499,39 +552,39 @@ auto DrawFramebufferViewer() -> void {
   // Convert to RGBA32 texture
   static std::vector<u32> pixelBuf;
   pixelBuf.resize(w * h);
-  if(fbViewMode == 1) {
+  if(viewMode == 1) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
     mapHidden(hidden, hdrSize);
     coverageToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, fmt, sz);
     unmapHidden();
-  } else if(fbViewMode == 2) {
+  } else if(viewMode == 2) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
     mapHidden(hidden, hdrSize);
-    depthToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, fbDepthMin * 0.01f, fbDepthMax * 0.01f);
+    depthToGray(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, depthMin * 0.01f, depthMax * 0.01f);
     unmapHidden();
-  } else if(fbViewMode == 3) {
+  } else if(viewMode == 3) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
     mapHidden(hidden, hdrSize);
-    depthDelta(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr);
+    depthDelta(pixelBuf.data(), rawBuf.data(), hidden, hdrSize, w, h, readAddr, deltaMul);
     unmapHidden();
-  } else if(fbViewMode == 4) {
+  } else if(viewMode == 4) {
     const u8* hidden = nullptr;
     u32 hdrSize = 0;
     mapHidden(hidden, hdrSize);
     u32 histW = 512, histH = 256;
     pixelBuf.resize(histW * histH);
     depthHistogram(pixelBuf.data(), histW, histH, rawBuf.data(), hidden, hdrSize, w, h, readAddr,
-                   fbDepthMin * 0.01f, fbDepthMax * 0.01f);
+                   depthMin * 0.01f, depthMax * 0.01f);
     unmapHidden();
     w = histW; h = histH;
-  } else if(fbViewMode == 5 || fbViewMode == 6) {  // Overdraw (color) / Z-Overdraw (depth)
+  } else if(viewMode == 5 || viewMode == 6) {  // Overdraw (color) / Z-Overdraw (depth)
     const u8 *writes = nullptr, *reads = nullptr; u32 entries = 0;
     if(ares::Nintendo64::angrylion.heatmap(writes, reads, entries)) {
       heatmapToRGBA(pixelBuf.data(), w, h, readAddr, bpp, writes, reads, entries,
-                    fbHeatWrites, fbHeatReads, fbHeatScale);
+                    view.heatWrites, view.heatReads, heatScale);
     } else {
       memset(pixelBuf.data(), 0x10, w * h * 4);  // overdraw heatmap requires the angrylion renderer
     }
@@ -541,12 +594,12 @@ auto DrawFramebufferViewer() -> void {
 
   // The overdraw / Z-overdraw heatmaps are only produced by the angrylion renderer
   // (paraLLEl-RDP doesn't expose per-pixel access counts).
-  bool overdrawUnavailable = (fbViewMode == 5 || fbViewMode == 6) && !ares::Nintendo64::angrylion.enable;
+  bool overdrawUnavailable = (viewMode == 5 || viewMode == 6) && !ares::Nintendo64::angrylion.enable;
 
   // Upload texture
-  SDL_GPUTexture* tex = overdrawUnavailable ? nullptr : fbUpload(pixelBuf.data(), w, h);
+  SDL_GPUTexture* tex = overdrawUnavailable ? nullptr : fbUpload(fbTextures[index], pixelBuf.data(), w, h);
 
-  const char* modeTxt = fbViewMode == 6 ? "Z-Overdraw" : fbViewMode == 5 ? "Overdraw" : fbViewMode == 4 ? "D-Hist" : fbViewMode == 3 ? "D-Delta" : fbViewMode == 2 ? "Depth" : fbViewMode == 1 ? "Cvg" : "Color";
+  const char* modeTxt = viewMode == 6 ? "Z-Overdraw" : viewMode == 5 ? "Overdraw" : viewMode == 4 ? "D-Hist" : viewMode == 3 ? "D-Delta" : viewMode == 2 ? "Depth" : viewMode == 1 ? "Cvg" : "Color";
   ImGui::Text("%s  addr=0x%06X  %ux%u  fmt=%u sz=%u", modeTxt, readAddr, w, h, fmt, sz);
 
   if(overdrawUnavailable) {
@@ -554,7 +607,7 @@ auto DrawFramebufferViewer() -> void {
   } else {
     auto avail = ImGui::GetContentRegionAvail();
     float scale;
-    if(fbScaleMode == 0) {
+    if(scaleMode == 0) {
       // Integer scale: largest integer multiple that fits
       float maxW = std::floor(avail.x / (float)w);
       float maxH = std::floor(avail.y / (float)h);
@@ -575,7 +628,15 @@ auto DrawFramebufferViewer() -> void {
   }
 
   ImGui::End();
-  settings.general.showFramebufferViewer = true;
+}
+
+auto DrawFramebufferViewer() -> void {
+  bool any = false;
+  for(u32 i = 0; i < framebufferViewerCount; i++) any |= settings.framebufferViewers.instance[i].open;
+  if(!any) return;
+
+  FbSource source = fbResolveSource();
+  for(u32 i = 0; i < framebufferViewerCount; i++) drawFramebufferViewerWindow(i, source);
 }
 
 }  // namespace ares::ui

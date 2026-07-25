@@ -291,7 +291,6 @@ auto nall::main(Arguments arguments) -> void {
   ares::ui::showRspViewer = settings.general.showRspViewer;
   ares::ui::showCpuProfiler = settings.general.showCpuProfiler;
   ares::ui::showFlameChart = settings.general.showFlameChart;
-  ares::ui::showFramebufferViewer = settings.general.showFramebufferViewer;
   ares::ui::showTmemViewer = settings.general.showTmemViewer;
   ares::ui::showMemoryViewer = settings.general.showMemoryViewer;
   ares::ui::showRegisterViewer = settings.general.showRegisterViewer;

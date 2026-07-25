@@ -80,7 +80,6 @@ auto SyncWindowVisibility() -> void {
   settings.general.showRspViewer         = showRspViewer;
   settings.general.showCpuProfiler       = showCpuProfiler;
   settings.general.showFlameChart        = showFlameChart;
-  settings.general.showFramebufferViewer = showFramebufferViewer;
   settings.general.showTmemViewer        = showTmemViewer;
   settings.general.showMemoryViewer      = showMemoryViewer;
   settings.general.showRegisterViewer    = showRegisterViewer;

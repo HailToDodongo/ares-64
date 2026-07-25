@@ -230,7 +230,16 @@ static void DrawToolsMenu() {
   if(ImGui::MenuItem("RSP Commands")) showRspViewer = true;
   if(ImGui::MenuItem("CPU Profiler")) showCpuProfiler = true;
   if(ImGui::MenuItem("Flame Chart")) showFlameChart = true;
-  if(ImGui::MenuItem("Framebuffer")) showFramebufferViewer = true;
+  // Several framebuffer viewers can be open at once (one per view mode); each is
+  // toggled individually so a closed one can be brought back without disturbing the rest.
+  if(ImGui::BeginMenu("Framebuffer")) {
+    for(u32 i = 0; i < framebufferViewerCount; i++) {
+      if(ImGui::MenuItem(FramebufferViewerTitle(i), nullptr, FramebufferViewerOpen(i))) {
+        ToggleFramebufferViewer(i);
+      }
+    }
+    ImGui::EndMenu();
+  }
   if(ImGui::MenuItem("TMEM")) showTmemViewer = true;
   if(ImGui::MenuItem("Memory Editor")) showMemoryViewer = true;
   if(ImGui::MenuItem("Registers")) showRegisterViewer = true;
