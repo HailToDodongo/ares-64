@@ -62,6 +62,9 @@ auto RDP::power(bool reset) -> void {
   io.bist = {};
   io.test = {};
   if(!reset) mapIdentityWarned = 0;
+#if ARES_DEBUG_TOOLS
+  capture.resetTimeline();
+#endif
 }
 
 }

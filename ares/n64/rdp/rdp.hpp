@@ -41,6 +41,11 @@ struct RDPCapture {
     timeline[w % maxTimeline] = {start, count};
     timelineWrite.store(w + 1, std::memory_order_release);
   }
+
+  // Machine reset / new game: see RSPCapture::resetTimeline.
+  auto resetTimeline() -> void {
+    timelineWrite.store(0, std::memory_order_release);
+  }
 };
 
 struct RDP : Thread, Memory::RCP<RDP> {

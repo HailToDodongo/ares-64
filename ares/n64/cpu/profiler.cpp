@@ -430,6 +430,17 @@ auto CPU::Profiler::setEnabled(bool value) -> void {
   cpu.updatePrologueHook();
 }
 
+// Machine reset / new game. now() is derived from cpu.profile.cpuCycles, which is
+// not reset by CPU::power(), so timestamps keep climbing across a reset and stale
+// spans would never scroll out of the flame chart's window on their own. Worse,
+// frames left on callStack when the CPU was reset can never be popped, so their
+// "ongoing" bars would stay pinned to the right edge forever. Symbols are keyed to
+// the ROM and reloaded separately on game load, so they survive.
+auto CPU::Profiler::power() -> void {
+  clearStats();  //stats + call stacks + the span ring
+  viMarkWrite.store(0, std::memory_order_release);
+}
+
 auto CPU::Profiler::clearStats() -> void {
   stats.clear();
   frameStats.clear();

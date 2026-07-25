@@ -1421,6 +1421,7 @@ struct CPU : Thread {
     OpenFrame openFrames[maxOpenFrames] = {};
     std::atomic<u32> openDepth{0};
     auto syncOpenFrames() -> void;  //re-publish from callStack; call after any mutation
+    auto power() -> void;           //machine reset / new game: drop all captured state
 
     // VI framebuffer-swap markers for the flame chart, in absolute now() ticks.
     // Appended in onFrame() (called at each presented swap); the UI draws the ones

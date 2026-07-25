@@ -185,6 +185,9 @@ auto RSP::power(bool reset) -> void {
 
   pipeline = {};
   profile = {};
+#if ARES_DEBUG_TOOLS
+  capture.resetTimeline();
+#endif
   dma = {};
   status.semaphore = 0;
   status.halted = 1;

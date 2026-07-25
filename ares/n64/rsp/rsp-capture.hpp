@@ -227,6 +227,20 @@ struct RSPCapture {
     haltWrite.store(w + 1, std::memory_order_release);
   }
 
+  // Machine reset / new game: drop the flame chart's timeline state. The wall clock
+  // it is plotted against (now()) keeps counting across a reset, so without this the
+  // previous run's spans stay in the window instead of scrolling out, and a halt left
+  // open at reset would draw a live bar that never closes.
+  auto resetTimeline() -> void {
+    timelineWrite.store(0, std::memory_order_release);
+    haltWrite.store(0, std::memory_order_release);
+    segWall = 0;
+    lastWall = 0;
+    lastHalted = true;  //the RSP boots halted
+    haltOpen.store(false, std::memory_order_release);
+    haltStartWall.store(0, std::memory_order_relaxed);
+  }
+
   // JSON config loaded flag
   bool configLoaded = false;
 

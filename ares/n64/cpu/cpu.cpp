@@ -229,6 +229,7 @@ auto CPU::power(bool reset) -> void {
   emuxState = {};
   fenv.setRound(float_env::toNearest);
   context.setMode();
+  profiler.power();
 
   if constexpr(Accuracy::CPU::Recompiler) {
     auto buffer = ares::Memory::FixedAllocator::get().tryAcquire(63_MiB);
