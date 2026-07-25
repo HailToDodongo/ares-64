@@ -1404,6 +1404,24 @@ struct CPU : Thread {
     std::vector<Span> timeline;          //ring buffer, sized to maxSpans when enabled
     std::atomic<u64> timelineWrite{0};   //monotonic append count
 
+    // Still-open calls, published for the flame chart. A Span only reaches the ring
+    // when its call *returns*, so a function that is still running has no entry and
+    // would be drawn as a gap rather than a bar. This mirrors the live callStack into
+    // a fixed POD array the UI thread can sample: callStack itself is a std::vector the
+    // emu thread reallocates, so reading it cross-thread is not safe. Slots are filled
+    // before openDepth is published with release, so a reader that acquires openDepth
+    // sees initialized entries; a pop+push racing the read can still hand it one stale
+    // frame, which is cosmetic for a live view (the UI clamps implausible starts).
+    struct OpenFrame {
+      u64 start = 0;       //absolute now() tick at which the call was entered
+      u32 funcAddr = 0;
+      bool isException = false;
+    };
+    static constexpr u32 maxOpenFrames = 128;  //deeper frames are off-chart anyway
+    OpenFrame openFrames[maxOpenFrames] = {};
+    std::atomic<u32> openDepth{0};
+    auto syncOpenFrames() -> void;  //re-publish from callStack; call after any mutation
+
     // VI framebuffer-swap markers for the flame chart, in absolute now() ticks.
     // Appended in onFrame() (called at each presented swap); the UI draws the ones
     // that fall within its window as vertical "VI" lines.

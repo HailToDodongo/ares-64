@@ -16,6 +16,19 @@ static constexpr f64 ticksPerMicrosecond = 187.5;
 
 using Span = ares::Nintendo64::CPU::Profiler::Span;
 
+// A CPU span placed on the window's timeline. Mirrors Profiler::Span (which only
+// ever describes a *completed* call) plus an `ongoing` flag for calls that are
+// still on the stack: those are synthesised from Profiler::openFrames and run to
+// the right edge, so a long function that hasn't returned yet draws as a bar
+// instead of a gap.
+struct CpuSpan {
+  u64 start = 0, end = 0;
+  u32 funcAddr = 0;
+  u16 depth = 0;
+  bool isException = false;
+  bool ongoing = false;
+};
+
 // A flattened RSP command span, window-relative (tick 0 = window start).
 struct RspSpan {
   u64 start = 0, end = 0;
@@ -126,7 +139,7 @@ auto DrawFlameChart() -> void {
     autoActive = true;
   }
 
-  static std::vector<Span> spans;
+  static std::vector<CpuSpan> spans;
   static std::vector<RspSpan> rspSpans;
   static std::vector<RdpSpan> rdpSpans;
   static std::vector<std::pair<u64, u64>> haltSpans;  //window-relative RSP halt intervals
@@ -192,14 +205,43 @@ auto DrawFlameChart() -> void {
         g = decimGen;
       }
     }
-    Span t = s;
-    t.start = t.start > winStart ? t.start - winStart : 0;
-    t.end   = t.end   > winStart ? t.end   - winStart : 0;
+    CpuSpan t;
+    t.funcAddr = s.funcAddr;
+    t.depth = s.depth;
+    t.isException = s.isException;
+    t.start = s.start > winStart ? s.start - winStart : 0;
+    t.end   = s.end   > winStart ? s.end   - winStart : 0;
     spans.push_back(t);
   }
   ringFull = (n == prof.maxSpans);  //walked the whole ring; oldest may be dropped
+
+  // Calls that are still on the stack. popFrame() is what appends to the ring, so
+  // a function that entered before the window (or inside it) and has not returned
+  // yet contributes nothing above — the chart would show a hole exactly where the
+  // most interesting long-running call is. Synthesise a span per open frame that
+  // runs to the right edge (= now). Added after the decimation loop so these are
+  // never dropped, and before the sort so they interleave correctly.
+  {
+    u32 od = prof.openDepth.load(std::memory_order_acquire);
+    od = std::min<u32>(od, ares::Nintendo64::CPU::Profiler::maxOpenFrames);
+    for(u32 d = 0; d < od; d++) {
+      const auto& of = prof.openFrames[d];
+      //A pop+push racing this read can hand us a stale slot; drop anything that
+      //cannot be a live frame rather than drawing a bar off in the future.
+      if(of.start > rightEdge) continue;
+      CpuSpan t;
+      t.start = of.start > winStart ? of.start - winStart : 0;
+      t.end = rightEdge - winStart;
+      t.funcAddr = of.funcAddr;
+      t.depth = (u16)d;
+      t.isException = of.isException;
+      t.ongoing = true;
+      spans.push_back(t);
+    }
+  }
+
   std::sort(spans.begin(), spans.end(),
-            [](const Span& a, const Span& b) { return a.start < b.start; });
+            [](const CpuSpan& a, const CpuSpan& b) { return a.start < b.start; });
 
   rspSpans.clear();
   u64 rw = rcap.timelineWrite.load(std::memory_order_acquire);
@@ -407,20 +449,24 @@ auto DrawFlameChart() -> void {
   rowMaxX.assign((size_t)maxDepth + 2, -1e9f);
   f32 canvasR = origin.x + avail.x;
   f32 canvasB = origin.y + avail.y;
-  const Span* hover = nullptr;
+  const CpuSpan* hover = nullptr;
   for(auto it = spans.begin(); it != spans.end(); ++it) {
-    const Span& s = *it;
+    const CpuSpan& s = *it;
     if(s.start > viewEnd) break;     //sorted by start: nothing further can overlap
     if(s.end < viewStart) continue;  //entirely left of the view
     f32 x0 = origin.x + (f32)(((s64)s.start - (s64)viewStart) * pxPerTick);
     f32 x1 = origin.x + (f32)(((s64)s.end - (s64)viewStart) * pxPerTick);
     f32& lx = rowMaxX[s.depth];
-    if(x1 <= lx + 1.0f) continue;    //less than a pixel of new content in this row
+    //ongoing calls are the point of the lane: never let coalescing drop one
+    if(!s.ongoing && x1 <= lx + 1.0f) continue;  //<1px of new content in this row
     if(x1 - x0 < 1.0f) x1 = x0 + 1.0f;
     x0 = std::max(x0, origin.x);
     x1 = std::min(x1, canvasR);
     if(x1 <= x0) continue;
-    lx = x1;
+    //An ongoing bar reaches the right edge, so folding it into the row's coalescing
+    //state would suppress everything drawn after it at this depth — real spans from
+    //another thread's stack share these depth lanes. Draw it, but leave lx alone.
+    if(!s.ongoing) lx = x1;
     f32 y0 = lanesTop + s.depth * rowH;
     f32 y1 = y0 + rowH - 1.0f;
     if(y0 > canvasB) continue;
@@ -435,8 +481,16 @@ auto DrawFlameChart() -> void {
     dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, w > 4.0_px ? 2.0_px : 0.0f);
     if(w > 3.0_px) dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 90), 2.0_px);
 
+    // Unfinished calls have no real right edge: cap them with a bright bar at
+    // "now" so they don't read as a call that happened to end at the view edge.
+    if(s.ongoing) {
+      dl->AddRectFilled(ImVec2(std::max(x0, x1 - 2.0_px), y0), ImVec2(x1, y1),
+                        IM_COL32(255, 220, 80, 255));
+    }
+
     if(w > 28.0_px) {
       string name = prof.labelFor(s.funcAddr);
+      if(s.ongoing) name.append("...");
       dl->PushClipRect(ImVec2(x0 + 2_px, y0), ImVec2(x1 - 1_px, y1), true);
       dl->AddText(ImVec2(x0 + 3_px, y0 + 2_px), IM_COL32(15, 15, 18, 255), name.data());
       dl->PopClipRect();
@@ -609,8 +663,12 @@ auto DrawFlameChart() -> void {
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(name.data());
     ImGui::Separator();
-    ImGui::Text("duration: %s  (%.2f%% of window)", dbuf, pct);
+    //An ongoing call's width is "so far", not a duration: it has not returned, and
+    //if it entered before the window the elapsed time shown is truncated as well.
+    if(hover->ongoing) ImGui::Text("running for: %s+  (%.2f%% of window)", dbuf, pct);
+    else               ImGui::Text("duration: %s  (%.2f%% of window)", dbuf, pct);
     ImGui::Text("depth: %u", hover->depth);
+    if(hover->ongoing) ImGui::TextDisabled("(still on the call stack)");
     ImGui::EndTooltip();
   }
 

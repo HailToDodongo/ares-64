@@ -232,7 +232,24 @@ auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
     f.sp = sp;             //caller's $sp at the call site (see the unwind backstop above)
     f.entryCycle = now();
     callStack.push_back(f);
+    syncOpenFrames();
   }
+}
+
+// Re-publish the open call stack for the flame chart (see Profiler::openFrames).
+// Cheap enough to call from every callStack mutation: stacks are shallow in
+// practice and popFrame() already does two hash-map updates per call.
+auto CPU::Profiler::syncOpenFrames() -> void {
+  if(!recordTimeline.load(std::memory_order_relaxed)) {
+    openDepth.store(0, std::memory_order_release);
+    return;
+  }
+  u32 n = (u32)min<size_t>(callStack.size(), maxOpenFrames);
+  for(u32 i : range(n)) {
+    auto& f = callStack[i];
+    openFrames[i] = {f.entryCycle, f.funcAddr, f.isException};
+  }
+  openDepth.store(n, std::memory_order_release);
 }
 
 // Memory-bus bytes committed to RDRAM during the current frame's execution.
@@ -251,6 +268,7 @@ auto CPU::Profiler::onBusAccess(bool toRDRAM, u64 bytes) -> void {
 auto CPU::Profiler::popFrame() -> bool {
   Frame frame = callStack.back();
   callStack.pop_back();
+  syncOpenFrames();
   if(frame.isException && excActive) excActive--;  //handler frame closed
   u64 nowT = now();
   u64 incl = nowT > frame.entryCycle ? nowT - frame.entryCycle : 0;  //guard sync-boundary -1
@@ -318,6 +336,7 @@ auto CPU::Profiler::switchStack(u32 sp) -> void {
   } else {
     spLo = spHi = sp;  //unseen thread: observe its calls fresh
   }
+  syncOpenFrames();
 
   // Bound memory: drop the least-recently-active parked thread's frames.
   while(suspended.size() > maxStacks) {
@@ -370,6 +389,7 @@ auto CPU::Profiler::onException(u32 code) -> void {
   f.entryCycle = now();
   f.isException = true;
   callStack.push_back(f);
+  syncOpenFrames();
   excActive++;  //freeze stack-switching until the matching eret (see onInstruction)
 }
 
@@ -405,6 +425,7 @@ auto CPU::Profiler::setEnabled(bool value) -> void {
   callStack.clear();
   suspended.clear();
   haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
+  syncOpenFrames();
   if(value && timeline.size() != maxSpans) timeline.resize(maxSpans);
   cpu.updatePrologueHook();
 }
@@ -416,6 +437,7 @@ auto CPU::Profiler::clearStats() -> void {
   callStack.clear();
   suspended.clear();
   haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
+  syncOpenFrames();
   frameCount = 0;
   timelineWrite.store(0, std::memory_order_release);
 }
