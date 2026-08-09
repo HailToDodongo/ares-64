@@ -135,6 +135,17 @@ target_link_libraries(imgui PUBLIC SDL3::SDL3)
 add_library(ares::imgui ALIAS imgui)
 set_target_properties(imgui PROPERTIES FOLDER thirdparty PREFIX "")
 
+# quickjs-ng (v0.15.1, same tree as pyrite64/vendored/quickjs-ng): JS runtime for the
+# ares-test scripting host. Core interpreter only — no libc, no CLI, no examples.
+if(ARES_BUILD_HEADLESS)
+  set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(QJS_BUILD_CLI_STATIC OFF CACHE BOOL "" FORCE)
+  set(QJS_BUILD_LIBC OFF CACHE BOOL "" FORCE)
+  set(QJS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  add_subdirectory(quickjs-ng EXCLUDE_FROM_ALL)
+  set_target_properties(qjs PROPERTIES FOLDER thirdparty PREFIX "")
+endif()
+
 set_target_properties(ymfm PROPERTIES FOLDER thirdparty PREFIX "")
 set_target_properties(tzxfile PROPERTIES FOLDER thirdparty PREFIX "")
 set_target_properties(sljit PROPERTIES FOLDER thirdparty PREFIX "")

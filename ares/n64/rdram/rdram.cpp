@@ -15,12 +15,14 @@ auto RDRAM::load(Node::Object parent) -> void {
   } else {
     ram.allocate(4_MiB + 4_MiB);
   }
+  hidden.allocateFallback(ram.size);
 
   debugger.load(node);
 }
 
 auto RDRAM::unload() -> void {
   debugger = {};
+  hidden.releaseFallback();
   ram.reset();
   node.reset();
 }

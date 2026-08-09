@@ -12,6 +12,7 @@
 !/nall
 !/ruby
 !/scripts
+!/test-runner
 !/tests
 !/thirdparty
 !/tools
@@ -47,6 +48,11 @@ hiro/qt/qt.moc
 # Exclude fetched third-party processor test binaries
 tests/arm7tdmi/tests
 tests/m68000/tests
+
+tests/local/
+tests/*.z64
+tests/*.n64
+tests/*.v64
 
 # Exclude unused legacy zlib header that is renamed by CMake
 thirdparty/libchdr/deps/zlib-*/zconf.h

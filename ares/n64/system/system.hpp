@@ -27,10 +27,12 @@ struct System {
 
   //RDP renderer hot-swap (system.cpp). requestRenderer() is called from the UI thread
   //and only records the request; applyPendingRenderer() performs the swap on the emu
-  //worker thread at a frame boundary. Renderer: 0 = paraLLEl-RDP, 1 = angrylion.
-  enum class Renderer : u32 { ParallelRDP, Angrylion };
+  //worker thread at a frame boundary. Renderer: 0 = paraLLEl-RDP, 1 = angrylion,
+  //2 = none (RDP commands are no-ops; the software VI still scans out RDRAM).
+  enum class Renderer : u32 { ParallelRDP, Angrylion, None };
   auto requestRenderer(Renderer renderer) -> void;
   auto applyPendingRenderer() -> void;
+  auto currentRenderer() -> Renderer;
 
   //serialization.cpp
   auto serialize(bool synchronize = true) -> serializer;
@@ -46,7 +48,7 @@ private:
     bool dd = false;
   } information;
   
-  atomic<bool> _vulkanNeedsLoad = false;
+  atomic<bool> _rendererNeedsLoad = false;
   //-1 = no pending switch; otherwise the Renderer enum value requested from the UI.
   atomic<s32> _pendingRenderer = -1;
 

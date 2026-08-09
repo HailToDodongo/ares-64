@@ -16,6 +16,15 @@ UI is locked to a debug-free play mode.
   ON
 )
 option(
+  ARES_ENABLE_VULKAN
+  "\
+Build the paraLLEl-RDP Vulkan renderer for the N64 core. When OFF, the ~40 parallel-rdp/Granite translation units are \
+not compiled at all and the angrylion CPU renderer (or the 'none' renderer) is used instead — intended for headless/CI \
+builds that cannot assume a GPU.
+"
+  ON
+)
+option(
   ARES_UNITY_CORES
   "\
 Build each core as one translation unit. Decreases cold build times but increases incremental build times. Slightly \

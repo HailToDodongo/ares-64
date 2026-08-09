@@ -31,39 +31,9 @@ auto VI::load(Node::Object parent) -> void {
   screen = node->append<Node::Video::Screen>("Screen", width, height);
   screen->setRefresh(std::bind_front(&VI::refresh, this));
   screen->refreshRateHint(Region::PAL() ? 50 : 60);
-  // GPU/CPU accelerated renderers (parallel-RDP, angrylion) output RGBA directly;
-  // no palette conversion needed. The built-in software VI needs a color lookup table.
-  bool acceleratedRenderer = false;
-  #if defined(VULKAN)
-  if(vulkan.enable) acceleratedRenderer = true;
-  #endif
-  #if defined(ANGRYLION)
-  if(angrylion.enable) acceleratedRenderer = true;
-  #endif
-  if(!acceleratedRenderer)
-  {
-    screen->colors((1 << 24) + (1 << 15), [&](n32 color) -> n64 {
-      if(color < (1 << 24)) {
-        u64 a = 65535;
-        u64 r = image::normalize(color >> 16 & 255, 8, 16);
-        u64 g = image::normalize(color >>  8 & 255, 8, 16);
-        u64 b = image::normalize(color >>  0 & 255, 8, 16);
-        return a << 48 | r << 32 | g << 16 | b << 0;
-      } else {
-        u64 a = 65535;
-        u64 r = image::normalize(color >> 10 & 31, 5, 16);
-        u64 g = image::normalize(color >>  5 & 31, 5, 16);
-        u64 b = image::normalize(color >>  0 & 31, 5, 16);
-        return a << 48 | r << 32 | g << 16 | b << 0;
-      }
-    });
-  }
-  
+  updateScreenColors();
   configureScreenOutput();
 
-  // Pedantic N64 NTSC aspect ratio is 120:119, but let's keep 120:120 to avoid slight scaling.
-  // Pedantic N64 PAL aspect ratio is 5900000:4965653, but let's use 12:10 to achieve the
-  // same aspect ratio as NTSC.
   Region::PAL() ? screen->setAspect(12, 10) : screen->setAspect(120, 120);
 
   debugger.load(node);
@@ -74,6 +44,38 @@ auto VI::unload() -> void {
   node->remove(screen);
   screen.reset();
   node.reset();
+}
+
+auto VI::updateScreenColors() -> void {
+  if(!screen) return;
+  // GPU/CPU accelerated renderers (parallel-RDP, angrylion) output RGBA directly;
+  // no palette conversion needed. The built-in software VI needs a color lookup table.
+  bool acceleratedRenderer = false;
+  #if defined(VULKAN)
+  if(vulkan.enable) acceleratedRenderer = true;
+  #endif
+  #if defined(ANGRYLION)
+  if(angrylion.enable) acceleratedRenderer = true;
+  #endif
+  if(acceleratedRenderer) {
+    screen->colors(0, {});  //direct color: pixels pass through unconverted
+    return;
+  }
+  screen->colors((1 << 24) + (1 << 15), [&](n32 color) -> n64 {
+    if(color < (1 << 24)) {
+      u64 a = 65535;
+      u64 r = image::normalize(color >> 16 & 255, 8, 16);
+      u64 g = image::normalize(color >>  8 & 255, 8, 16);
+      u64 b = image::normalize(color >>  0 & 255, 8, 16);
+      return a << 48 | r << 32 | g << 16 | b << 0;
+    } else {
+      u64 a = 65535;
+      u64 r = image::normalize(color >> 10 & 31, 5, 16);
+      u64 g = image::normalize(color >>  5 & 31, 5, 16);
+      u64 b = image::normalize(color >>  0 & 31, 5, 16);
+      return a << 48 | r << 32 | g << 16 | b << 0;
+    }
+  });
 }
 
 auto VI::configureScreenOutput() -> void {
@@ -349,10 +351,7 @@ auto VI::power(bool reset) -> void {
   io = {};
   refreshed = false;
   clockFraction = 0;
-
-  #if defined(VULKAN)
   gpuOutputValid = false;
-  #endif
 }
 
 }

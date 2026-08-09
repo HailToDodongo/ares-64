@@ -124,6 +124,92 @@ libdragon `.elf` alongside the ROM.
 ./build/desktop-ui/ares --dump-log rsp+rdp:120:3 /path/to/game.z64 > log.tsv
 ```
 
+## Headless testing (`ares-test`)
+
+A third build flavor next to the normal and play-mode builds: a JavaScript-scripted
+CLI runner for automated testing that needs **no window, no GPU, and no audio
+device** — it works in bare CI containers. Rendering uses the angrylion CPU renderer
+(or `none`, which skips RDP rendering entirely and scans out whatever the game wrote
+to RDRAM); paraLLEl-RDP and its ~40 Vulkan translation units are not compiled at all
+(`ARES_ENABLE_VULKAN=OFF`). Scripts run on an embedded QuickJS-NG runtime
+(`thirdparty/quickjs-ng`).
+
+```sh
+cmake --preset linux-headless
+cmake --build build_headless --target ares-test -j10
+./build_headless/test-runner/ares-test my-test.js [script-args...] [--timeout sec]
+```
+
+The emulator boots with no ROM and **paused**; the script drives it through the
+global `ares` object. All calls are synchronous — emulation advances inline inside
+`wait*()`/`screenshot()` and always in *emulated* time, so runs are fully
+deterministic (`Deterministic Entropy` is forced on and there is no audio clock):
+
+```js
+ares.setRenderer("angrylion");        // or "none"; before loadRom
+ares.loadRom(ares.args[0]);           // throws on failure
+ares.resume();                        // pause() / resume() / isPaused()
+
+ares.wait(2.0);                       // run for 2 emulated seconds
+ares.waitVI();                        // run until the next VI scanout
+ares.waitFrames(30);                  // ares.frameCount() reads the counter
+
+const p1 = ares.controller(1);        // ports 1..4
+p1.hold("A").release("B");            // A B Z L R Start Up Down Left Right C-Up ...
+p1.stick(0.5, -1.0);                  // analog, [-1, +1]; p1.clear() resets all
+
+const shot = ares.screenshot();       // advances to the next frame, captures in memory
+// -> {width, height, sha256, data, save(path), compare(other, tolerance?)}
+//    data:   ArrayBuffer of RGBA bytes (wrap with new Uint8Array(shot.data))
+//    sha256: hash of the raw RGB pixels (stable golden key — PNG bytes vary
+//            when optipng is installed)
+shot.save("out.png");
+
+ares.startAudio();                    // records at the AI output rate the game
+const rec = ares.stopAudio();         // programmed; startAudio(48000) forces a rate
+// -> {samples, frequency, data, save(path), compare(other, tolerance?)}
+//    data: ArrayBuffer of interleaved stereo s16 (new Int16Array(rec.data))
+rec.save("out.wav");
+
+// snapshot testing: load goldens back and diff them
+const golden = ares.loadImage("golden.png");   // same object shape as screenshot()
+const cmp = shot.compare(golden);              // or compare("golden.png") directly
+// -> {match, reason?, diffPixels, totalPixels, maxDelta, avgDelta}
+//    tolerance (default 0) = max per-channel delta still counted as equal
+if (!cmp.match) throw new Error("snapshot mismatch: " + JSON.stringify(cmp));
+ares.loadAudio("golden.wav");                  // audio equivalent; audio.compare()
+                                               // -> {match, reason?, diffSamples, ...}
+
+// ISViewer text (libdragon debugf / libultra osSyncPrintf) is echoed to stdout:
+if (!ares.waitLog("TEST PASSED", 10)) // run until marker appears (emulated seconds)
+  throw new Error("ROM self-test failed: " + ares.log());
+ares.clearLog();
+
+ares.closeRom();                      // reset(hard), setHomebrew(bool), exit(code)
+```
+
+Exit codes: `0` = script completed, `1` = uncaught JS exception (plain `throw` is the
+assert mechanism), `2` = usage error or `--timeout` watchdog (default 120s wall-clock,
+the only wall-clock element — it guards CI against hung ROMs and runaway scripts).
+
+Scripts can share common logic via **ES modules**: a script containing `import`/
+`export` is automatically evaluated as a module, and relative imports resolve
+against the importing file (`import { assertSnapshot } from "../lib/assert.js"`).
+Modules are cached per path, so shared state in a module is shared between
+importers. `tests/lib/assert.js` ships assertion helpers including
+`assertSnapshot(media, goldenPath, tolerance?)`, which creates the golden on first
+run and compares against it afterwards. Scripts without `import`/`export` are
+evaluated as plain (non-strict) global scripts, unchanged.
+
+`tests/run-tests.sh` runs `tests/*.test.js` (committed, ROM-free — e.g. the scripting
+smoke test) plus `tests/local/*.test.js` (machine-local, gitignored — put scripts
+with private ROM paths there). The `Headless Test Runner` GitHub workflow builds
+`ares-test` and runs the committed scripts on every PR without any X11/GL/audio
+packages installed.
+
+The `RDP: none` renderer is also selectable in the normal desktop UI, and a regular
+desktop build can be configured with `-DARES_ENABLE_VULKAN=OFF` (angrylion/none only).
+
 ## Adapting overlays
 
 Some data that can't be fetched form the `.elf` will be loaded from a JSON file.<br>

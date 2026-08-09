@@ -8,6 +8,8 @@ include(compilerconfig)
 include(defaults)
 include(helpers)
 
+option(ARES_BUILD_HEADLESS "Build the ares-test headless test runner (Linux/BSD only)" OFF)
+
 add_subdirectory(thirdparty)
 
 add_subdirectory(nall/nall)
@@ -25,6 +27,10 @@ set(
 add_subdirectory(ares)
 add_subdirectory(mia)
 add_subdirectory(desktop-ui)
+
+if(ARES_BUILD_HEADLESS)
+  add_subdirectory(test-runner)
+endif()
 
 
 message_configuration()

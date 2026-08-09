@@ -37,8 +37,10 @@ static auto rspReadPendingCommand(RSP& rsp) -> void {
 auto RSP::captureStepWait() -> void {
   auto& cap = capture;
   if(!cap.stepMode.load(std::memory_order_relaxed)) return;
+  #if defined(VULKAN)
   vulkan.render();
   vulkan.flush();
+  #endif
   rdp.capture.committedCount.store(rdp.capture.writePos.load(std::memory_order_acquire), std::memory_order_release);
   while(!cap.stepPending.load(std::memory_order_acquire)
         && cap.stepMode.load(std::memory_order_relaxed)) {

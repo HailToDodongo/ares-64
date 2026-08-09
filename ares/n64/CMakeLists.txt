@@ -25,8 +25,12 @@ ares_add_sources(
     aleck64/aleck64.cpp
 )
 
-target_enable_feature(ares "N64 Vulkan rendering with paraLLEl-RDP" VULKAN)
-target_compile_definitions(ares PUBLIC VULKAN)
+if(ARES_ENABLE_VULKAN)
+  target_enable_feature(ares "N64 Vulkan rendering with paraLLEl-RDP" VULKAN)
+  target_compile_definitions(ares PUBLIC VULKAN)
+else()
+  target_disable_feature(ares "N64 Vulkan rendering with paraLLEl-RDP")
+endif()
 
 if(OS_WINDOWS)
   include(cmake/os-windows.cmake)
@@ -303,7 +307,7 @@ ares_add_sources(
     vi/vi.hpp
 )
 
-target_compile_definitions(ares PRIVATE VULKAN)
+if(ARES_ENABLE_VULKAN)
 
 set(
   _parallel_rdp_sources
@@ -441,6 +445,8 @@ target_include_directories(
 
 target_compile_options(ares PRIVATE $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-newline-eof>)
 
+endif() # ARES_ENABLE_VULKAN
+
 # angrylion-rdp-plus: alternative CPU RDP renderer (see docs/angrylion-renderer-integration-plan.md)
 target_enable_feature(ares "N64 angrylion-rdp-plus CPU rendering" ANGRYLION)
 target_compile_definitions(ares PUBLIC ANGRYLION)
@@ -479,9 +485,13 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(ares PUBLIC Threads::Threads)
 
-if(OS_WINDOWS)
-  target_compile_definitions(ares PRIVATE VK_USE_PLATFORM_WIN32_KHR)
-  target_link_libraries(ares PRIVATE winmm)
-else()
-  target_link_libraries(ares PRIVATE dl)
+# volk dlopens libvulkan at runtime (dl); the parallel-rdp util timers use winmm on
+# Windows. Neither is needed when the Vulkan renderer is compiled out.
+if(ARES_ENABLE_VULKAN)
+  if(OS_WINDOWS)
+    target_compile_definitions(ares PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+    target_link_libraries(ares PRIVATE winmm)
+  else()
+    target_link_libraries(ares PRIVATE dl)
+  endif()
 endif()

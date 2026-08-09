@@ -1,0 +1,37 @@
+name: Headless Test Runner
+on:
+  pull_request:
+    branches: ['*']
+  push:
+    branches: [imgui]
+permissions:
+  contents: read
+concurrency:
+  group: 'headless @ ${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
+jobs:
+  headless:
+    name: Build + run ares-test (Linux, no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build tools
+        # deliberately no X11/Wayland/GL/audio dev packages: the headless build
+        # must not need any of them
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: linux-headless
+      - name: Configure
+        run: cmake --preset linux-headless
+      - name: Build
+        run: cmake --build build_headless --target ares-test -j4
+      - name: Smoke test
+        run: ./build_headless/test-runner/ares-test --help
+      - name: Run committed test scripts
+        # ROMs are not committed, so only ROM-free scripts (tests/*.test.js, e.g.
+        # the scripting-host smoke test) run here; ROM suites live in tests/local/
+        run: bash tests/run-tests.sh tests/*.test.js

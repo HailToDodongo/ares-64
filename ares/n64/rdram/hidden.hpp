@@ -1,6 +1,28 @@
 struct HiddenRAM {
   u8* data = nullptr;
 
+  //Core-owned backing storage (one byte per 16-bit RDRAM word), 
+  // used whenever no RDP renderer provides its own hidden-RDRAM buffer: the "none" renderer, builds without
+  //a backend compiled in, or Vulkan init failure at runtime. Renderers that own their
+  //buffer (paraLLEl-RDP, angrylion) point `data` at it on load and must restore the
+  //fallback on unload — `data` is dereferenced unchecked on every RDRAM write.
+  auto allocateFallback(u32 rdramSize) -> void {
+    fallbackSize = rdramSize >> 1;
+    fallback = std::make_unique<u8[]>(fallbackSize);
+    memset(fallback.get(), 0, fallbackSize);
+    data = fallback.get();
+  }
+
+  auto restoreFallback() -> void {
+    data = fallback.get();
+  }
+
+  auto releaseFallback() -> void {
+    data = nullptr;
+    fallback.reset();
+    fallbackSize = 0;
+  }
+
   auto nibble(u32 address) -> u32 {
     u8* h = &data[address >> 1];
     return (h[0] & 3) << 2 | (h[1] & 3);
@@ -80,4 +102,8 @@ struct HiddenRAM {
     updateWords4(address, value);
     if constexpr(Size == ICache) updateWords4(address + 16, value + 4);
   }
+
+private:
+  std::unique_ptr<u8[]> fallback;
+  u32 fallbackSize = 0;
 };

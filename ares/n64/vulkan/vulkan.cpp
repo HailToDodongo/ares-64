@@ -56,7 +56,7 @@ auto Vulkan::load(Node::Object) -> bool {
     if (!implementation) {
       platform->status("Vulkan init failed: No RDP rendering support");
       vulkan.enable = false;
-      rdram.hidden.data = nullptr;
+      rdram.hidden.restoreFallback();
     } else {
       platform->status("Vulkan Enabled: using paraLLEl-RDP");
       rdram.hidden.data = (u8*)implementation->processor->begin_read_hidden_rdram();
@@ -69,8 +69,7 @@ auto Vulkan::load(Node::Object) -> bool {
     if(!angrylion.enable)
     #endif
     {
-      platform->status("Vulkan Disabled: No RDP rendering support");
-      rdram.hidden.data = nullptr;
+      rdram.hidden.restoreFallback();
     }
   }
 
@@ -78,7 +77,7 @@ auto Vulkan::load(Node::Object) -> bool {
 }
 
 auto Vulkan::unload() -> void {
-  rdram.hidden.data = nullptr;
+  rdram.hidden.restoreFallback();
   if (implementation) delete implementation;
   implementation = nullptr;
 }

@@ -535,18 +535,25 @@ static auto drawFramebufferViewerWindow(u32 index, const FbSource& source) -> vo
     rawBuf[i + 3] = (word >>  0) & 0xFF;
   }
 
-  // Hidden RDRAM (dz/coverage bits) comes from whichever renderer is active.
+  // Hidden RDRAM (dz/coverage bits) comes from whichever renderer is active; with no
+  // renderer, serve the core-owned fallback buffer that RDRAM writes maintain.
   auto mapHidden = [&](const u8*& hidden, u32& hdrSize) {
 #if defined(ANGRYLION)
     if(ares::Nintendo64::angrylion.enable) { ares::Nintendo64::angrylion.mapHiddenRDRAM(hidden, hdrSize); return; }
 #endif
-    ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize);
+#if defined(VULKAN)
+    if(ares::Nintendo64::vulkan.enable) { ares::Nintendo64::vulkan.mapHiddenRDRAM(hidden, hdrSize); return; }
+#endif
+    hidden = ares::Nintendo64::rdram.hidden.data;
+    hdrSize = ares::Nintendo64::rdram.ram.size >> 1;
   };
   auto unmapHidden = [&]() {
 #if defined(ANGRYLION)
     if(ares::Nintendo64::angrylion.enable) { ares::Nintendo64::angrylion.unmapHiddenRDRAM(); return; }
 #endif
-    ares::Nintendo64::vulkan.unmapHiddenRDRAM();
+#if defined(VULKAN)
+    if(ares::Nintendo64::vulkan.enable) { ares::Nintendo64::vulkan.unmapHiddenRDRAM(); return; }
+#endif
   };
 
   // Convert to RGBA32 texture

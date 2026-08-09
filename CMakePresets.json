@@ -153,6 +153,25 @@
       }
     },
     {
+      "name": "linux-headless",
+      "displayName": "Linux headless test runner",
+      "description": "ares-test CLI for CI/automated testing: no Vulkan/parallel-rdp, no debug tools",
+      "inherits": ["baseCacheVars"],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build_headless",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": {"type": "STRING", "value": "Release"},
+        "ARES_BUILD_HEADLESS": true,
+        "ARES_ENABLE_VULKAN": false,
+        "ARES_ENABLE_DEBUG_TOOLS": false
+      }
+    },
+    {
       "name": "ubuntu-ci",
       "displayName": "Ubuntu CI (x64 gcc)",
       "description": "Single-arch binary for building on Github Actions",

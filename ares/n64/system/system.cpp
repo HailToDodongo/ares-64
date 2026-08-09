@@ -34,16 +34,23 @@ auto option(string name, string value) -> bool {
   if(vulkan.internalUpscale == 1) vulkan.supersampleScanout = false;
   vulkan.outputUpscale = vulkan.supersampleScanout ? 1 : vulkan.internalUpscale;
   #endif
-  #if defined(ANGRYLION)
-  //Renderer selection. "Enable GPU acceleration" (above) turns Vulkan on; picking
-  //angrylion here overrides it. The two backends are mutually exclusive.
+  //Renderer selection: "paraLLEl-RDP" | "angrylion" | "none". "Enable GPU
+  //acceleration" (above) turns Vulkan on; picking angrylion or none here overrides
+  //it. The backends are mutually exclusive; with "none", RDP commands are no-ops and
+  //the software VI scans out whatever the game wrote to RDRAM.
   if(name == "RDP Renderer") {
+    #if defined(ANGRYLION) && !defined(VULKAN)
+    //no Vulkan backend compiled in: degrade a paraLLEl-RDP request to angrylion
+    //(matches the switchRenderer() fallback chain) rather than silently to "none".
+    if(value == "paraLLEl-RDP") value = "angrylion";
+    #endif
+    #if defined(ANGRYLION)
     angrylion.enable = value == "angrylion";
+    #endif
     #if defined(VULKAN)
-    if(angrylion.enable) vulkan.enable = false;
+    if(value == "angrylion" || value == "none") vulkan.enable = false;
     #endif
   }
-  #endif
   if(name == "Homebrew Mode") system.homebrewMode = value.boolean();
   if(name == "Deterministic Entropy") system.deterministicEntropy = value.boolean();
   if(name == "Recompiler") {
@@ -91,14 +98,32 @@ auto System::game() -> string {
 }
 
 auto System::run() -> void {
-  if(_vulkanNeedsLoad) {
+  if(_rendererNeedsLoad) {
+    #if defined(VULKAN)
     vulkan.load(node);
+    #endif
     #if defined(ANGRYLION)
     angrylion.load(node);
     #endif
-    _vulkanNeedsLoad = false;
+    //Vulkan may have failed to init just now (enable flag cleared): re-derive the
+    //screen palette so the software VI fallback renders with correct colors.
+    vi.updateScreenColors();
+    if(currentRenderer() == Renderer::None) {
+      platform->status("RDP rendering disabled (software VI scanout only)");
+    }
+    _rendererNeedsLoad = false;
   }
   cpu.main();
+}
+
+auto System::currentRenderer() -> Renderer {
+  #if defined(VULKAN)
+  if(vulkan.enable) return Renderer::ParallelRDP;
+  #endif
+  #if defined(ANGRYLION)
+  if(angrylion.enable) return Renderer::Angrylion;
+  #endif
+  return Renderer::None;
 }
 
 auto System::requestRenderer(Renderer renderer) -> void {
@@ -111,17 +136,13 @@ auto System::applyPendingRenderer() -> void {
   if(_pendingRenderer.load(std::memory_order_acquire) < 0) return;
   //Not ready yet (no system loaded, or backends not instantiated): leave the request
   //pending so it applies once run() has loaded the renderers.
-  if(!node || _vulkanNeedsLoad) return;
+  if(!node || _rendererNeedsLoad) return;
   s32 pending = _pendingRenderer.exchange(-1, std::memory_order_acq_rel);
   if(pending < 0) return;
   switchRenderer((Renderer)pending);
 }
 
 auto System::switchRenderer(Renderer renderer) -> void {
-  #if defined(ANGRYLION) && defined(VULKAN)
-  bool wantAngrylion = renderer == Renderer::Angrylion;
-  bool isReload = wantAngrylion == angrylion.enable.load(std::memory_order_relaxed);
-
 #if ARES_DEBUG_TOOLS
   //Don't switch while the RDP command viewer is single-stepping: both render paths
   //block in a spin-loop there and the capture buffers are user-controlled.
@@ -134,38 +155,46 @@ auto System::switchRenderer(Renderer renderer) -> void {
   //Perform the swap while holding the screen refresh mutex so the screen thread
   //(VI::refresh) can't be mid-map into a backend we're about to unload.
   vi.screen->runExclusive([&] {
+    #if defined(VULKAN)
     if(vulkan.enable) vulkan.flush();  //finish in-flight GPU work before teardown
+    #endif
 
-    if(isReload) {
-      //Same renderer, different config (e.g. upscale quality): unload + reload
-      //so the backend picks up changed settings without toggling enable flags.
-      if(wantAngrylion) {
-        angrylion.unload();
-        angrylion.load(node);
-      } else {
-        vulkan.unload();
-        vulkan.load(node);
-        if(!vulkan.enable) {
-          //Vulkan failed to re-init: fall back to angrylion.
-          angrylion.enable = true;
-          angrylion.load(node);
-        }
-      }
-    } else if(wantAngrylion) {
-      vulkan.enable = false;
-      vulkan.unload();
-      angrylion.enable = true;
-      angrylion.load(node);
-    } else {
-      angrylion.enable = false;
-      angrylion.unload();
+    //Unload both backends unconditionally; re-selecting the current renderer thereby
+    //becomes an unload + reload, which is how config changes (e.g. upscale quality)
+    //are picked up. Each unload() restores the core-owned hidden-RDRAM fallback, and
+    //the load() below points it at the new backend's buffer.
+    #if defined(VULKAN)
+    vulkan.enable = false;
+    vulkan.unload();
+    #endif
+    #if defined(ANGRYLION)
+    angrylion.enable = false;
+    angrylion.unload();
+    #endif
+
+    //Degrade the request to what is compiled in / initializes successfully:
+    //paraLLEl-RDP -> angrylion -> none.
+    #if defined(VULKAN)
+    if(renderer == Renderer::ParallelRDP) {
       vulkan.enable = true;
       vulkan.load(node);
-      if(!vulkan.enable) {
-        //Vulkan failed to initialize: fall back to angrylion.
-        angrylion.enable = true;
-        angrylion.load(node);
-      }
+      if(!vulkan.enable) renderer = Renderer::Angrylion;  //Vulkan failed to init
+    }
+    #else
+    if(renderer == Renderer::ParallelRDP) renderer = Renderer::Angrylion;
+    #endif
+
+    #if defined(ANGRYLION)
+    if(renderer == Renderer::Angrylion) {
+      angrylion.enable = true;
+      angrylion.load(node);
+    }
+    #else
+    if(renderer == Renderer::Angrylion) renderer = Renderer::None;
+    #endif
+
+    if(renderer == Renderer::None) {
+      platform->status("RDP rendering disabled (software VI scanout only)");
     }
 
     //the new backend missed every VI register written before it was enabled; re-prime
@@ -173,9 +202,9 @@ auto System::switchRenderer(Renderer renderer) -> void {
     vi.replayRegisters();
 
     vi.gpuOutputValid = false;   //discard the previous backend's last frame
+    vi.updateScreenColors();     //palette LUT for the software VI, direct color otherwise
     vi.configureScreenOutput();  //update output size/scale for the new renderer
   });
-  #endif
 }
 
 auto System::load(Node::System& root, string name) -> bool {
@@ -237,7 +266,7 @@ auto System::load(Node::System& root, string name) -> bool {
 #if ARES_DEBUG_TOOLS
   initDebugHooks();
 #endif
-  _vulkanNeedsLoad = true;
+  _rendererNeedsLoad = true;
 
   return true;
 }
@@ -485,11 +514,11 @@ auto System::unload() -> void {
   if(vi.screen) vi.screen->quit(); //stop video thread
   #if defined(VULKAN)
   vulkan.unload();
-  _vulkanNeedsLoad = false;
   #endif
   #if defined(ANGRYLION)
   angrylion.unload();
   #endif
+  _rendererNeedsLoad = false;
   cartridgeSlot.unload();
   controllerPort1.unload();
   controllerPort2.unload();
@@ -548,11 +577,11 @@ auto System::power(bool reset) -> void {
   vi.power(reset);
   #if defined(VULKAN)
   vulkan.unload();
-  _vulkanNeedsLoad = true;
   #endif
   #if defined(ANGRYLION)
   angrylion.unload();
   #endif
+  _rendererNeedsLoad = true;
   ai.power(reset);
   pi.power(reset);
   pif.power(reset);

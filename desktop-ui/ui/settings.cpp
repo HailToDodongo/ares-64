@@ -20,10 +20,12 @@ static void DrawVideoPanel() {
   ImGui::SeparatorText("Output");
   // The N64 RDP renderer is selected live from the main menu bar (see drawRendererCombo).
   bool angrylion = settings.video.renderer == "angrylion";
+  bool noRenderer = settings.video.renderer == "none";
   if(angrylion) ImGui::TextDisabled("angrylion is a CPU renderer (1x, no upscaling).");
+  if(noRenderer) ImGui::TextDisabled("RDP rendering disabled: software VI scanout of RDRAM only.");
 
-  // angrylion renders at native resolution only, so upscaling options don't apply.
-  ImGui::BeginDisabled(angrylion);
+  // angrylion/none render at native resolution only, so upscaling options don't apply.
+  ImGui::BeginDisabled(angrylion || noRenderer);
   const char* qualities[] = {"SD", "HD", "UHD"};
   int qualityIdx = 0;
   if(settings.video.quality == "HD") qualityIdx = 1;
@@ -41,10 +43,14 @@ static void DrawVideoPanel() {
   }
   bool ssChanged = ImGui::Checkbox("Supersampling", &settings.video.supersampling);
   ImGui::EndDisabled();
+  #if defined(VULKAN)
   if((ssChanged) && ares::Nintendo64::vulkan.enable) {
     ares::Nintendo64::option("Supersampling", settings.video.supersampling);
     ares::Nintendo64::system.requestRenderer(ares::Nintendo64::System::Renderer::ParallelRDP);
   }
+  #else
+  (void)ssChanged;
+  #endif
   ImGui::Checkbox("Disable VI Processing", &settings.video.disableVideoInterfaceProcessing);
   ImGui::Checkbox("Weave Deinterlacing", &settings.video.weaveDeinterlacing);
 

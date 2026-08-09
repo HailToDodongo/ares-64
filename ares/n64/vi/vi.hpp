@@ -24,6 +24,10 @@ struct VI : Thread, Memory::RCP<VI> {
   //(re)apply the screen output size/scale for the currently-active RDP renderer.
   //Safe to call live (e.g. after switching renderers); uses the thread-safe setters.
   auto configureScreenOutput() -> void;
+  //(re)install or remove the screen's color lookup table depending on the active
+  //renderer: paraLLEl-RDP/angrylion output RGBA directly, the built-in software VI
+  //writes 15/24bpp palette indices. Safe to call live (takes the screen mutex).
+  auto updateScreenColors() -> void;
   //resend the cached VI register state to the active backend. Needed after a renderer
   //hot-swap, since the newly-loaded backend missed every register the game wrote before
   //it was enabled (Y-scale, control/colordepth, width, ...).
@@ -80,9 +84,9 @@ struct VI : Thread, Memory::RCP<VI> {
 //unserialized:
   bool refreshed;
 
-  #if defined(VULKAN)
+  //true when the active backend (paraLLEl-RDP or angrylion) produced a frame for the
+  //current field; false falls VI::refresh through to the software RDRAM scanout.
   bool gpuOutputValid = false;
-  #endif
 };
 
 extern VI vi;

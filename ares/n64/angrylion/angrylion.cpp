@@ -121,7 +121,7 @@ auto Angrylion::load(Node::Object) -> bool {
 }
 
 auto Angrylion::unload() -> void {
-  rdram.hidden.data = nullptr;
+  rdram.hidden.restoreFallback();
   delete implementation;
   implementation = nullptr;
 }

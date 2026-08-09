@@ -275,17 +275,29 @@ static auto drawStepTypeCombo() -> void {
 // applies at the next frame boundary.
 static auto drawRendererCombo() -> void {
   if(!ares::Nintendo64::system.node) return;
-  static const char* names[] = {"paraLLEl", "angrylion"};
-  int idx = settings.video.renderer == "angrylion" ? 1 : 0;
+  using Renderer = ares::Nintendo64::System::Renderer;
+  //display name, persisted settings value, and hot-swap request per entry; the
+  //paraLLEl entry only exists when the Vulkan backend is compiled in.
+  #if defined(VULKAN)
+  static const char* names[]  = {"paraLLEl", "angrylion", "none"};
+  static const char* values[] = {"paraLLEl-RDP", "angrylion", "none"};
+  static const Renderer renderers[] = {Renderer::ParallelRDP, Renderer::Angrylion, Renderer::None};
+  #else
+  static const char* names[]  = {"angrylion", "none"};
+  static const char* values[] = {"angrylion", "none"};
+  static const Renderer renderers[] = {Renderer::Angrylion, Renderer::None};
+  #endif
+  constexpr int count = (int)(sizeof(names) / sizeof(names[0]));
+  int idx = 0;
+  for(int i = 0; i < count; i++) if(settings.video.renderer == values[i]) idx = i;
 
   ImGui::Text("RDP:");
   ImGui::SameLine();
 
   ImGui::SetNextItemWidth(110_px);
-  if(ImGui::Combo("##rdp_bar", &idx, names, 2)) {
-    settings.video.renderer = names[idx];
-    using Renderer = ares::Nintendo64::System::Renderer;
-    ares::Nintendo64::system.requestRenderer(idx == 1 ? Renderer::Angrylion : Renderer::ParallelRDP);
+  if(ImGui::Combo("##rdp_bar", &idx, names, count)) {
+    settings.video.renderer = values[idx];
+    ares::Nintendo64::system.requestRenderer(renderers[idx]);
   }
 }
 
