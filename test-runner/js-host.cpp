@@ -165,12 +165,11 @@ auto js_isPaused(JSContext*, JSValueConst, int, JSValueConst*) -> JSValue {
 
 auto js_setRenderer(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
   if(argc < 1) return throwError(c, "setRenderer(name) requires a name");
-  if(emulatorRunner.loaded()) return throwError(c, "setRenderer must be called before loadRom");
   string name = jsStr(c, argv[0]);
   if(name != "angrylion" && name != "none") {
     return throwError(c, {"unknown renderer (angrylion|none): ", name});
   }
-  emulatorRunner.renderer = name;
+  emulatorRunner.setRenderer(name);
   return JS_UNDEFINED;
 }
 

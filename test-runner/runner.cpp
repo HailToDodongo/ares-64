@@ -79,13 +79,27 @@ auto EmulatorRunner::reset(bool hard) -> void {
   frameCount = 0;
 }
 
+auto EmulatorRunner::setRenderer(const string& name) -> void {
+  renderer = name;  //used by subsequent loadRom calls
+  if(!root) return;
+
+  using Renderer = ares::Nintendo64::System::Renderer;
+  ares::Nintendo64::system.requestRenderer(name == "angrylion" ? Renderer::Angrylion : Renderer::None);
+  ares::Nintendo64::system.applyPendingRenderer();
+}
+
 //--- time ------------------------------------------------------------------
+
+auto EmulatorRunner::runSlice() -> void {
+  ares::Nintendo64::system.applyPendingRenderer();
+  root->run();
+}
 
 auto EmulatorRunner::runFrames(u32 frames) -> void {
   if(!root || frames == 0) return;
   u32 target = frameCount.load() + frames;
   while(frameCount.load() < target && !shutdownRequested.load()) {
-    root->run();
+    runSlice();
   }
 }
 
@@ -135,7 +149,7 @@ auto EmulatorRunner::screenshot(ScreenshotResult& out) -> string {
   //advance to the next presented frame regardless of pause state; video() on the
   //screen worker thread performs the capture and flags done.
   while(!shot.done.load() && !shutdownRequested.load()) {
-    root->run();
+    runSlice();
   }
   if(!shot.done.load()) return "shutdown while waiting for frame";
   out = std::move(shot.result);

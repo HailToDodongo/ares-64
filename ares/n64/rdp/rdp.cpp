@@ -38,6 +38,7 @@ auto RDP::main() -> void {
 auto RDP::power(bool reset) -> void {
   Thread::reset();
   command = {};
+  midList = false;
   edge = {};
   shade = {};
   texture = {};

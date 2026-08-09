@@ -266,7 +266,7 @@ n64video_init(struct n64video_config *_config)
         tex_init_lut();
         z_init_lut();
 
-        for (uint32_t i = 1; i < PARALLEL_MAX_WORKERS; i++) {
+        for (uint32_t i = 0; i < PARALLEL_MAX_WORKERS; i++) {
             rdp_init(&state[i]);
         }
 

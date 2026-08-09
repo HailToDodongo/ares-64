@@ -62,6 +62,10 @@ static const u8 rdpCommandWordCounts[64] = {
 };
 
 auto RDP::render() -> void {
+  //apply a pending renderer hot-swap only at a display-list boundary
+  system.applyPendingRenderer();
+  if(command.current < command.end) midList = true;
+
   #if defined(VULKAN)
   if(vulkan.enable && vulkan.render()) {
     const char *msg = vulkan.crashed();
@@ -651,6 +655,7 @@ auto RDP::syncFull() -> void {
     command.pipeBusy = 0;
   }
   command.startGclk = 0;
+  midList = false;  //list boundary: pending renderer hot-swaps may apply again
 }
 
 //0x2a

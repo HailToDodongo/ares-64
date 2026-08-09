@@ -146,7 +146,10 @@ global `ares` object. All calls are synchronous — emulation advances inline in
 deterministic (`Deterministic Entropy` is forced on and there is no audio clock):
 
 ```js
-ares.setRenderer("angrylion");        // or "none"; before loadRom
+ares.setRenderer("angrylion");        // or "none"; callable at any time — with a
+                                      // ROM loaded it hot-swaps at the next frame
+                                      // boundary (e.g. boot under "none" for speed,
+                                      // enable angrylion before the frames you assert on)
 ares.loadRom(ares.args[0]);           // throws on failure
 ares.resume();                        // pause() / resume() / isPaused()
 

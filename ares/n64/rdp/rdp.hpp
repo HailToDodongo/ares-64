@@ -140,6 +140,8 @@ struct RDP : Thread, Memory::RCP<RDP> {
     n1  ready = 1;
   } command;
 
+  bool midList = false;
+
   struct Point {
     n16 i;  //integer
     n16 f;  //fraction

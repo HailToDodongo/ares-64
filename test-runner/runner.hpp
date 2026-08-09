@@ -14,9 +14,11 @@
 #include <vector>
 
 struct EmulatorRunner : ares::Platform {
-  //--- configuration (set before loadRom) ---
+  //--- configuration ---
   nall::string renderer = "angrylion";  //"angrylion" | "none"
   bool homebrewMode = false;
+
+  auto setRenderer(const nall::string& name) -> void;
 
   //--- lifecycle -----------------------------------------------------------
   //all return an empty string on success, or an error message
@@ -86,6 +88,10 @@ private:
   bool palSystem = false;
 
   std::atomic<u32> frameCount{0};
+
+  //one emulation slice: applies any pending renderer swap at the frame boundary
+  //(mirrors what the desktop UI's worker loop does), then advances the core
+  auto runSlice() -> void;
 
   //per-port input state, keyed by input node name. Written from the JS thread,
   //read by input() on the same thread (the core runs inline) — no locking needed.

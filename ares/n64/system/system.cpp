@@ -137,6 +137,9 @@ auto System::applyPendingRenderer() -> void {
   //Not ready yet (no system loaded, or backends not instantiated): leave the request
   //pending so it applies once run() has loaded the renderers.
   if(!node || _rendererNeedsLoad) return;
+  //Mid display list: defer to the next list boundary 
+  // RDP::render() retries after each Sync Full), so the new backend never starts on a half-consumed list
+  if(rdp.midList) return;
   s32 pending = _pendingRenderer.exchange(-1, std::memory_order_acq_rel);
   if(pending < 0) return;
   switchRenderer((Renderer)pending);
