@@ -2,7 +2,8 @@
 
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://github.com/higan-emu/ares/blob/master/LICENSE)
 
-<img src="desktop-ui/resource/screenshot00.png" width="420px">
+<img src="desktop-ui/resource/screenshot00.png" width="440px">
+<img src="desktop-ui/resource/screenshot01.png" width="440px">
 
 Original Repo: https://github.com/ares-emulator/ares
 
@@ -26,12 +27,17 @@ Additional features include (checkout the 'tools' menu):
   - stepping updates the framebuffer in realtime
   - supported commands can be decoded into readable arguments
   - metrics to measure RSP times
+- CPU time and memory profiling (requires .elf with DWARF)
+- Global flame-chart for all CPU function calls, RSP and RDP commands
 - TMEM viewer with tile preview
 - Memory viewer and editor
 - Audio visualizer
 - rendering via ParallelRDP and angrylion (swappable mid-game)
 - SD/HD/UHD for ParallelRDP changable mid-game
 - UI that can be freely organized and is saved across starts
+- Headless-mode with JS scripting
+  - basic emulator control
+  - screenshot + audio-recording (e.g. for ROM testing)
 
 For single stepping, use the hotkey for frame-advance after pausing emulation.<br>
 In the top-right you are also given the option what stepping mode is currently active.
