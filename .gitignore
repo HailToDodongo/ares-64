@@ -26,6 +26,8 @@
 !deps.json
 !CMakeLists.txt
 !CMakePresets.json
+!/Dockerfile
+!.dockerignore
 
 # Exclude old macOS Finder metadata
 .DS_Store

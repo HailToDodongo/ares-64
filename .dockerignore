@@ -1,0 +1,12 @@
+build*/
+cmake-build-*/
+.git
+**/.git
+.github
+.idea
+.vscode
+docs/
+tests/local/
+*.z64
+*.n64
+*.v64

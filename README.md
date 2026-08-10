@@ -182,6 +182,17 @@ const cmp = shot.compare(golden);              // or compare("golden.png") direc
 if (!cmp.match) throw new Error("snapshot mismatch: " + JSON.stringify(cmp));
 ares.loadAudio("golden.wav");                  // audio equivalent; audio.compare()
                                                // -> {match, reason?, diffSamples, ...}
+const db = rec.snr("golden.wav");              // quality metric instead of bit-exact:
+if (db < 40) throw new Error("audio too noisy: " + db + " dB");
+// SNR in dB of `rec` against the reference (argument: object or WAV path);
+// Infinity when identical. Frequencies must match; differing lengths are
+// compared over the overlapping prefix.
+const aligned = rec.trim();           // new audio object with leading/trailing
+// silence removed (a single zero frame survives on each side) — align recordings
+// before compare()/snr(), since the lead-in depends on when startAudio() ran
+const jingle = rec.slice(0.5, 1.5);   // [start, end) subsection in seconds;
+// end optional (defaults to the recording's end), negatives count from the end
+// (Array.prototype.slice conventions); out-of-range clamps
 
 // ISViewer text (libdragon debugf / libultra osSyncPrintf) is echoed to stdout:
 if (!ares.waitLog("TEST PASSED", 10)) // run until marker appears (emulated seconds)
@@ -212,6 +223,19 @@ packages installed.
 
 The `RDP: none` renderer is also selectable in the normal desktop UI, and a regular
 desktop build can be configured with `-DARES_ENABLE_VULKAN=OFF` (angrylion/none only).
+
+### Docker image (`libdragon-ares-test`)
+
+The [Dockerfile](./Dockerfile) builds a combined N64 homebrew CI image: the libdragon
+toolchain + library (built from a local libdragon checkout, passed as an extra build
+context) and `ares-test`, so one container can compile a ROM and run it headless:
+
+```sh
+podman build --build-context libdragon=../libdragon -t libdragon-ares-test .
+
+podman run --rm -v "$PWD":/app -w /app libdragon-ares-test make
+podman run --rm -v "$PWD":/app -w /app libdragon-ares-test ares-test test.js game.z64
+```
 
 ## Adapting overlays
 

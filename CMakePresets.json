@@ -168,7 +168,8 @@
         "CMAKE_BUILD_TYPE": {"type": "STRING", "value": "Release"},
         "ARES_BUILD_HEADLESS": true,
         "ARES_ENABLE_VULKAN": false,
-        "ARES_ENABLE_DEBUG_TOOLS": false
+        "ARES_ENABLE_DEBUG_TOOLS": false,
+        "SDL_UNIX_CONSOLE_BUILD": true
       }
     },
     {

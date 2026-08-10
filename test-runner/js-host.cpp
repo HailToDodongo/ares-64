@@ -391,6 +391,10 @@ auto js_img_save(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) 
 auto js_img_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_audio_save(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_audio_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
+auto js_audio_snr(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
+auto js_audio_trim(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
+auto js_audio_slice(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
+auto makeAudioObject(JSContext* c, u32 frequency, const std::vector<s16>& frames) -> JSValue;
 
 auto makeImageObject(JSContext* c, u32 width, u32 height, const std::vector<u8>& rgba) -> JSValue {
   JSValue obj = JS_NewObject(c);
@@ -411,6 +415,9 @@ auto makeAudioObject(JSContext* c, u32 frequency, const std::vector<s16>& frames
     JS_NewArrayBufferCopy(c, (const u8*)frames.data(), frames.size() * sizeof(s16)));
   setFn(c, obj, "save", js_audio_save, 1);
   setFn(c, obj, "compare", js_audio_compare, 2);
+  setFn(c, obj, "snr", js_audio_snr, 1);
+  setFn(c, obj, "trim", js_audio_trim, 0);
+  setFn(c, obj, "slice", js_audio_slice, 2);
   return obj;
 }
 
@@ -568,6 +575,115 @@ auto js_audio_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* a
   JS_SetPropertyStr(c, obj, "maxDelta", JS_NewInt32(c, maxDelta));
   JS_SetPropertyStr(c, obj, "avgDelta", JS_NewFloat64(c, countA ? (double)totalDelta / countA : 0.0));
   return obj;
+}
+
+//audio.snr(reference): signal-to-noise ratio in dB of `this` measured against a
+//reference recording (an audio object or WAV path) — the quality-metric
+//counterpart to the bit-exact compare(). SNR = 10*log10(sum(ref^2) /
+//sum((ref-this)^2)) over both channels. Returns Infinity for bit-identical
+//audio. Frequencies must match; differing lengths are compared over the
+//overlapping prefix (recordings often differ by a frame at the tail).
+auto js_audio_snr(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue {
+  if(argc < 1) return throwError(c, "snr(reference) requires an audio object or WAV path");
+
+  u32 frequencyA; const s16* framesA; size_t countA;
+  if(!getAudioSamples(c, self, frequencyA, framesA, countA)) {
+    return throwError(c, "snr: audio data buffer is missing or malformed");
+  }
+
+  AudioSamples loaded;
+  u32 frequencyB; const s16* framesB; size_t countB;
+  if(JS_IsString(argv[0])) {
+    if(auto error = decodeWav(jsStr(c, argv[0]), loaded)) return throwError(c, error);
+    frequencyB = loaded.frequency; framesB = loaded.frames.data(); countB = loaded.frames.size() / 2;
+  } else {
+    if(!getAudioSamples(c, argv[0], frequencyB, framesB, countB)) {
+      return throwError(c, "snr: reference is not an audio object or WAV path");
+    }
+  }
+
+  if(frequencyA != frequencyB) {
+    return throwError(c, {"snr: frequency mismatch: ", frequencyA, " vs ", frequencyB});
+  }
+
+  size_t frames = min(countA, countB);
+  f64 signal = 0.0, noise = 0.0;
+  for(size_t i = 0; i < frames * 2; i++) {
+    f64 reference = framesB[i];
+    f64 difference = reference - (f64)framesA[i];
+    signal += reference * reference;
+    noise += difference * difference;
+  }
+
+  f64 snr;
+  if(noise == 0.0) snr = INFINITY;                 //identical (also: both silent)
+  else if(signal == 0.0) snr = -INFINITY;          //reference silent, this is not
+  else snr = 10.0 * std::log10(signal / noise);
+  return JS_NewFloat64(c, snr);
+}
+
+//audio.trim(): returns a new audio object with leading/trailing silence removed —
+//all-zero frames (both channels) are stripped from both ends, keeping a single
+//zero frame on each side (when one was there). Interior silence is untouched.
+//Useful to align recordings before compare()/snr(): startAudio() usually begins
+//during silence, and the exact lead-in length depends on when the script called it.
+auto js_audio_trim(JSContext* c, JSValueConst self, int, JSValueConst*) -> JSValue {
+  u32 frequency; const s16* frames; size_t count;
+  if(!getAudioSamples(c, self, frequency, frames, count)) {
+    return throwError(c, "trim: audio data buffer is missing or malformed");
+  }
+
+  auto silent = [&](size_t frame) -> bool {
+    return frames[frame * 2 + 0] == 0 && frames[frame * 2 + 1] == 0;
+  };
+
+  size_t first = 0;
+  while(first < count && silent(first)) first++;
+
+  if(first == count) {
+    //entirely silent: keep one zero frame per end
+    std::vector<s16> trimmed(min(count, (size_t)2) * 2, 0);
+    return makeAudioObject(c, frequency, trimmed);
+  }
+
+  size_t last = count - 1;
+  while(last > first && silent(last)) last--;
+
+  //keep a single zero frame on each side when silence was trimmed there
+  if(first > 0) first--;
+  if(last < count - 1) last++;
+
+  std::vector<s16> trimmed(frames + first * 2, frames + (last + 1) * 2);
+  return makeAudioObject(c, frequency, trimmed);
+}
+
+//audio.slice(start, end?): returns a new audio object holding the [start, end)
+//subsection, both in seconds. Follows Array.prototype.slice conventions: end is
+//optional (defaults to the recording's end) and negative values count from the
+//end. Out-of-range values clamp; an empty range yields a 0-sample object.
+auto js_audio_slice(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue {
+  u32 frequency; const s16* frames; size_t count;
+  if(!getAudioSamples(c, self, frequency, frames, count)) {
+    return throwError(c, "slice: audio data buffer is missing or malformed");
+  }
+
+  f64 duration = (f64)count / frequency;
+  f64 start = 0.0, end = duration;
+  if(argc >= 1 && !JS_IsUndefined(argv[0]) && JS_ToFloat64(c, &start, argv[0]) < 0) return JS_EXCEPTION;
+  if(argc >= 2 && !JS_IsUndefined(argv[1]) && JS_ToFloat64(c, &end, argv[1]) < 0) return JS_EXCEPTION;
+  if(start < 0.0) start += duration;
+  if(end < 0.0) end += duration;
+
+  auto toFrame = [&](f64 seconds) -> size_t {
+    s64 frame = (s64)std::llround(seconds * frequency);
+    return (size_t)max<s64>(0, min<s64>((s64)count, frame));
+  };
+  size_t first = toFrame(start);
+  size_t last = toFrame(end);
+  if(first > last) first = last;
+
+  std::vector<s16> sliced(frames + first * 2, frames + last * 2);
+  return makeAudioObject(c, frequency, sliced);
 }
 
 //--- capture: ares-level entry points --------------------------------------

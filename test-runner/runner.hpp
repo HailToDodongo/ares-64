@@ -97,6 +97,10 @@ private:
   //read by input() on the same thread (the core runs inline) — no locking needed.
   std::map<nall::string, s64> pads[4];
 
+  //input node -> owning controller port, precomputed at loadRom (input() is hot:
+  //polled per joybus transaction; also avoids re-walking the node tree there)
+  std::map<const void*, u32> inputPortLookup;
+
   //screenshot handshake with the screen worker thread
   struct {
     std::atomic<bool> pending{false};

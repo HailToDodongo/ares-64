@@ -48,10 +48,16 @@ auto EmulatorRunner::loadRom(const string& path) -> string {
     return "no cartridge slot found";
   }
 
+  inputPortLookup.clear();
   for(u32 id : range(4)) {
     if(auto port = root->find<ares::Node::Port>({"Controller Port ", 1 + id})) {
       port->allocate("Gamepad");
       port->connect();
+      if(auto peripheral = port->connected()) {
+        for(auto& input : peripheral->find<ares::Node::Input::Input>()) {
+          inputPortLookup[input.get()] = id;
+        }
+      }
     }
   }
 
@@ -69,6 +75,7 @@ auto EmulatorRunner::closeRom() -> void {
   systemPak.reset();
   streams.clear();
   for(auto& pad : pads) pad.clear();
+  inputPortLookup.clear();
   paused = true;
 }
 
@@ -123,16 +130,9 @@ auto EmulatorRunner::clearInputs(u32 port) -> void {
 }
 
 auto EmulatorRunner::input(ares::Node::Input::Input node) -> void {
-  //identify the owning controller port by walking up to "Controller Port N"
-  u32 port = 0;
-  for(auto parent = node->parent(); auto object = parent.lock(); parent = object->parent()) {
-    auto name = object->name();
-    if(name.beginsWith("Controller Port ")) {
-      port = name.trimLeft("Controller Port ", 1L).natural() - 1;
-      break;
-    }
-  }
-  if(port >= 4) return;
+  auto lookup = inputPortLookup.find(node.get());
+  if(lookup == inputPortLookup.end()) return;
+  u32 port = lookup->second;
 
   auto it = pads[port].find(node->name());
   s64 value = it != pads[port].end() ? it->second : 0;
