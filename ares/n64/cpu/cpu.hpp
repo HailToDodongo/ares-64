@@ -40,6 +40,7 @@ struct CPU : Thread {
   auto interruptPoll() -> void;
 
   auto gdbPoll() -> void;
+  auto scriptPoll() -> void;
   auto queueInsert(u32 event, u32 clocks) -> void;
 
   auto instruction() -> bool;

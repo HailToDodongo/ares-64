@@ -19,6 +19,7 @@
 !/GNUMakefile
 !/LICENSE
 !/README.md
+!/README_JS.md
 !.editorconfig
 !.gitignore
 !.gitattributes

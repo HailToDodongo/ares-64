@@ -56,7 +56,15 @@ namespace ares {
   }
 
   namespace Video {
+    //The screen composites and delivers frames on its own thread. A frontend that
+    //needs frames handed over synchronously — the headless test runner, where a
+    //deterministic "current frame" matters more than throughput — builds with
+    //ARES_VIDEO_SYNCHRONOUS so Screen::frame() refreshes inline instead.
+    #if defined(ARES_VIDEO_SYNCHRONOUS)
+    static constexpr bool Threaded = false;
+    #else
     static constexpr bool Threaded = true;
+    #endif
   }
 
   namespace Constants {

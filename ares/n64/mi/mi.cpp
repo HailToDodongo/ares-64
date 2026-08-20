@@ -20,6 +20,7 @@ auto MI::unload() -> void {
 
 auto MI::raise(IRQ source) -> void {
   debugger.interrupt((u32)source);
+  if(unlikely(scriptHooks.interrupt)) scriptHooks.interrupt((u32)source);
   switch(source) {
   case IRQ::SP: irq.sp.line = 1; break;
   case IRQ::SI: irq.si.line = 1; break;

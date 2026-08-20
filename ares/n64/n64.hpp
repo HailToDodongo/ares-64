@@ -107,9 +107,23 @@ namespace ares::Nintendo64 {
       DD_BM_Request,
       DD_Motor_Mode,
       GDB_Poll,
+      Script_Poll,
     };
   };
   extern Queue queue;
+
+  //Hooks for a scripting frontend (ares-test). Null unless installed, so the
+  //cost on the hot paths is one predictable branch; plain function pointers
+  //keep this free of any dependency on the frontend.
+  struct ScriptHooks {
+    //fires from MI::raise for every RCP interrupt (MI::IRQ value)
+    void (*interrupt)(u32 source) = nullptr;
+    //fires from the CPU queue while armed; see CPU::scriptPoll
+    void (*poll)() = nullptr;
+    //cycles between polls, matching the GDB poll rate (240x per frame)
+    static constexpr u32 pollInterval = (93750000*2)/60/240;
+  };
+  extern ScriptHooks scriptHooks;
 
   struct BCD {
     static auto encode(u8 value) -> u8 { return value / 10 << 4 | value % 10; }

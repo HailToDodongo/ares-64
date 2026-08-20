@@ -15,6 +15,14 @@ UI is locked to a debug-free play mode.
 "
   ON
 )
+if(ARES_BUILD_HEADLESS)
+  # ares-test reads the last presented frame directly, which is only well-defined
+  # if the screen delivers frames on the emulation thread. Note this applies to
+  # every consumer of the ares library in this build tree, which is why the
+  # headless runner has its own preset/build directory.
+  target_compile_definitions(ares PUBLIC ARES_VIDEO_SYNCHRONOUS)
+endif()
+
 option(
   ARES_ENABLE_VULKAN
   "\

@@ -101,8 +101,123 @@ auto throwError(JSContext* c, const string& message) -> JSValue {
   return JS_ThrowPlainError(c, "%s", message.data());
 }
 
+//--- script callbacks: in-game timers and interrupt notifications ----------
+//Callbacks run on the emulation thread from inside root->run() — which is the
+//same thread the script runs on, so calling into JS is safe. Re-entering the
+//core from a callback is not, so every binding that advances or tears down
+//emulation refuses while one is executing. An exception thrown by a callback is
+//captured and rethrown by whichever binding was advancing time, so it surfaces
+//at the wait() call site instead of being swallowed mid-frame.
+
+struct ScriptTimer {
+  u32 id;
+  s64 remaining;  //emulated CPU cycles (system.frequency()/2 per second)
+  s64 period;     //0 = one-shot, otherwise the repeat interval
+  JSValue fn;
+};
+
+std::vector<ScriptTimer> g_timers;
+u32 g_nextTimerId = 1;
+s64 g_lastPollCycles = 0;
+bool g_pollArmed = false;
+bool g_inCallback = false;
+JSValue g_interruptFn = JS_UNDEFINED;
+JSValue g_logFn = JS_UNDEFINED;
+JSValue g_pendingException = JS_UNDEFINED;
+bool g_pendingExceptionSet = false;
+
+auto emulatedCycles() -> s64 { return emulatorRunner.cycles(); }
+auto cyclesPerSecond() -> double { return emulatorRunner.cyclesPerSecond(); }
+
+//arm the core-side poll event; re-armed by the poll itself while timers remain
+auto armScriptPoll() -> void {
+  if(g_pollArmed || g_timers.empty() || !emulatorRunner.loaded()) return;
+  ares::Nintendo64::cpu.queueInsert(ares::Nintendo64::Queue::Script_Poll,
+                                    ares::Nintendo64::ScriptHooks::pollInterval);
+  g_pollArmed = true;
+}
+
+auto invokeCallback(JSValueConst fn, int argc, JSValueConst* argv) -> void {
+  if(g_pendingExceptionSet) return;  //already failing: run no further callbacks
+  g_inCallback = true;
+  JSValue result = JS_Call(g_ctx, fn, JS_UNDEFINED, argc, argv);
+  g_inCallback = false;
+  if(JS_IsException(result)) {
+    g_pendingException = JS_GetException(g_ctx);
+    g_pendingExceptionSet = true;
+    //stop emulating right away: the binding that is advancing time returns at
+    //the next tick boundary and rethrows, rather than finishing the whole wait
+    emulatorRunner.abortRun = true;
+  }
+  JS_FreeValue(g_ctx, result);
+}
+
+//rethrow a callback's exception at the binding that was advancing emulation
+auto checkCallbackException(JSContext* c) -> JSValue {
+  if(!g_pendingExceptionSet) return JS_UNDEFINED;
+  g_pendingExceptionSet = false;
+  emulatorRunner.abortRun = false;
+  JSValue e = g_pendingException;
+  g_pendingException = JS_UNDEFINED;
+  return JS_Throw(c, e);  //takes ownership, returns JS_EXCEPTION
+}
+
+auto scriptPollHook() -> void {
+  g_pollArmed = false;  //the armed event has now fired
+  s64 now = emulatedCycles();
+  s64 delta = now - g_lastPollCycles;
+  if(delta < 0) delta = 0;  //survives a power cycle resetting the counter
+  g_lastPollCycles = now;
+
+  //Collect what is due first and invoke afterwards: a callback may register or
+  //clear timers, which would invalidate references into the list mid-iteration.
+  std::vector<JSValue> fire;
+  for(auto it = g_timers.begin(); it != g_timers.end();) {
+    it->remaining -= delta;
+    if(it->remaining > 0) { ++it; continue; }
+    if(it->period > 0) {
+      //repeating: schedule from the deadline it just met so the period does not
+      //drift, but never queue up a burst of missed ticks
+      it->remaining += it->period;
+      if(it->remaining <= 0) it->remaining = it->period;
+      fire.push_back(JS_DupValue(g_ctx, it->fn));
+      ++it;
+    } else {
+      fire.push_back(it->fn);  //ownership moves to `fire`
+      it = g_timers.erase(it);
+    }
+  }
+  for(auto fn : fire) {
+    invokeCallback(fn, 0, nullptr);
+    JS_FreeValue(g_ctx, fn);
+  }
+  armScriptPoll();
+}
+
+auto scriptLogHook(const string& line) -> void {
+  if(JS_IsUndefined(g_logFn)) return;
+  JSValue arg = JS_NewStringLen(g_ctx, line.data(), line.size());
+  invokeCallback(g_logFn, 1, &arg);
+  JS_FreeValue(g_ctx, arg);
+}
+
+auto scriptInterruptHook(u32 source) -> void {
+  if(JS_IsUndefined(g_interruptFn)) return;
+  static const char* names[] = {"SP", "SI", "AI", "VI", "PI", "DP"};
+  JSValue arg = JS_NewString(g_ctx, source < 6 ? names[source] : "unknown");
+  invokeCallback(g_interruptFn, 1, &arg);
+  JS_FreeValue(g_ctx, arg);
+}
+
+//guard for bindings that must not run inside a callback
+auto requireNotInCallback(JSContext* c, const char* what) -> JSValue {
+  if(g_inCallback) return throwError(c, {what, " is not allowed inside a callback"});
+  return JS_UNDEFINED;
+}
+
 //shared guard for calls that advance emulation
 auto requireRunnable(JSContext* c) -> JSValue {
+  if(g_inCallback) return throwError(c, "cannot advance emulation from inside a callback");
   if(!emulatorRunner.loaded()) return throwError(c, "no ROM loaded (call ares.loadRom first)");
   if(emulatorRunner.paused) return throwError(c, "emulator is paused (call ares.resume first)");
   return JS_UNDEFINED;
@@ -132,20 +247,30 @@ auto js_console_log(JSContext* c, JSValueConst, int argc, JSValueConst* argv) ->
 //--- lifecycle -------------------------------------------------------------
 
 auto js_loadRom(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  { JSValue g = requireNotInCallback(c, "loadRom()"); if(JS_IsException(g)) return g; }
   if(argc < 1) return throwError(c, "loadRom(path) requires a path");
   if(auto error = emulatorRunner.loadRom(jsStr(c, argv[0]))) return throwError(c, error);
+  g_pollArmed = false;  //power() reset the queue, dropping any armed poll event
+  g_lastPollCycles = emulatedCycles();
+  armScriptPoll();
   return JS_UNDEFINED;
 }
 
 auto js_closeRom(JSContext* c, JSValueConst, int, JSValueConst*) -> JSValue {
+  { JSValue g = requireNotInCallback(c, "closeRom()"); if(JS_IsException(g)) return g; }
   emulatorRunner.closeRom();
+  g_pollArmed = false;  //no core to poll; re-armed by the next loadRom
   return JS_UNDEFINED;
 }
 
 auto js_reset(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  { JSValue g = requireNotInCallback(c, "reset()"); if(JS_IsException(g)) return g; }
   if(!emulatorRunner.loaded()) return throwError(c, "no ROM loaded");
   bool hard = argc >= 1 && JS_ToBool(c, argv[0]);
   emulatorRunner.reset(hard);
+  g_pollArmed = false;
+  g_lastPollCycles = emulatedCycles();
+  armScriptPoll();
   return JS_UNDEFINED;
 }
 
@@ -164,6 +289,7 @@ auto js_isPaused(JSContext*, JSValueConst, int, JSValueConst*) -> JSValue {
 }
 
 auto js_setRenderer(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  { JSValue g = requireNotInCallback(c, "setRenderer()"); if(JS_IsException(g)) return g; }
   if(argc < 1) return throwError(c, "setRenderer(name) requires a name");
   string name = jsStr(c, argv[0]);
   if(name != "angrylion" && name != "none") {
@@ -187,8 +313,8 @@ auto js_wait(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValu
   double seconds = 0;
   if(argc < 1 || JS_ToFloat64(c, &seconds, argv[0]) < 0) return JS_EXCEPTION;
   if(seconds < 0) return throwError(c, "wait(seconds): seconds must be >= 0");
-  emulatorRunner.runFrames((u32)std::llround(seconds * emulatorRunner.refreshRate()));
-  return JS_UNDEFINED;
+  emulatorRunner.runSeconds(seconds);
+  return checkCallbackException(c);
 }
 
 auto js_waitFrames(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
@@ -202,14 +328,14 @@ auto js_waitFrames(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> 
     frames = (u32)n;
   }
   emulatorRunner.runFrames(frames);
-  return JS_UNDEFINED;
+  return checkCallbackException(c);
 }
 
 auto js_waitVI(JSContext* c, JSValueConst, int, JSValueConst*) -> JSValue {
   JSValue guard = requireRunnable(c);
   if(JS_IsException(guard)) return guard;
   emulatorRunner.runFrames(1);
-  return JS_UNDEFINED;
+  return checkCallbackException(c);
 }
 
 auto js_frameCount(JSContext*, JSValueConst, int, JSValueConst*) -> JSValue {
@@ -688,9 +814,12 @@ auto js_audio_slice(JSContext* c, JSValueConst self, int argc, JSValueConst* arg
 
 //--- capture: ares-level entry points --------------------------------------
 
+//A pure read of the last presented frame: no emulation is advanced, so this is
+//allowed inside a callback (unless no frame exists yet, which would require one).
 auto js_screenshot(JSContext* c, JSValueConst, int, JSValueConst*) -> JSValue {
   EmulatorRunner::ScreenshotResult result;
-  if(auto error = emulatorRunner.screenshot(result)) return throwError(c, error);
+  if(auto error = emulatorRunner.screenshot(result, !g_inCallback)) return throwError(c, error);
+  if(g_pendingExceptionSet) return checkCallbackException(c);
   return makeImageObject(c, result.width, result.height, result.rgba);
 }
 
@@ -750,18 +879,95 @@ auto js_waitLog(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSV
   if(!marker) return throwError(c, "waitLog: marker must be non-empty");
   double maxSeconds = 10.0;
   if(argc >= 2 && JS_ToFloat64(c, &maxSeconds, argv[1]) < 0) return JS_EXCEPTION;
-  u32 maxFrames = (u32)std::llround(maxSeconds * emulatorRunner.refreshRate());
-  for(u32 frame = 0; frame <= maxFrames; frame++) {
+  s64 deadline = emulatedCycles() + (s64)(maxSeconds * cyclesPerSecond());
+  while(true) {
     if(emulatorRunner.logText.find(marker)) return JS_NewBool(c, true);
-    if(frame == maxFrames || emulatorRunner.shutdownRequested.load()) break;
+    if(emulatedCycles() >= deadline || emulatorRunner.shutdownRequested.load()) break;
     emulatorRunner.runFrames(1);
+    if(g_pendingExceptionSet) return checkCallbackException(c);
   }
   return JS_NewBool(c, false);
+}
+
+//--- callbacks -------------------------------------------------------------
+
+//setTimeout/setInterval(callback, seconds) — argument order follows JS, but the
+//delay is in emulated SECONDS (the unit used throughout this API), not ms.
+auto addTimer(JSContext* c, int argc, JSValueConst* argv, bool repeating) -> JSValue {
+  const char* name = repeating ? "setInterval" : "setTimeout";
+  if(argc < 2 || !JS_IsFunction(c, argv[0])) {
+    return throwError(c, {name, "(callback, seconds) requires a function and a delay"});
+  }
+  double seconds = 0;
+  if(JS_ToFloat64(c, &seconds, argv[1]) < 0) return JS_EXCEPTION;
+  if(seconds < 0) return throwError(c, {name, "(callback, seconds): seconds must be >= 0"});
+  s64 cycles = (s64)(seconds * cyclesPerSecond());
+  if(cycles < 1) cycles = 1;  //0 means "at the core's next poll"
+  u32 id = g_nextTimerId++;
+  g_timers.push_back({id, cycles, repeating ? cycles : 0, JS_DupValue(c, argv[0])});
+  armScriptPoll();
+  return JS_NewUint32(c, id);
+}
+
+auto js_setTimeout(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  return addTimer(c, argc, argv, false);
+}
+
+auto js_setInterval(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  return addTimer(c, argc, argv, true);
+}
+
+//clearTimeout and clearInterval are the same operation, as in JS
+auto js_clearTimeout(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  uint32_t id = 0;
+  if(argc >= 1 && JS_ToUint32(c, &id, argv[0]) < 0) return JS_EXCEPTION;
+  for(auto it = g_timers.begin(); it != g_timers.end(); ++it) {
+    if(it->id != id) continue;
+    JS_FreeValue(c, it->fn);
+    g_timers.erase(it);
+    return JS_NewBool(c, true);
+  }
+  return JS_NewBool(c, false);
+}
+
+//onInterrupt(fn) installs a handler for every RCP interrupt; onInterrupt() or
+//onInterrupt(null) removes it (and with it the core-side hook entirely).
+auto js_onInterrupt(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  bool install = argc >= 1 && JS_IsFunction(c, argv[0]);
+  if(!install && argc >= 1 && !JS_IsNull(argv[0]) && !JS_IsUndefined(argv[0])) {
+    return throwError(c, "onInterrupt(callback) requires a function, null, or undefined");
+  }
+  if(!JS_IsUndefined(g_interruptFn)) JS_FreeValue(c, g_interruptFn);
+  g_interruptFn = JS_UNDEFINED;
+  ares::Nintendo64::scriptHooks.interrupt = nullptr;
+  if(install) {
+    g_interruptFn = JS_DupValue(c, argv[0]);
+    ares::Nintendo64::scriptHooks.interrupt = &scriptInterruptHook;
+  }
+  return JS_UNDEFINED;
+}
+
+//onLog(fn) calls fn(line) for each completed line the ROM prints through the
+//ISViewer channel; onLog() or onLog(null) removes the handler.
+auto js_onLog(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  bool install = argc >= 1 && JS_IsFunction(c, argv[0]);
+  if(!install && argc >= 1 && !JS_IsNull(argv[0]) && !JS_IsUndefined(argv[0])) {
+    return throwError(c, "onLog(callback) requires a function, null, or undefined");
+  }
+  if(!JS_IsUndefined(g_logFn)) JS_FreeValue(c, g_logFn);
+  g_logFn = JS_UNDEFINED;
+  emulatorRunner.onLogLine = nullptr;
+  if(install) {
+    g_logFn = JS_DupValue(c, argv[0]);
+    emulatorRunner.onLogLine = &scriptLogHook;
+  }
+  return JS_UNDEFINED;
 }
 
 //--- misc ------------------------------------------------------------------
 
 auto js_exit(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  { JSValue g = requireNotInCallback(c, "exit()"); if(JS_IsException(g)) return g; }
   int32_t code = 0;
   if(argc >= 1) JS_ToInt32(c, &code, argv[0]);
   emulatorRunner.closeRom();
@@ -778,6 +984,7 @@ auto jsHostInit(const std::vector<string>& scriptArgs) -> bool {
   g_ctx = JS_NewContext(g_rt);
   if(!g_ctx) { JS_FreeRuntime(g_rt); g_rt = nullptr; return false; }
   JS_SetModuleLoaderFunc(g_rt, moduleNormalize, moduleLoader, nullptr);
+  ares::Nintendo64::scriptHooks.poll = &scriptPollHook;
 
   JSValue global = JS_GetGlobalObject(g_ctx);
 
@@ -808,6 +1015,12 @@ auto jsHostInit(const std::vector<string>& scriptArgs) -> bool {
   setFn(g_ctx, ares, "log", js_log, 0);
   setFn(g_ctx, ares, "clearLog", js_clearLog, 0);
   setFn(g_ctx, ares, "waitLog", js_waitLog, 2);
+  setFn(g_ctx, ares, "setTimeout", js_setTimeout, 2);
+  setFn(g_ctx, ares, "clearTimeout", js_clearTimeout, 1);
+  setFn(g_ctx, ares, "setInterval", js_setInterval, 2);
+  setFn(g_ctx, ares, "clearInterval", js_clearTimeout, 1);
+  setFn(g_ctx, ares, "onInterrupt", js_onInterrupt, 1);
+  setFn(g_ctx, ares, "onLog", js_onLog, 1);
   setFn(g_ctx, ares, "exit", js_exit, 1);
 
   JSValue args = JS_NewArray(g_ctx);
@@ -853,6 +1066,19 @@ auto jsHostEvalFile(const string& path) -> bool {
 }
 
 auto jsHostShutdown() -> void {
+  ares::Nintendo64::scriptHooks.poll = nullptr;
+  ares::Nintendo64::scriptHooks.interrupt = nullptr;
+  if(g_ctx) {
+    for(auto& timer : g_timers) JS_FreeValue(g_ctx, timer.fn);
+    if(!JS_IsUndefined(g_interruptFn)) JS_FreeValue(g_ctx, g_interruptFn);
+    if(!JS_IsUndefined(g_logFn)) JS_FreeValue(g_ctx, g_logFn);
+    if(g_pendingExceptionSet) JS_FreeValue(g_ctx, g_pendingException);
+  }
+  g_timers.clear();
+  g_interruptFn = JS_UNDEFINED;
+  g_logFn = JS_UNDEFINED;
+  emulatorRunner.onLogLine = nullptr;
+  g_pendingExceptionSet = false;
   if(g_ctx) JS_FreeContext(g_ctx);
   if(g_rt) JS_FreeRuntime(g_rt);
   g_ctx = nullptr;

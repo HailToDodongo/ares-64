@@ -1,7 +1,9 @@
 //EmulatorRunner: the ares::Platform implementation behind the JS scripting API.
 //Single-threaded: the core runs inline on the calling (JS) thread inside the
-//run*() primitives. The only cross-thread callback is video(), which arrives on
-//the core's screen worker thread — it must never call into JS.
+//run*() primitives, and the headless build compiles ares with
+//ARES_VIDEO_SYNCHRONOUS so video() is delivered on that same thread rather than
+//by the screen worker — which is what makes "the last presented frame" a
+//well-defined, deterministic thing to read.
 
 #pragma once
 
@@ -11,6 +13,7 @@
 
 #include <atomic>
 #include <map>
+#include <mutex>
 #include <vector>
 
 struct EmulatorRunner : ares::Platform {
@@ -30,11 +33,23 @@ struct EmulatorRunner : ares::Platform {
   bool paused = true;
 
   //--- time ----------------------------------------------------------------
-  //run the core until `frames` more video frames have been presented.
-  //relies on the process watchdog for hang protection.
+  //run the core until `frames` more VI ticks have elapsed. A tick is one VI
+  //field when the display is active; when the VI is off (a ROM that never calls
+  //display_init — typical for headless self-test ROMs) the core still raises the
+  //tick at the same ~60Hz cadence, so waits always terminate. Relies on the
+  //process watchdog for genuine hangs.
   auto runFrames(u32 frames) -> void;
+  //run for N seconds of emulated time, measured on the CPU clock rather than by
+  //counting VI ticks — the tick rate is not constant (it roughly doubles while
+  //the display is off), so only this reflects real in-game time. Granularity is
+  //still one tick, since that is where the core can be stopped.
+  auto runSeconds(double seconds) -> void;
+  //the in-game clock: monotonic emulated CPU cycles, and its rate
+  auto cycles() const -> s64;
+  auto cyclesPerSecond() const -> double;
   //frames per emulated second for the loaded system (60 NTSC / 50 PAL)
   auto refreshRate() const -> double { return palSystem ? 50.0 : 60.0; }
+  //VI ticks (see runFrames); equals presented frames while the display is on
   auto frame() const -> u32 { return frameCount.load(); }
 
   //--- input ---------------------------------------------------------------
@@ -48,9 +63,11 @@ struct EmulatorRunner : ares::Platform {
     u32 width = 0, height = 0;
     std::vector<u8> rgba;         //width*height*4, R,G,B,A byte order, A = 255
   };
-  //advances the core to the next presented frame (even when paused) and captures
-  //it into memory. Returns error message or "".
-  auto screenshot(ScreenshotResult& out) -> nall::string;
+  //Returns the most recently presented frame — a pure read that advances nothing,
+  //so it is safe from a callback and does not perturb timing. If no frame has been
+  //presented yet, it advances until one arrives when mayAdvance is set, and fails
+  //otherwise. Returns an error message or "".
+  auto screenshot(ScreenshotResult& out, bool mayAdvance) -> nall::string;
 
   struct AudioRecording {
     u32 frequency = 0;
@@ -66,6 +83,9 @@ struct EmulatorRunner : ares::Platform {
 
   //--- ISViewer log --------------------------------------------------------
   nall::string logText;  //accumulated (main thread only); echoed to stdout live
+  //called with each completed line (newline stripped) as the ROM prints it, from
+  //inside the emulation loop. Installed by the script host; null when unused.
+  void (*onLogLine)(const nall::string& line) = nullptr;
 
   //--- ares::Platform ------------------------------------------------------
   auto attach(ares::Node::Object) -> void override;
@@ -79,6 +99,11 @@ struct EmulatorRunner : ares::Platform {
   auto input(ares::Node::Input::Input) -> void override;
 
   std::atomic<bool> shutdownRequested{false};
+  //Set by the script host when a callback throws: the run loops return at the
+  //next tick boundary so the exception surfaces immediately instead of after the
+  //remainder of the wait has been emulated. Cleared when it is rethrown.
+  std::atomic<bool> abortRun{false};
+  auto stopRequested() const -> bool { return shutdownRequested.load() || abortRun.load(); }
 
 private:
   ares::Node::System root;
@@ -101,13 +126,14 @@ private:
   //polled per joybus transaction; also avoids re-walking the node tree there)
   std::map<const void*, u32> inputPortLookup;
 
-  //screenshot handshake with the screen worker thread
-  struct {
-    std::atomic<bool> pending{false};
-    std::atomic<bool> done{false};
-    ScreenshotResult result;  //written by video() before done
-  } shot;
+  //Most recent presented frame, kept so screenshot() never has to advance.
+  //Written by video() on the screen worker thread, read by the script thread.
+  std::mutex frameMutex;
+  std::vector<u32> lastFrame;  //tightly packed ARGB8888, converted on demand
+  u32 lastWidth = 0, lastHeight = 0;
+  std::atomic<bool> haveFrame{false};
 
+  nall::string logLine;  //partial line awaiting its newline, for onLogLine
   bool audioRecording = false;
   u32 recordFrequency = drainFrequency;
   std::vector<s16> wavLeft, wavRight;

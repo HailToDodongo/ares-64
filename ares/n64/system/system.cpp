@@ -83,6 +83,7 @@ auto option(string name, string value) -> bool {
 System system;
 Queue queue;
 Random random;
+ScriptHooks scriptHooks;
 #include "serialization.cpp"
 
 auto System::game() -> string {

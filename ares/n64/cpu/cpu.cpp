@@ -63,6 +63,10 @@ auto CPU::gdbPoll() -> void {
 #endif
 }
 
+auto CPU::scriptPoll() -> void {
+  if(scriptHooks.poll) scriptHooks.poll();
+}
+
 auto CPU::queueInsert(u32 event, u32 clocks) -> void {
   if(!queue.insert(event, clocks)) return;
   s64 queueDelta = queue.timeToNextEvent();
@@ -107,6 +111,7 @@ auto CPU::synchronize() -> void {
     case Queue::DD_BM_Request:  return dd.bmRequest();
     case Queue::DD_Motor_Mode:  return dd.motorChange();
     case Queue::GDB_Poll:      return cpu.gdbPoll();
+    case Queue::Script_Poll:   return cpu.scriptPoll();
     }
   });
 

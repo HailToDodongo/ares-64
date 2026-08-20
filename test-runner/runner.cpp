@@ -63,6 +63,8 @@ auto EmulatorRunner::loadRom(const string& path) -> string {
 
   frameCount = 0;
   logText = {};
+  logLine = {};
+  haveFrame = false;
   root->power();
   return {};
 }
@@ -99,15 +101,32 @@ auto EmulatorRunner::setRenderer(const string& name) -> void {
 
 auto EmulatorRunner::runSlice() -> void {
   ares::Nintendo64::system.applyPendingRenderer();
+  //one call advances exactly one VI tick: CPU::main() runs until VI::refreshed
+  //and consumes it. The VI raises it per field while the display is active and
+  //on an equivalent cadence while it is off, so this always returns — including
+  //for ROMs that never enable the display (they simply never present a frame).
   root->run();
+  ++frameCount;
 }
 
 auto EmulatorRunner::runFrames(u32 frames) -> void {
-  if(!root || frames == 0) return;
-  u32 target = frameCount.load() + frames;
-  while(frameCount.load() < target && !shutdownRequested.load()) {
-    runSlice();
-  }
+  if(!root) return;
+  for(u32 n = 0; n < frames && !stopRequested(); n++) runSlice();
+}
+
+auto EmulatorRunner::cycles() const -> s64 {
+  return ares::Nintendo64::cpu.profile.cpuCycles;
+}
+
+auto EmulatorRunner::cyclesPerSecond() const -> double {
+  //Thread clocks run at twice the CPU rate; profile.cpuCycles counts the halved value
+  return ares::Nintendo64::system.frequency() / 2.0;
+}
+
+auto EmulatorRunner::runSeconds(double seconds) -> void {
+  if(!root || seconds <= 0) return;
+  s64 target = cycles() + (s64)(seconds * cyclesPerSecond());
+  while(cycles() < target && !stopRequested()) runSlice();
 }
 
 //--- input -----------------------------------------------------------------
@@ -142,40 +161,46 @@ auto EmulatorRunner::input(ares::Node::Input::Input node) -> void {
 
 //--- capture ---------------------------------------------------------------
 
-auto EmulatorRunner::screenshot(ScreenshotResult& out) -> string {
+auto EmulatorRunner::screenshot(ScreenshotResult& out, bool mayAdvance) -> string {
   if(!root) return "no ROM loaded";
-  shot.done = false;
-  shot.pending = true;
-  //advance to the next presented frame regardless of pause state; video() on the
-  //screen worker thread performs the capture and flags done.
-  while(!shot.done.load() && !shutdownRequested.load()) {
-    runSlice();
+
+  //nothing presented yet (e.g. straight after loadRom): run until the first frame
+  if(!haveFrame.load()) {
+    if(!mayAdvance) return "no frame captured yet and emulation cannot be advanced here";
+    u32 deadline = frameCount.load() + 4;
+    while(!haveFrame.load() && !stopRequested() && frameCount.load() < deadline) runSlice();
+    if(!haveFrame.load()) {
+      if(abortRun.load()) return {};  //a callback threw; the host rethrows it
+      if(shutdownRequested.load()) return "shutdown while waiting for frame";
+      return "no frame presented: the ROM has not enabled the display (VI inactive)";
+    }
   }
-  if(!shot.done.load()) return "shutdown while waiting for frame";
-  out = std::move(shot.result);
-  shot.result = {};
+
+  std::lock_guard<std::mutex> lock(frameMutex);
+  out.width = lastWidth;
+  out.height = lastHeight;
+  out.rgba.clear();
+  out.rgba.reserve((u64)lastWidth * lastHeight * 4);
+  for(u32 pixel : lastFrame) {
+    out.rgba.push_back(pixel >> 16);
+    out.rgba.push_back(pixel >>  8);
+    out.rgba.push_back(pixel >>  0);
+    out.rgba.push_back(255);
+  }
   return {};
 }
 
 auto EmulatorRunner::video(ares::Node::Video::Screen, const u32* data, u32 pitch, u32 width, u32 height) -> void {
-  ++frameCount;
-  if(!shot.pending.exchange(false)) return;
-
-  //RGBA byte layout for the JS-visible buffer (hashing happens in the JS layer,
-  //identically for captured and loaded images)
-  std::vector<u8> rgba;
-  rgba.reserve((u64)width * height * 4);
+  //Keep every presented frame so screenshot() is a pure read. This is one packed
+  //copy per frame (~600 KiB at 640x240); the RGBA conversion happens on demand.
+  std::lock_guard<std::mutex> lock(frameMutex);
+  lastWidth = width;
+  lastHeight = height;
+  lastFrame.resize((size_t)width * height);
   for(u32 y : range(height)) {
-    const u32* line = data + y * (pitch >> 2);
-    for(u32 x : range(width)) {
-      rgba.push_back(line[x] >> 16);
-      rgba.push_back(line[x] >>  8);
-      rgba.push_back(line[x] >>  0);
-      rgba.push_back(255);
-    }
+    memory::copy<u32>(lastFrame.data() + (size_t)y * width, data + y * (pitch >> 2), width);
   }
-  shot.result = {width, height, std::move(rgba)};
-  shot.done = true;
+  haveFrame = true;
 }
 
 auto EmulatorRunner::startAudio(u32 rateOverride) -> string {
@@ -265,4 +290,23 @@ auto EmulatorRunner::log(ares::Node::Debugger::Tracer::Tracer tracer, string_vie
   logText.append(message);
   //bound the accumulated text so runaway printf loops can't exhaust memory
   if(logText.size() > 4 * 1024 * 1024) logText = logText.slice(logText.size() - 1024 * 1024);
+
+  if(!onLogLine) return;
+  //The ISViewer tracer notifies per character, so reassemble lines here and hand
+  //over only completed ones (without the newline).
+  for(u32 n = 0; n < message.size(); n++) {
+    char c = message.data()[n];
+    if(c == '\r') continue;
+    if(c == '\n') {
+      onLogLine(logLine);
+      logLine = {};
+      continue;
+    }
+    logLine.append(c);
+    //a ROM printing without newlines must not grow this without bound
+    if(logLine.size() >= 64 * 1024) {
+      onLogLine(logLine);
+      logLine = {};
+    }
+  }
 }
