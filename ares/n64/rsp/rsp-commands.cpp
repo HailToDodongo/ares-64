@@ -184,6 +184,12 @@ auto RSP::captureCommandHook(u32 pc) -> void {
       cap.push(delta, cap.segSeq, cap.frameNumber, cap.segOverlay, cap.segCommand, cap.segWordCount, cap.segWords,
                cap.segBytesIn, cap.segBytesOut);
 
+      if(cap.traceActive) {  // scripted per-command trace: the command ended
+        debugger.tracer.instruction->setEnabled(false);
+        cap.traceActive = false;
+        if(cap.traceRemaining && !--cap.traceRemaining) cap.traceOvl = cap.traceCmd = -1;
+      }
+
       captureStepWait();  // RSP single-step: pause here until the UI advances
     } else {
       u8 overhead = cap.segType == RSPCapture::SegLoop        ? RSPCapture::OverheadLoop
@@ -203,7 +209,19 @@ auto RSP::captureCommandHook(u32 pc) -> void {
   cap.segSeq = captureSequence++;
   cap.segBytesIn = 0;
   cap.segBytesOut = 0;
-  if(newType == RSPCapture::SegCommand) rspReadPendingCommand(*this);
+  if(newType == RSPCapture::SegCommand) {
+    rspReadPendingCommand(*this);
+    if(cap.traceOvl >= 0 && cap.traceRemaining
+    && cap.segOverlay == (u16)cap.traceOvl && cap.segCommand == (u8)cap.traceCmd) {
+      // scripted per-command trace: start tracing this command's handler. The
+      // recompiler keys its block cache on trace mode, so this is a safe
+      // runtime toggle; the cycle counter restarts at 0 per occurrence.
+      debugger.tracer.instructionCountdown = 0;
+      debugger.tracer.traceStartCycle = pipeline.clocksTotal / 3;
+      debugger.tracer.instruction->setEnabled(true);
+      cap.traceActive = true;
+    }
+  }
 }
 
 #endif  // ARES_DEBUG_TOOLS

@@ -262,8 +262,10 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
   }
 
   // 3) Parent dir's build/ subdirectory (e.g., examples/00_quad/build/name.elf)
+  string parentDir = stringDirname(base);
+  if(!parentDir) parentDir = ".";  //bare relative ROM name: stay in the cwd
   if(!foundElfPath) {
-    string parentPath = {stringDirname(base), "/build/", stringBasename(base), ".elf"};
+    string parentPath = {parentDir, "/build/", stringBasename(base), ".elf"};
     if(string::read(parentPath)) { foundElfPath = parentPath; }
   }
 
@@ -273,7 +275,7 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
     print("RSP: autoDetect: no libdragon ELF found for '", romPath, "'.\n");
     print("RSP:   tried: ", directPath, "\n");
     print("RSP:          ", string{base, "/build/", stringBasename(base), ".elf"}, "\n");
-    print("RSP:          ", string{stringDirname(base), "/build/", stringBasename(base), ".elf"}, "\n");
+    print("RSP:          ", string{parentDir, "/build/", stringBasename(base), ".elf"}, "\n");
     print("RSP:   RSPQ/F3DEX2 command capture disabled (ROM not detected as libdragon).\n");
     return false;
   }
@@ -398,12 +400,20 @@ auto RSPCapture::refreshOverlayNames() -> void {
     return best ? best->name : nall::string{};
   };
 
-  // Auto-detect the real overlay-table DMEM offset once, against live DMEM
+  // Auto-detect the real overlay-table DMEM offset once, against live DMEM.
+  // Score through the idmap that follows the table (idmap[id] = slot * 4, used
+  // as a byte offset into the word table): a candidate only counts when its
+  // idmap entries point at table slots holding real ucode data pointers. This
+  // disambiguates neighbouring offsets that a raw table scan cannot (multi-id
+  // overlays like rdpq repeat the same entry, so a shifted window still
+  // matches by content).
   if(!ovlOffsetLocked && !ucodes.empty()) {
     auto score = [&](u32 off) -> u32 {
       u32 n = 0;
-      for(u32 slot = 0; slot < 16; slot++) {
-        if(matchName(r.dmem.read<Word>(off + slot * 4) & 0x00FFFFFF)) n++;
+      for(u32 id = 1; id < 16; id++) {
+        u8 e = r.dmem.read<Byte>(off + 16 * 4 + id);
+        if(!e || (e & 3) || (e >> 2) >= 16) continue;
+        if(matchName(r.dmem.read<Word>(off + (e >> 2) * 4) & 0x00FFFFFF)) n++;
       }
       return n;
     };
@@ -424,30 +434,46 @@ auto RSPCapture::refreshOverlayNames() -> void {
     // Not populated yet, try again next frame.
   }
 
-  // For each non-zero overlay-table entry, resolve the ucode name and (shifted by  the idmap base) attach the JSON command-name/arg descriptors for that overlay.
-  for(u32 slot = 0; slot < 16; slot++) {
+  // Captured rows are keyed by the overlay ID (the high nibble of the command
+  // word), so resolve names per ID: idmap[id] = table slot << 2, and the slot's
+  // table entry points at the ucode data. Multi-slot ucodes (>16 commands, e.g.
+  // rdpq) occupy consecutive IDs with consecutive slots; the JSON command index
+  // is offset by 16 per ID step from the ucode's first ID.
+  //
+  // ID 0 is the builtin overlay: its names come from the JSON "id": 0 entry
+  // (loadConfig) and are left untouched here.
+  struct IdInfo { nall::string name; u32 slot = 0; };
+  IdInfo ids[16];
+  for(u32 id = 1; id < 16; id++) {
+    u32 slot = (r.dmem.read<Byte>(dmemOvlIdmapOffset + id) >> 2) & 15;
+    if(slot == 0) continue;  //unmapped ID
     u32 dataPhys = r.dmem.read<Word>(dmemOvlTableOffset + slot * 4) & 0x00FFFFFF;
-    nall::string finalName = matchName(dataPhys);
-    if(!finalName) continue;
+    ids[id].name = matchName(dataPhys);
+    ids[id].slot = slot;
+  }
+  for(u32 id = 1; id < 16; id++) {
+    if(!ids[id].name) continue;
+    //walk back to the first consecutive ID of the same ucode (a >16-command
+    //overlay maps several consecutive IDs onto the same table slot)
+    u32 baseId = id;
+    while(baseId > 1 && ids[baseId - 1].slot == ids[id].slot
+       && ids[baseId - 1].name == ids[id].name) baseId--;
+    u32 cmdOffset = (id - baseId) * 16;
 
-    // idmap[slot] = base_id << 2; command offset = (slot - base_id) * 16
-    u8 idmapEntry = r.dmem.read<Byte>(dmemOvlIdmapOffset + slot);
-    u32 baseId = idmapEntry >> 2;
-    u32 cmdOffset = (slot - baseId) * 16;
-
-    if(!overlayNameMap[slot]) {
-      print("RSP: overlay ", slot, " = '", finalName, "'\n");
+    if(!overlayNameMap[id]) {
+      print("RSP: overlay id ", hex(id, 1L), " = '", ids[id].name, "' (slot ", ids[id].slot,
+            cmdOffset ? string{", commands +", cmdOffset} : string{}, ")\n");
     }
-    overlayNameMap[slot] = finalName;
+    overlayNameMap[id] = ids[id].name;
     // Populate command names + arg descriptors from JSON, shifted by cmdOffset
     for(u32 j = 0; j < jsonOvlDataCount; j++) {
-      if(jsonOvlData[j].name == finalName) {
+      if(jsonOvlData[j].name == ids[id].name) {
         for(u32 c = 0; c < 256; c++) {
           if(c >= cmdOffset && jsonOvlData[j].commandNames[c]) {
-            commandNameMap[slot][c - cmdOffset] = jsonOvlData[j].commandNames[c];
+            commandNameMap[id][c - cmdOffset] = jsonOvlData[j].commandNames[c];
           }
           if(c >= cmdOffset && jsonOvlData[j].commandArgs[c].valid()) {
-            cmdArgs[slot][c - cmdOffset] = jsonOvlData[j].commandArgs[c];
+            cmdArgs[id][c - cmdOffset] = jsonOvlData[j].commandArgs[c];
           }
         }
         break;

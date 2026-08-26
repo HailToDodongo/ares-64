@@ -30,3 +30,12 @@ add_custom_command(TARGET ares-test POST_BUILD
     "${CMAKE_SOURCE_DIR}/mia/Firmware/Nintendo 64/pif.sm5.rom"
     "$<TARGET_FILE_DIR:ares-test>/Firmware/Nintendo 64"
 )
+
+# rspq-libdragon.json next to the binary: RSPCapture::autoDetect() checks
+# Path::program() when the JSON isn't found next to the ROM's ELF (used by the
+# ares.rspProfile* / waitRspCommand scripting APIs).
+add_custom_command(TARGET ares-test POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/desktop-ui/ui/rsp-overlays/rspq-libdragon.json"
+    "$<TARGET_FILE_DIR:ares-test>"
+)

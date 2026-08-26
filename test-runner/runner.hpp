@@ -81,11 +81,65 @@ struct EmulatorRunner : ares::Platform {
   //resampler target used while not recording (streams must always be drained)
   static constexpr u32 drainFrequency = 48000;
 
+  //--- RSP profiling -------------------------------------------------------
+  //Aggregated view over ares' RSP command capture (requires a build with
+  //ARES_ENABLE_DEBUG_TOOLS and a libdragon ROM with its .elf alongside): one
+  //row per (overlay, command) plus synthetic overhead rows (dispatch loop,
+  //overlay load, command-buffer fetch). `clocks` are raw pipeline units
+  //(3 per RSP cycle).
+  struct RspProfileRow {
+    u16 overlayId = 0; u8 commandId = 0;
+    bool overhead = false; u8 overheadType = 0;
+    nall::string name, overlayName;
+    u64 count = 0, clocks = 0, bytesIn = 0, bytesOut = 0;
+  };
+  struct RspProfileTable {
+    std::vector<RspProfileRow> rows;
+    u64 commandClocks = 0, overheadClocks = 0, lostRows = 0;
+  };
+  //all return an empty string on success, or an error message
+  auto rspProfileInit() -> nall::string;   //lazy capture setup (idempotent)
+  auto rspProfileStart() -> nall::string;  //open a fresh aggregation window
+  auto rspProfileTable(RspProfileTable& out) -> nall::string;
+  //Run emulation until `count` more executions of one command have retired.
+  //Selector: a command name from rspq-libdragon.json (e.g. "Vert Load"), or
+  //numeric overlayId/commandId with an empty name. While a profile window is
+  //open, rows up to and *including* the final match keep aggregating, then the
+  //window freezes — so a window bracketed by the same marker command on both
+  //sides covers exactly N marker periods.
+  auto rspWaitCommand(const nall::string& name, s32 ovl, s32 cmd, u32 count,
+                      u32 timeoutFrames) -> nall::string;
+
+  //--- RSP instruction trace -----------------------------------------------
+  //Trace the RSP instruction stream while a specific rspq command executes
+  //(cycle offsets, '*' stall markers, '^' dual-issue markers), auto-started/
+  //stopped via the command capture. Occurrences are delimited by the cycle
+  //counter restarting at [   0]. Returns "" or an error message.
+  auto rspTraceCommand(const nall::string& name, s32 ovl, s32 cmd, u32 occurrences,
+                       u32 timeoutFrames, nall::string& outText, u32& outCount,
+                       bool& outTruncated) -> nall::string;
+
   //--- ISViewer log --------------------------------------------------------
   nall::string logText;  //accumulated (main thread only); echoed to stdout live
   //called with each completed line (newline stripped) as the ROM prints it, from
   //inside the emulation loop. Installed by the script host; null when unused.
   void (*onLogLine)(const nall::string& line) = nullptr;
+
+  //--- RSP profiling internals ---------------------------------------------
+  nall::string romPath;         //path of the loaded ROM (for capture autoDetect)
+  bool rspProfInited = false;
+  u32  rspDrainPos = 0;         //monotonic cursor into the capture ring (u32 wrap-safe)
+  bool rspAggregating = false;
+  bool rspFrozen = false;
+  u64  rspLostRows = 0;
+  std::map<u32, RspProfileRow> rspAgg;
+  bool rspTraceCapturing = false;   //divert RSP tracer lines into rspTraceText
+  bool rspTraceTruncated = false;
+  nall::string rspTraceText;
+  //drain committed capture rows; aggregate into rspAgg while a window is open.
+  //When mOvl >= 0, decrement `remaining` on each matching command row and stop
+  //right after it hits zero (freezing an open window); returns true then.
+  auto rspDrain(s32 mOvl, s32 mCmd, u32& remaining) -> bool;
 
   //--- ares::Platform ------------------------------------------------------
   auto attach(ares::Node::Object) -> void override;

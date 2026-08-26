@@ -342,6 +342,130 @@ auto js_frameCount(JSContext*, JSValueConst, int, JSValueConst*) -> JSValue {
   return JS_NewInt64(g_ctx, emulatorRunner.frame());
 }
 
+//--- RSP profiling ----------------------------------------------------------
+
+auto js_rspProfileStart(JSContext* c, JSValueConst, int, JSValueConst*) -> JSValue {
+  JSValue guard = requireRunnable(c);
+  if(JS_IsException(guard)) return guard;
+  if(auto err = emulatorRunner.rspProfileStart()) return throwError(c, err);
+  return JS_UNDEFINED;
+}
+
+auto js_rspProfile(JSContext* c, JSValueConst, int, JSValueConst*) -> JSValue {
+  JSValue guard = requireRunnable(c);
+  if(JS_IsException(guard)) return guard;
+  EmulatorRunner::RspProfileTable t;
+  if(auto err = emulatorRunner.rspProfileTable(t)) return throwError(c, err);
+
+  JSValue obj = JS_NewObject(c);
+  //clock unit: the capture counts raw pipeline clocks, 3 per RSP cycle
+  auto cycles = [](u64 clocks) -> double { return clocks / 3.0; };
+  JS_SetPropertyStr(c, obj, "commandCycles", JS_NewFloat64(c, cycles(t.commandClocks)));
+  JS_SetPropertyStr(c, obj, "overheadCycles", JS_NewFloat64(c, cycles(t.overheadClocks)));
+  JS_SetPropertyStr(c, obj, "totalCycles", JS_NewFloat64(c, cycles(t.commandClocks + t.overheadClocks)));
+  JS_SetPropertyStr(c, obj, "lostRows", JS_NewFloat64(c, (double)t.lostRows));
+
+  JSValue rows = JS_NewArray(c);
+  u32 index = 0;
+  static const char* overheadTypes[] = {"", "loop", "overlaySwitch", "bufferFetch", "unknown"};
+  for(auto& r : t.rows) {
+    JSValue row = JS_NewObject(c);
+    JS_SetPropertyStr(c, row, "name", JS_NewString(c, r.name.data()));
+    JS_SetPropertyStr(c, row, "overlay", JS_NewString(c, r.overlayName.data()));
+    JS_SetPropertyStr(c, row, "overlayId", JS_NewInt32(c, r.overlayId));
+    JS_SetPropertyStr(c, row, "commandId", JS_NewInt32(c, r.commandId));
+    JS_SetPropertyStr(c, row, "overhead", JS_NewBool(c, r.overhead));
+    if(r.overhead) {
+      JS_SetPropertyStr(c, row, "overheadType",
+        JS_NewString(c, overheadTypes[r.overheadType <= 4 ? r.overheadType : 4]));
+    }
+    JS_SetPropertyStr(c, row, "count", JS_NewFloat64(c, (double)r.count));
+    JS_SetPropertyStr(c, row, "cycles", JS_NewFloat64(c, cycles(r.clocks)));
+    JS_SetPropertyStr(c, row, "avg", JS_NewFloat64(c, r.count ? cycles(r.clocks) / (double)r.count : 0.0));
+    JS_SetPropertyStr(c, row, "bytesIn", JS_NewFloat64(c, (double)r.bytesIn));
+    JS_SetPropertyStr(c, row, "bytesOut", JS_NewFloat64(c, (double)r.bytesOut));
+    JS_SetPropertyUint32(c, rows, index++, row);
+  }
+  JS_SetPropertyStr(c, obj, "rows", rows);
+  return obj;
+}
+
+auto js_waitRspCommand(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  JSValue guard = requireRunnable(c);
+  if(JS_IsException(guard)) return guard;
+  if(argc < 1) return throwError(c, "waitRspCommand(name [, count [, timeoutFrames]]) or waitRspCommand(overlayId, commandId [, count [, timeoutFrames]])");
+
+  string name;
+  s32 ovl = -1, cmd = -1;
+  int next = 1;
+  if(JS_IsString(argv[0])) {
+    const char* s = JS_ToCString(c, argv[0]);
+    if(!s) return JS_EXCEPTION;
+    name = s;
+    JS_FreeCString(c, s);
+    if(!name) return throwError(c, "waitRspCommand: empty command name");
+  } else {
+    if(argc < 2) return throwError(c, "waitRspCommand(overlayId, commandId, ...): commandId missing");
+    int64_t a = 0, b = 0;
+    if(JS_ToInt64(c, &a, argv[0]) < 0 || JS_ToInt64(c, &b, argv[1]) < 0) return JS_EXCEPTION;
+    if(a < 0 || a > 15 || b < 0 || b > 255) return throwError(c, "waitRspCommand: overlayId must be 0..15, commandId 0..255");
+    ovl = (s32)a; cmd = (s32)b; next = 2;
+  }
+  int64_t count = 1, timeout = 1800;
+  if(argc > next && JS_ToInt64(c, &count, argv[next]) < 0) return JS_EXCEPTION;
+  if(argc > next + 1 && JS_ToInt64(c, &timeout, argv[next + 1]) < 0) return JS_EXCEPTION;
+  if(count < 1) return throwError(c, "waitRspCommand: count must be >= 1");
+  if(timeout < 1) return throwError(c, "waitRspCommand: timeoutFrames must be >= 1");
+
+  if(auto err = emulatorRunner.rspWaitCommand(name, ovl, cmd, (u32)count, (u32)timeout)) {
+    return throwError(c, err);
+  }
+  return checkCallbackException(c);
+}
+
+auto js_rspTrace(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  JSValue guard = requireRunnable(c);
+  if(JS_IsException(guard)) return guard;
+  if(argc < 1) return throwError(c, "rspTrace(name [, occurrences [, timeoutFrames]]) or rspTrace(overlayId, commandId [, occurrences [, timeoutFrames]])");
+
+  string name;
+  s32 ovl = -1, cmd = -1;
+  int next = 1;
+  if(JS_IsString(argv[0])) {
+    const char* s = JS_ToCString(c, argv[0]);
+    if(!s) return JS_EXCEPTION;
+    name = s;
+    JS_FreeCString(c, s);
+    if(!name) return throwError(c, "rspTrace: empty command name");
+  } else {
+    if(argc < 2) return throwError(c, "rspTrace(overlayId, commandId, ...): commandId missing");
+    int64_t a = 0, b = 0;
+    if(JS_ToInt64(c, &a, argv[0]) < 0 || JS_ToInt64(c, &b, argv[1]) < 0) return JS_EXCEPTION;
+    if(a < 0 || a > 15 || b < 0 || b > 255) return throwError(c, "rspTrace: overlayId must be 0..15, commandId 0..255");
+    ovl = (s32)a; cmd = (s32)b; next = 2;
+  }
+  int64_t occurrences = 1, timeout = 1800;
+  if(argc > next && JS_ToInt64(c, &occurrences, argv[next]) < 0) return JS_EXCEPTION;
+  if(argc > next + 1 && JS_ToInt64(c, &timeout, argv[next + 1]) < 0) return JS_EXCEPTION;
+  if(occurrences < 1) return throwError(c, "rspTrace: occurrences must be >= 1");
+  if(timeout < 1) return throwError(c, "rspTrace: timeoutFrames must be >= 1");
+
+  string text;
+  u32 count = 0;
+  bool truncated = false;
+  if(auto err = emulatorRunner.rspTraceCommand(name, ovl, cmd, (u32)occurrences, (u32)timeout,
+                                               text, count, truncated)) {
+    return throwError(c, err);
+  }
+  JSValue guard2 = checkCallbackException(c);
+  if(JS_IsException(guard2)) return guard2;
+  JSValue obj = JS_NewObject(c);
+  JS_SetPropertyStr(c, obj, "occurrences", JS_NewInt64(c, count));
+  JS_SetPropertyStr(c, obj, "truncated", JS_NewBool(c, truncated));
+  JS_SetPropertyStr(c, obj, "text", JS_NewStringLen(c, text.data(), text.size()));
+  return obj;
+}
+
 //--- controller ------------------------------------------------------------
 
 auto controllerPort(JSContext* c, JSValueConst self) -> int {
@@ -515,6 +639,7 @@ auto imageSha256(const std::vector<u8>& rgba) -> string {
 
 auto js_img_save(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_img_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
+auto js_img_crop(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_audio_save(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_audio_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_audio_snr(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
@@ -530,7 +655,34 @@ auto makeImageObject(JSContext* c, u32 width, u32 height, const std::vector<u8>&
   JS_SetPropertyStr(c, obj, "data", JS_NewArrayBufferCopy(c, rgba.data(), rgba.size()));
   setFn(c, obj, "save", js_img_save, 1);
   setFn(c, obj, "compare", js_img_compare, 2);
+  setFn(c, obj, "crop", js_img_crop, 4);
   return obj;
+}
+
+//image.crop(x, y, width, height): extract a subregion as a new image object.
+//The result carries its own sha256/save/compare/crop, so region-of-interest
+//snapshot tests (e.g. masking out FPS overlays) compose with everything else.
+auto js_img_crop(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue {
+  if(argc < 4) return throwError(c, "crop(x, y, width, height) requires four arguments");
+  int32_t x = 0, y = 0, w = 0, h = 0;
+  if(JS_ToInt32(c, &x, argv[0]) < 0) return JS_EXCEPTION;
+  if(JS_ToInt32(c, &y, argv[1]) < 0) return JS_EXCEPTION;
+  if(JS_ToInt32(c, &w, argv[2]) < 0) return JS_EXCEPTION;
+  if(JS_ToInt32(c, &h, argv[3]) < 0) return JS_EXCEPTION;
+  u32 width, height; u8* bytes; size_t size;
+  if(!getImagePixels(c, self, width, height, bytes, size)) {
+    return throwError(c, "crop: image data buffer is missing or has the wrong size");
+  }
+  if(x < 0 || y < 0 || w <= 0 || h <= 0 || (u32)(x + w) > width || (u32)(y + h) > height) {
+    return throwError(c, string{"crop: region ", x, ",", y, " ", w, "x", h,
+                                " is outside the ", width, "x", height, " image"});
+  }
+  std::vector<u8> rgba((size_t)w * h * 4);
+  for(s32 row = 0; row < h; row++) {
+    const u8* src = bytes + ((size_t)(y + row) * width + x) * 4;
+    memcpy(rgba.data() + (size_t)row * w * 4, src, (size_t)w * 4);
+  }
+  return makeImageObject(c, w, h, rgba);
 }
 
 auto makeAudioObject(JSContext* c, u32 frequency, const std::vector<s16>& frames) -> JSValue {
@@ -1006,6 +1158,10 @@ auto jsHostInit(const std::vector<string>& scriptArgs) -> bool {
   setFn(g_ctx, ares, "waitFrames", js_waitFrames, 1);
   setFn(g_ctx, ares, "waitVI", js_waitVI, 0);
   setFn(g_ctx, ares, "frameCount", js_frameCount, 0);
+  setFn(g_ctx, ares, "rspProfileStart", js_rspProfileStart, 0);
+  setFn(g_ctx, ares, "rspProfile", js_rspProfile, 0);
+  setFn(g_ctx, ares, "waitRspCommand", js_waitRspCommand, 1);
+  setFn(g_ctx, ares, "rspTrace", js_rspTrace, 1);
   setFn(g_ctx, ares, "controller", js_controller, 1);
   setFn(g_ctx, ares, "screenshot", js_screenshot, 0);
   setFn(g_ctx, ares, "loadImage", js_loadImage, 1);

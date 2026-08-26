@@ -171,6 +171,13 @@ struct RSPCapture {
   // Per-frame cycle tracking
   u32 frameNumber = 0;
 
+  // Scripted per-command instruction tracing (ares-test): armed by the JS host;
+  // captureCommandHook enables the RSP instruction tracer while a matching
+  // command's segment is open and disables it when the segment closes.
+  s32 traceOvl = -1, traceCmd = -1;  // -1 = disarmed
+  u32 traceRemaining = 0;            // occurrences left to trace
+  bool traceActive = false;          // tracer currently on for an open segment
+
   // Flame-chart sliding-window timeline. Unlike the per-command capture above
   // (which the RSP viewer commits + clears every VI), this is a free-running ring
   // on the CPU's now() wall-clock axis (the CPU is primary and runs continuously,

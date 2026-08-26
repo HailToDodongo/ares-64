@@ -130,6 +130,7 @@ const press = (btn) => { p1.hold(btn); ares.waitVI(); p1.release(btn); ares.wait
 | `data` | `ArrayBuffer` of RGBA bytes; wrap with `new Uint8Array(img.data)` |
 | `save(path)` | Write a PNG |
 | `compare(other, tolerance?)` | Diff against an image object **or a PNG path** → **compare result** |
+| `crop(x, y, width, height)` | Extract a subregion, new **image object**. |
 
 `tolerance` (default `0`) is the maximum per-channel delta still counted as
 equal. Alpha is ignored.
@@ -171,6 +172,70 @@ if (rec.trim().snr(golden.trim()) < 40) throw new Error("audio degraded");
 
 Shape mismatches do not throw - they return `{match: false, reason: "..."}`, so a
 snapshot test fails with a useful message instead of erroring.
+
+## `ares` - RSP profiling (libdragon rspq)
+
+Aggregated per-command RSP timing, built on the RSP command capture (the same
+machinery as the desktop RSP viewer / flame chart). Works for libdragon ROMs
+with their `.elf` next to the ROM (or in a `build/` directory beside it);
+`rspq-libdragon.json` is picked up from next to the ELF or the `ares-test`
+binary. Requires an ares build with `ARES_ENABLE_DEBUG_TOOLS`.
+
+- `ares.rspProfileStart()` open a fresh aggregation window. Capture setup is
+  lazy: the first profiling call auto-detects the ROM's ELF/config and prints
+  what it found. Nothing resets per-frame, the window runs until the next
+  `rspProfileStart()`.
+- `ares.rspProfile()` returns the aggregated table for the current window:
+  `{ totalCycles, commandCycles, overheadCycles, lostRows, rows: [...] }`.
+  Each row: `{ name, overlay, overlayId, commandId, overhead, overheadType?,
+  count, cycles, avg, bytesIn, bytesOut }`, sorted by cycles descending.
+  Cycles are RSP cycles (62.5 MHz) from the emulated pipeline model, treat
+  absolute values as approximate, deltas between two runs of the same workload
+  as exact. Overhead rows attribute rspq kernel time: `loop` (dispatch),
+  `overlaySwitch` (ucode save/load), `bufferFetch` (command-buffer DMA).
+- `ares.waitRspCommand(name [, count [, timeoutFrames]])` /
+  `ares.waitRspCommand(overlayId, commandId [, count [, timeoutFrames]])` —
+  run emulation until `count` (default 1) more executions of the command have
+  retired; throws after `timeoutFrames` (default 1800) VI frames. `name` is a
+  command name from `rspq-libdragon.json` (e.g. `"Vert Load"`, `"Screen
+  Size"`). While a profile window is open, rows up to and *including* the
+  final match keep aggregating and the window then freezes — so bracketing
+  with the same once-per-frame marker on both sides yields an exact
+  whole-frame window at any frame rate:
+
+```js
+ares.waitFrames(30);                    // skip boot
+ares.waitRspCommand("Screen Size");     // align to a frame boundary
+ares.rspProfileStart();
+ares.waitRspCommand("Screen Size", 60); // exactly 60 game frames
+const t = ares.rspProfile();
+for (const r of t.rows)
+  console.log(r.name, r.count, Math.round(r.cycles), r.avg.toFixed(1));
+```
+
+`lostRows` is non-zero only if the capture ring (64k rows) overflowed between
+API calls — bracket long windows with `waitRspCommand` (which drains
+continuously) rather than a single huge `waitFrames`.
+
+### Per-command instruction tracing
+
+- `ares.rspTrace(name [, occurrences [, timeoutFrames]])` /
+  `ares.rspTrace(overlayId, commandId [, occurrences [, timeoutFrames]])` —
+  run emulation and record the RSP instruction trace while the given rspq
+  command executes: tracing starts automatically at the command's dispatch and
+  stops when its handler returns to the dispatch loop (the indirect successor
+  of the emux `XTRACE` opcodes — no ROM changes needed). Returns
+  `{ occurrences, truncated, text }`.
+
+  Each line is `RSP  <pc>  [cycle]  | disassembly {register values}`; the
+  cycle column is the offset since the command started (dual-issued pairs
+  share a cycle number, stalls appear as gaps/`*` markers), and it restarts at
+  0 for each traced occurrence. The text is capped at 16 MB (`truncated`
+  set if hit). The recompiler keys its block cache on trace mode, so toggling
+  is cheap and the traced timing is the same as an untraced run.
+
+  Typical use: trace the same command in two ucode builds and diff the cycle
+  columns to find where schedules diverge.
 
 ## `ares` - ROM log (ISViewer)
 

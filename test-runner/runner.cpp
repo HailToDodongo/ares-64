@@ -1,5 +1,6 @@
 #include "runner.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace nall;
@@ -65,6 +66,14 @@ auto EmulatorRunner::loadRom(const string& path) -> string {
   logText = {};
   logLine = {};
   haveFrame = false;
+  //store absolute: RSP capture auto-detection derives sibling paths from it,
+  //which breaks for bare relative names once dirname() is empty
+  romPath = path.beginsWith("/") ? path : nall::string{nall::Path::active(), path};
+  rspProfInited = false;
+  rspAggregating = false;
+  rspFrozen = false;
+  rspLostRows = 0;
+  rspAgg.clear();
   root->power();
   return {};
 }
@@ -285,6 +294,26 @@ auto EmulatorRunner::status(string_view message) -> void {
 }
 
 auto EmulatorRunner::log(ares::Node::Debugger::Tracer::Tracer tracer, string_view message) -> void {
+#if ARES_DEBUG_TOOLS
+  //RSP instruction tracer (rspTraceCommand): divert into the trace buffer so it
+  //never mixes into the ISViewer log
+  if((void*)tracer.get() == (void*)ares::Nintendo64::rsp.debugger.tracer.instruction.get()) {
+    if(!rspTraceCapturing) return;
+    if(rspTraceText.size() >= 16 * 1024 * 1024) {  //hard cap: stop the trace
+      if(!rspTraceTruncated) {
+        rspTraceTruncated = true;
+        auto& cap = ares::Nintendo64::rsp.capture;
+        cap.traceOvl = cap.traceCmd = -1; cap.traceRemaining = 0;
+      }
+      return;
+    }
+    string line{message};
+    line.replace("\x1b[A", "");  //the stall-marker column uses cursor up/down
+    line.replace("\x1b[B", "");
+    rspTraceText.append(line, "\n");
+    return;
+  }
+#endif
   if(!tracer->terminal()) return;
   print(message);  //unbuffered: the live ISViewer echo
   logText.append(message);
@@ -309,4 +338,206 @@ auto EmulatorRunner::log(ares::Node::Debugger::Tracer::Tracer tracer, string_vie
       logLine = {};
     }
   }
+}
+
+//--- RSP profiling ----------------------------------------------------------
+
+auto EmulatorRunner::rspProfileInit() -> nall::string {
+#if !ARES_DEBUG_TOOLS
+  return "ares was built without ARES_ENABLE_DEBUG_TOOLS; RSP profiling is unavailable";
+#else
+  if(!root) return "no ROM loaded";
+  if(rspProfInited) return {};
+  auto& cap = ares::Nintendo64::rsp.capture;
+  if(!cap.configLoaded) {
+    if(!cap.autoDetect(romPath)) {
+      return {"RSP capture setup failed for ", romPath,
+              " — needs the libdragon .elf next to the ROM (or in a build/ dir) and "
+              "rspq-libdragon.json (next to the ELF or the ares-test binary); "
+              "the searched paths were printed above"};
+    }
+    //the dispatch-loop blocks may have been recompiled before the hook PCs were
+    //known: flush the RSP recompiler so they pick up the capture hooks
+    ares::Nintendo64::rsp.recompiler.reset();
+  }
+  cap.enabled.store(true, std::memory_order_release);
+  rspDrainPos = cap.writePos.load(std::memory_order_acquire);  //skip any backlog
+  rspProfInited = true;
+  return {};
+#endif
+}
+
+#if ARES_DEBUG_TOOLS
+auto EmulatorRunner::rspDrain(s32 mOvl, s32 mCmd, u32& remaining) -> bool {
+  auto& cap = ares::Nintendo64::rsp.capture;
+  u32 wp = cap.writePos.load(std::memory_order_acquire);
+  u32 avail = wp - rspDrainPos;
+  if(avail > cap.maxCommands) {  //ring overflowed since the last drain
+    rspLostRows += avail - cap.maxCommands;
+    rspDrainPos = wp - cap.maxCommands;
+  }
+  while(rspDrainPos != wp) {
+    auto& r = cap.commands[rspDrainPos % cap.maxCommands];
+    rspDrainPos++;
+    if(rspAggregating && !rspFrozen) {
+      u32 key = r.isOverhead ? (0x10000u | r.overheadType)
+                             : ((u32)r.overlayId << 8 | r.commandId);
+      auto& a = rspAgg[key];
+      a.overlayId = r.overlayId; a.commandId = r.commandId;
+      a.overhead = r.isOverhead; a.overheadType = r.overheadType;
+      a.count++; a.clocks += r.cycle;
+      a.bytesIn += r.bytesIn; a.bytesOut += r.bytesOut;
+    }
+    if(mOvl >= 0 && !r.isOverhead && r.overlayId == (u16)mOvl && r.commandId == (u8)mCmd) {
+      if(remaining) remaining--;
+      if(remaining == 0) {
+        if(rspAggregating) rspFrozen = true;  //window ends exactly at this row
+        return true;
+      }
+    }
+  }
+  return false;
+}
+#else
+auto EmulatorRunner::rspDrain(s32, s32, u32&) -> bool { return false; }
+#endif
+
+auto EmulatorRunner::rspProfileStart() -> nall::string {
+  if(auto err = rspProfileInit()) return err;
+  //note: the drain cursor is NOT advanced here. If a rspWaitCommand() aligned
+  //it to a marker row, the window begins right after that marker even when more
+  //rows were committed in the same emulation slice.
+  rspAgg.clear();
+  rspLostRows = 0;
+  rspAggregating = true;
+  rspFrozen = false;
+  return {};
+}
+
+auto EmulatorRunner::rspProfileTable(RspProfileTable& out) -> nall::string {
+#if !ARES_DEBUG_TOOLS
+  return "ares was built without ARES_ENABLE_DEBUG_TOOLS; RSP profiling is unavailable";
+#else
+  if(!rspProfInited || !rspAggregating) return "no profile window open; call rspProfileStart() first";
+  u32 none = 0;
+  rspDrain(-1, -1, none);  //pull the remaining committed rows (no-op when frozen)
+  auto& cap = ares::Nintendo64::rsp.capture;
+  cap.refreshOverlayNames();  //resolve runtime-registered overlay/command names
+  static const char* overheadNames[] = {"", "rspq: dispatch loop", "rspq: overlay switch", "rspq: buffer fetch", "unknown task"};
+  out = {};
+  for(auto& [key, a] : rspAgg) {
+    RspProfileRow row = a;
+    if(row.overhead) {
+      row.name = overheadNames[row.overheadType <= 4 ? row.overheadType : 4];
+      out.overheadClocks += row.clocks;
+    } else {
+      if(row.overlayId < 16) {
+        row.overlayName = cap.overlayNameMap[row.overlayId];
+        row.name = cap.commandNameMap[row.overlayId][row.commandId];
+      }
+      if(!row.name) row.name = {"cmd 0x", nall::hex(row.commandId, 2L)};
+      out.commandClocks += row.clocks;
+    }
+    out.rows.push_back(row);
+  }
+  std::sort(out.rows.begin(), out.rows.end(),
+            [](const RspProfileRow& x, const RspProfileRow& y) { return x.clocks > y.clocks; });
+  out.lostRows = rspLostRows;
+  return {};
+#endif
+}
+
+auto EmulatorRunner::rspWaitCommand(const nall::string& name, s32 ovl, s32 cmd,
+                                    u32 count, u32 timeoutFrames) -> nall::string {
+#if !ARES_DEBUG_TOOLS
+  return "ares was built without ARES_ENABLE_DEBUG_TOOLS; RSP profiling is unavailable";
+#else
+  if(auto err = rspProfileInit()) return err;
+  if(count == 0) return {};
+  auto& cap = ares::Nintendo64::rsp.capture;
+  u32 remaining = count;
+  s32 mOvl = name ? -1 : ovl, mCmd = name ? -1 : cmd;
+  for(u32 frame = 0;; frame++) {
+    if(name && mOvl < 0) {
+      //resolve the name against runtime-registered overlays (repeats until the
+      //overlay shows up; a command cannot execute before its overlay registers)
+      cap.refreshOverlayNames();
+      for(u32 o = 0; o < 16 && mOvl < 0; o++) {
+        for(u32 i = 0; i < 256; i++) {
+          if(cap.commandNameMap[o][i] == name) { mOvl = o; mCmd = (s32)i; break; }
+        }
+      }
+    }
+    if(rspDrain(mOvl, mCmd, remaining)) return {};
+    if(frame >= timeoutFrames) {
+      nall::string what = name ? name : nall::string{"overlay ", ovl, " command ", cmd};
+      return {"waitRspCommand: timeout after ", timeoutFrames, " frames waiting for '", what,
+              "' (", count - remaining, "/", count, " seen",
+              (name && mOvl < 0) ? "; the command name never resolved — check rspq-libdragon.json / overlay registration" : "",
+              ")"};
+    }
+    if(stopRequested()) return "waitRspCommand: interrupted";
+    runSlice();
+  }
+#endif
+}
+
+auto EmulatorRunner::rspTraceCommand(const nall::string& name, s32 ovl, s32 cmd,
+                                     u32 occurrences, u32 timeoutFrames,
+                                     nall::string& outText, u32& outCount,
+                                     bool& outTruncated) -> nall::string {
+#if !ARES_DEBUG_TOOLS
+  return "ares was built without ARES_ENABLE_DEBUG_TOOLS; RSP tracing is unavailable";
+#else
+  if(auto err = rspProfileInit()) return err;
+  if(occurrences == 0) return {};
+  auto& rsp = ares::Nintendo64::rsp;
+  auto& cap = rsp.capture;
+
+  //resolve a command name against runtime-registered overlays (may need frames)
+  s32 mOvl = name ? -1 : ovl, mCmd = name ? -1 : cmd;
+  for(u32 frame = 0; name && mOvl < 0; frame++) {
+    cap.refreshOverlayNames();
+    for(u32 o = 0; o < 16 && mOvl < 0; o++) {
+      for(u32 i = 0; i < 256; i++) {
+        if(cap.commandNameMap[o][i] == name) { mOvl = o; mCmd = (s32)i; break; }
+      }
+    }
+    if(mOvl >= 0) break;
+    if(frame >= timeoutFrames) {
+      return {"rspTrace: command name '", name, "' never resolved — check rspq-libdragon.json / overlay registration"};
+    }
+    if(stopRequested()) return "rspTrace: interrupted";
+    runSlice();
+  }
+
+  rspTraceText = {};
+  rspTraceTruncated = false;
+  rspTraceCapturing = true;
+  cap.traceActive = false;
+  cap.traceRemaining = occurrences;
+  cap.traceOvl = mOvl; cap.traceCmd = mCmd;
+
+  nall::string err;
+  for(u32 frame = 0;; frame++) {
+    if(cap.traceOvl < 0 && !cap.traceActive) break;  //all occurrences captured (or cap hit)
+    if(frame >= timeoutFrames) {
+      err = {"rspTrace: timeout after ", timeoutFrames, " frames (",
+             occurrences - cap.traceRemaining, "/", occurrences, " occurrences traced)"};
+      break;
+    }
+    if(stopRequested()) { err = "rspTrace: interrupted"; break; }
+    runSlice();
+  }
+
+  outCount = occurrences - cap.traceRemaining;
+  //disarm + safety stop (also covers the timeout-with-open-segment case)
+  cap.traceOvl = cap.traceCmd = -1; cap.traceRemaining = 0;
+  if(cap.traceActive) { rsp.debugger.tracer.instruction->setEnabled(false); cap.traceActive = false; }
+  rspTraceCapturing = false;
+  outTruncated = rspTraceTruncated;
+  outText = std::move(rspTraceText);
+  rspTraceText = {};
+  return err;
+#endif
 }
