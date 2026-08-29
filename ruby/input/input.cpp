@@ -74,14 +74,18 @@ auto Input::poll() -> std::vector<std::shared_ptr<::nall::HID::Device>> {
     const bool* state = SDL_GetKeyboardState(&numKeys);
     auto& group = _keyboard->buttons();
     if(!_keyboardCaptured) {
+      //keys pressed or released while the UI held the keyboard must not surface
+      //as changes now: seed them silently on the first poll after release
+      bool silent = _wasKeyboardCaptured;
       for(u32 i = 0; i < _keyMap.size(); i++) {
         bool v = _keyMap[i].sc < (u32)numKeys ? state[_keyMap[i].sc] : false;
         if(group.input(i).value() != v) {
-          if(_onChange) _onChange(_keyboard, ::nall::HID::Keyboard::GroupID::Button, i, group.input(i).value(), v);
+          if(_onChange && !silent) _onChange(_keyboard, ::nall::HID::Keyboard::GroupID::Button, i, group.input(i).value(), v);
           group.input(i).setValue(v);
         }
       }
     }
+    _wasKeyboardCaptured = _keyboardCaptured;
     devices.push_back(_keyboard);
   }
 
@@ -115,13 +119,23 @@ auto Input::poll() -> std::vector<std::shared_ptr<::nall::HID::Device>> {
   }
 
   // Joypads
+  bool primeJoypads = _primeJoypads;
+  _primeJoypads = false;
   for(auto& jp : _joypads) {
     auto setJP = [&](u32 g, u32 i, s16 v) {
       auto& grp = jp.hid->group(g);
-      if(grp.input(i).value() != v) {
-        if(_onChange) _onChange(jp.hid, g, i, grp.input(i).value(), v);
-        grp.input(i).setValue(v);
-      }
+      s16 previous = grp.input(i).value();
+      if(previous == v) return;
+      //Analog axes jitter around their resting position constantly. Consumers of
+      //the change callback (input assignment, hotkeys) only care about an axis
+      //entering or leaving a deflected region, so drop movement that stays
+      //inside the neutral band. The value itself is always updated, so gameplay
+      //keeps full analog resolution.
+      bool noise = g != ::nall::HID::Joypad::GroupID::Button
+                && previous > -16384 && previous < +16384
+                && v > -16384 && v < +16384;
+      if(_onChange && !primeJoypads && !noise) _onChange(jp.hid, g, i, previous, v);
+      grp.input(i).setValue(v);
     };
     for(u32 n : range(jp.hid->axes().size())) setJP(::nall::HID::Joypad::GroupID::Axis, n, (s16)SDL_GetJoystickAxis((SDL_Joystick*)jp.handle, n));
     for(s32 n = 0; n < (s32)jp.hid->hats().size() - 1; n += 2) {
@@ -175,11 +189,30 @@ auto Input::terminate() -> void {
   _keyMap.clear(); _keyboard.reset(); _mouse.reset();
   for(auto& jp : _joypads) SDL_CloseJoystick((SDL_Joystick*)jp.handle);
   _joypads.clear();
+  _joypadIDs.clear();
+}
+
+auto Input::rescanJoypads() -> void {
+  //Rebuilding the joypad list recreates the HID objects, which makes
+  //InputManager re-bind every mapping, so only do it when the connected set really changed. 
+  int count = 0;
+  SDL_JoystickID* joysticks = SDL_GetJoysticks(&count);
+  bool changed = (size_t)count != _joypadIDs.size();
+  if(!changed && joysticks) {
+    for(int i = 0; i < count; i++) {
+      if(_joypadIDs[i] != (u32)joysticks[i]) { changed = true; break; }
+    }
+  }
+  if(joysticks) SDL_free(joysticks);
+  if(changed) enumerateJoypads();
 }
 
 auto Input::enumerateJoypads() -> void {
   for(auto& jp : _joypads) SDL_CloseJoystick((SDL_Joystick*)jp.handle);
   _joypads.clear();
+  _joypadIDs.clear();
+  //seed the new devices' values on the next poll instead of reporting them
+  _primeJoypads = true;
   int count; SDL_JoystickID* joysticks = SDL_GetJoysticks(&count);
   if(!joysticks) return;
   for(int i = 0; i < count; i++) {
@@ -198,13 +231,18 @@ auto Input::enumerateJoypads() -> void {
     string name = SDL_GetJoystickName((SDL_Joystick*)jp.handle);
     if(!name) name = "Joypad";
     jp.hid->setName({name," SDL_ID:",joysticks[i]});
-    jp.hid->setVendorID(vid); jp.hid->setProductID(pid); jp.hid->setPathID(0);
-    if(*gs && string{gs} != "00000000000000000000000000000000") jp.hid->setIdentifier(gs);
+    jp.hid->setVendorID(vid); jp.hid->setProductID(pid); jp.hid->setPathID(i);
+    //Adapters that expose several ports (e.g. a GameCube adapter) report the SAME
+    //GUID for every port, so the identifier must carry the port index too
+    if(*gs && string{gs} != "00000000000000000000000000000000") {
+      jp.hid->setIdentifier({gs, "-", i});
+    }
     for(u32 n : range(axes)) jp.hid->axes().append(n);
     for(u32 n : range(hats)) jp.hid->hats().append(n);
     for(u32 n : range(buttons)) jp.hid->buttons().append(n);
     jp.hid->setRumble(true);
     _joypads.push_back(jp);
+    _joypadIDs.push_back((u32)joysticks[i]);
   }
   SDL_free(joysticks);
 }

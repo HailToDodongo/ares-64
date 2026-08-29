@@ -23,23 +23,30 @@ auto InputMapping::bind() -> void {
     auto token = nall::split(assignment, "/");
     if(token.size() < 3) continue;  //ignore invalid mappings
 
-    u32 qualifierIndex = 3;
-    if(token[0].beginsWith("0x")) {
-      binding.deviceID = token[0].natural();
-      binding.groupID = token[1].natural();
-      binding.inputID = token[2].natural();
-    } else {
-      if(token.size() < 4) continue;  //ignore invalid mappings
-      binding.deviceIdentifier = {token[0], "/", token[1]};
-      binding.groupID = token[2].natural();
-      binding.inputID = token[3].natural();
-      qualifierIndex = 4;
-    }
-
+    //Parse from the right. The trailing fields are groupID/inputID plus an
+    //optional qualifier; everything before them is the device, which is either
+    //an "0x..." id or an identifier that may contain any number of slashes —
+    //none at all for an SDL GUID, one for the legacy vendor/product form.
+    u32 count = token.size();
     binding.qualifier = Qualifier::None;
-    if(token.size() > qualifierIndex && token[qualifierIndex] == "Lo") binding.qualifier = Qualifier::Lo;
-    if(token.size() > qualifierIndex && token[qualifierIndex] == "Hi") binding.qualifier = Qualifier::Hi;
-    if(token.size() > qualifierIndex && token[qualifierIndex] == "Rumble") binding.qualifier = Qualifier::Rumble;
+    if(token[count - 1] == "Lo") { binding.qualifier = Qualifier::Lo; count--; }
+    else if(token[count - 1] == "Hi") { binding.qualifier = Qualifier::Hi; count--; }
+    else if(token[count - 1] == "Rumble") { binding.qualifier = Qualifier::Rumble; count--; }
+    if(count < 3) continue;  //ignore invalid mappings
+
+    binding.groupID = token[count - 2].natural();
+    binding.inputID = token[count - 1].natural();
+
+    string deviceToken;
+    for(u32 n : range(count - 2)) {
+      if(n) deviceToken.append("/");
+      deviceToken.append(token[n]);
+    }
+    if(deviceToken.beginsWith("0x")) {
+      binding.deviceID = deviceToken.natural();
+    } else {
+      binding.deviceIdentifier = deviceToken;
+    }
 
     for(auto& device : inputManager.devices) {
       if(binding.deviceIdentifier && binding.deviceIdentifier == device->identifier()) {
@@ -617,16 +624,23 @@ auto InputManager::eventInput(std::shared_ptr<HID::Device> device, u32 groupID, 
   if(program._imguiMode) {
     auto& assign = ares::ui::inputAssign;
     if(assign.waiting && assign.activeBinding >= 0 && newValue != 0) {
+      //bind() reports whether the event was actually a usable assignment: a
+      //button press, or an axis pushed past its threshold. Anything else — an
+      //analog stick jittering around its resting position, which controllers do
+      //constantly — returns false and must leave the assignment waiting.
+      //Clearing it regardless cancelled every assignment within a frame or two.
       if(assign.activeNode && (device->isKeyboard() || device->isJoypad())) {
-        assign.activeNode->configuredMapping().bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
-        assign.activeNode = nullptr;
-        assign.waiting = false;
-        assign.activeBinding = -1;
+        if(assign.activeNode->configuredMapping().bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue)) {
+          assign.activeNode = nullptr;
+          assign.waiting = false;
+          assign.activeBinding = -1;
+        }
       } else if(assign.activeMapping && (device->isKeyboard() || device->isJoypad())) {
-        assign.activeMapping->bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue);
-        assign.activeMapping = nullptr;
-        assign.waiting = false;
-        assign.activeBinding = -1;
+        if(assign.activeMapping->bind(assign.activeBinding, device, groupID, inputID, oldValue, newValue)) {
+          assign.activeMapping = nullptr;
+          assign.waiting = false;
+          assign.activeBinding = -1;
+        }
       }
     }
     return;

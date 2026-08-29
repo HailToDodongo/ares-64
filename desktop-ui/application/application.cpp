@@ -207,6 +207,12 @@ auto AresApp::run() -> void {
       ImGui_ImplSDL3_ProcessEvent(&event);
 
       switch (event.type) {
+      //controllers are hot-pluggable: re-enumerate so a pad connected after
+      //startup can be used and assigned without restarting
+      case SDL_EVENT_JOYSTICK_ADDED:
+      case SDL_EVENT_JOYSTICK_REMOVED:
+        ruby::input.rescanJoypads();
+        break;
       case SDL_EVENT_QUIT:
         running = false;
         break;
@@ -345,6 +351,9 @@ auto AresApp::processEvents() -> void {
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     ImGui_ImplSDL3_ProcessEvent(&event);
+    if(event.type == SDL_EVENT_JOYSTICK_ADDED || event.type == SDL_EVENT_JOYSTICK_REMOVED) {
+      ruby::input.rescanJoypads();
+    }
   }
 }
 

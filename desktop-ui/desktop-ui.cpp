@@ -296,7 +296,11 @@ auto nall::main(Arguments arguments) -> void {
   ares::ui::showRegisterViewer = settings.general.showRegisterViewer;
 
   AresApp::onMain = [=] {
-    ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantCaptureKeyboard);
+    //Only swallow the keyboard while a text field is being typed into. Using
+    //WantCaptureKeyboard here would kill game input (and key assignment) any
+    //time an ImGui window merely had focus.
+    ruby::Input::setKeyboardCaptured(ImGui::GetIO().WantTextInput
+                                  && !ares::ui::inputAssign.waiting);
     program.main();
 
 #if !ARES_DEBUG_TOOLS
