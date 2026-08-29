@@ -169,6 +169,7 @@ if (rec.trim().snr(golden.trim()) < 40) throw new Error("audio degraded");
 | `diffPixels` / `diffSamples` | Elements over the tolerance | same |
 | `totalPixels` / `totalSamples` | Elements compared | same |
 | `maxDelta`, `avgDelta` | Largest / mean deviation | same (in `s16` units) |
+| `diff` | **image object** present only when pixels differed: the compared image darkened with every differing pixel in white | — |
 
 Shape mismatches do not throw - they return `{match: false, reason: "..."}`, so a
 snapshot test fails with a useful message instead of erroring.

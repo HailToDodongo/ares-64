@@ -29,6 +29,14 @@ export function assertSnapshot(media, goldenPath, tolerance) {
   }
   const cmp = media.compare(golden, tolerance || 0);
   if (!cmp.match) {
-    throw new Error("snapshot mismatch vs " + goldenPath + ": " + JSON.stringify(cmp));
+    let hint = "";
+    if (cmp.diff) {
+      // dimmed image with the differing pixels in white, for eyeballing the failure
+      const diffPath = goldenPath.replace(/\.png$/, "") + ".diff.png";
+      cmp.diff.save(diffPath);
+      hint = " (diff image: " + diffPath + ")";
+    }
+    const {diff, ...stats} = cmp;   // keep the message readable
+    throw new Error("snapshot mismatch vs " + goldenPath + ": " + JSON.stringify(stats) + hint);
   }
 }

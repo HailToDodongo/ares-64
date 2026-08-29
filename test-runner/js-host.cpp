@@ -638,6 +638,7 @@ auto imageSha256(const std::vector<u8>& rgba) -> string {
 }
 
 auto js_img_save(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
+auto makeImageObject(JSContext* c, u32 width, u32 height, const std::vector<u8>& rgba) -> JSValue;
 auto js_img_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_img_crop(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
 auto js_audio_save(JSContext* c, JSValueConst self, int argc, JSValueConst* argv) -> JSValue;
@@ -772,6 +773,26 @@ auto js_img_compare(JSContext* c, JSValueConst self, int argc, JSValueConst* arg
   JS_SetPropertyStr(c, obj, "totalPixels", JS_NewInt64(c, pixels));
   JS_SetPropertyStr(c, obj, "maxDelta", JS_NewInt32(c, maxDelta));
   JS_SetPropertyStr(c, obj, "avgDelta", JS_NewFloat64(c, pixels ? (double)totalDelta / pixels : 0.0));
+
+  //On a mismatch, attach a diff image for the script to save or display: this
+  //image dimmed to a quarter brightness, with every differing pixel full white.
+  //Built only on the failing path, so a passing compare costs nothing extra.
+  if(diffPixels) {
+    std::vector<u8> diff((size_t)pixels * 4);
+    for(size_t i = 0; i < pixels; i++) {
+      u32 delta = 0;
+      for(u32 ch : range(3)) {
+        u32 d = abs((int)bytesA[i * 4 + ch] - (int)bytesB[i * 4 + ch]);
+        delta = max(delta, d);
+      }
+      bool differs = delta > (u32)tolerance;
+      for(u32 ch : range(3)) {
+        diff[i * 4 + ch] = differs ? 255 : bytesA[i * 4 + ch] / 4;
+      }
+      diff[i * 4 + 3] = 255;
+    }
+    JS_SetPropertyStr(c, obj, "diff", makeImageObject(c, widthA, heightA, diff));
+  }
   return obj;
 }
 
