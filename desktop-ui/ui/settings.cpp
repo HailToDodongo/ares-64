@@ -333,13 +333,20 @@ static void DrawFirmwarePanel() {
 
 // --- Input panel ---
 
-static int inputSystemIdx = 0;
+static int inputSystemIdx = -1;
 static int inputPortIdx = 0;
 static int inputDeviceIdx = 0;
 static std::shared_ptr<InputMapping> activeMapping;
 static int activeBinding = -1;
 
 static void DrawInputPanel() {
+  if(inputSystemIdx < 0) {
+    inputSystemIdx = emulators.empty() ? 0 : 1;  //first real system
+    for(u32 i = 0; i < emulators.size(); i++) {  //prefer the one being played
+      if(emulator && emulators[i]->name == emulator->name) { inputSystemIdx = i + 1; break; }
+    }
+  }
+
   // System/Port/Device selectors
   auto& ports = Emulator::enumeratePorts("Virtual Gamepads");
   if(inputSystemIdx == 0) {
