@@ -996,6 +996,61 @@ auto js_screenshot(JSContext* c, JSValueConst, int, JSValueConst*) -> JSValue {
   return makeImageObject(c, result.width, result.height, result.rgba);
 }
 
+//depthBuffer(width, height, {x, y, width, height, float}) — a pure read of the
+//RDP's current depth image. The buffer's dimensions are not recorded anywhere in
+//hardware, so the caller supplies them; the optional region selects a subsection.
+auto js_depthBuffer(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
+  if(argc < 2) return throwError(c, "depthBuffer(width, height, options?) requires the buffer dimensions");
+  int64_t bufferWidth = 0, bufferHeight = 0;
+  if(JS_ToInt64(c, &bufferWidth, argv[0]) < 0) return JS_EXCEPTION;
+  if(JS_ToInt64(c, &bufferHeight, argv[1]) < 0) return JS_EXCEPTION;
+  if(bufferWidth <= 0 || bufferHeight <= 0) {
+    return throwError(c, "depthBuffer: width and height must be positive");
+  }
+
+  int64_t x = 0, y = 0, w = 0, h = 0;
+  bool asFloat = false;
+  if(argc >= 3 && JS_IsObject(argv[2])) {
+    bool ok = true;
+    auto readInt = [&](const char* name, int64_t& value) {
+      JSValue v = JS_GetPropertyStr(c, argv[2], name);
+      if(!JS_IsUndefined(v) && JS_ToInt64(c, &value, v) < 0) ok = false;
+      JS_FreeValue(c, v);
+    };
+    readInt("x", x); readInt("y", y); readInt("width", w); readInt("height", h);
+    if(!ok) return JS_EXCEPTION;
+    JSValue f = JS_GetPropertyStr(c, argv[2], "float");
+    asFloat = JS_ToBool(c, f);
+    JS_FreeValue(c, f);
+  }
+  if(x < 0 || y < 0 || w < 0 || h < 0) return throwError(c, "depthBuffer: the region must not be negative");
+
+  EmulatorRunner::DepthResult result;
+  if(auto error = emulatorRunner.depthBuffer((u32)bufferWidth, (u32)bufferHeight,
+                                             (u32)x, (u32)y, (u32)w, (u32)h, result)) {
+    return throwError(c, error);
+  }
+
+  JSValue obj = JS_NewObject(c);
+  JS_SetPropertyStr(c, obj, "width", JS_NewInt32(c, result.width));
+  JS_SetPropertyStr(c, obj, "height", JS_NewInt32(c, result.height));
+  JS_SetPropertyStr(c, obj, "address", JS_NewInt64(c, result.address));
+  JS_SetPropertyStr(c, obj, "float", JS_NewBool(c, asFloat));
+  if(asFloat) {
+    //normalised 0..1 over the 18-bit range, the same scale the viewer works in
+    std::vector<float> values(result.raw.size());
+    for(size_t i = 0; i < values.size(); i++) {
+      values[i] = (float)result.raw[i] / (float)EmulatorRunner::depthMax;
+    }
+    JS_SetPropertyStr(c, obj, "data",
+      JS_NewArrayBufferCopy(c, (const u8*)values.data(), values.size() * sizeof(float)));
+  } else {
+    JS_SetPropertyStr(c, obj, "data",
+      JS_NewArrayBufferCopy(c, (const u8*)result.raw.data(), result.raw.size() * sizeof(u32)));
+  }
+  return obj;
+}
+
 auto js_loadImage(JSContext* c, JSValueConst, int argc, JSValueConst* argv) -> JSValue {
   if(argc < 1) return throwError(c, "loadImage(path) requires a path");
   ImagePixels image;
@@ -1186,6 +1241,7 @@ auto jsHostInit(const std::vector<string>& scriptArgs) -> bool {
   setFn(g_ctx, ares, "controller", js_controller, 1);
   setFn(g_ctx, ares, "screenshot", js_screenshot, 0);
   setFn(g_ctx, ares, "loadImage", js_loadImage, 1);
+  setFn(g_ctx, ares, "depthBuffer", js_depthBuffer, 3);
   setFn(g_ctx, ares, "startAudio", js_startAudio, 1);
   setFn(g_ctx, ares, "stopAudio", js_stopAudio, 0);
   setFn(g_ctx, ares, "loadAudio", js_loadAudio, 1);

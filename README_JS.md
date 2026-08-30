@@ -117,6 +117,7 @@ const press = (btn) => { p1.hold(btn); ares.waitVI(); p1.release(btn); ares.wait
 | --- | --- |
 | `screenshot()` | Capture the frame currently on screen → **image object**. A pure read: it advances nothing and is allowed inside callbacks |
 | `loadImage(path)` | Load a PNG → **image object** (same shape as a capture) |
+| `depthBuffer(width, height, options?)` | Read the RDP's current depth image → **depth object**. A pure read, allowed inside callbacks |
 | `startAudio(rate?)` | Begin recording. Default records at the AI output rate the game programmed; pass e.g. `48000` to force a rate |
 | `stopAudio()` | Stop recording → **audio object** |
 | `loadAudio(path)` | Load a 16-bit PCM WAV → **audio object** |
@@ -134,6 +135,39 @@ const press = (btn) => { p1.hold(btn); ares.waitVI(); p1.release(btn); ares.wait
 
 `tolerance` (default `0`) is the maximum per-channel delta still counted as
 equal. Alpha is ignored.
+
+### Depth object
+
+Hardware records *where* the depth image lives but never how large it is, so you
+supply the buffer's dimensions. `options` selects a subsection and the value
+format:
+
+| Option | Description |
+| --- | --- |
+| `x`, `y` | Top-left of the region to read (default `0, 0`) |
+| `width`, `height` | Size of the region (default: the rest of the buffer). Clamped to the buffer |
+| `float` | `true` → normalised `0..1` floats; otherwise raw 18-bit integers |
+
+| Member | Description |
+| --- | --- |
+| `width`, `height` | Size of the region actually returned |
+| `address` | RDRAM address the values came from |
+| `float` | Which format `data` holds |
+| `data` | `ArrayBuffer` — wrap with `new Uint32Array(d.data)`, or `new Float32Array(d.data)` when `float` was set |
+
+Values are the decompressed **18-bit linear Z** (`0..0x3ffff`), the same decode
+the framebuffer viewer uses — not the raw 14-bit encoded halfword in RDRAM. The
+float form is simply that value over `0x3ffff`.
+
+```js
+const d = ares.depthBuffer(320, 240);              // whole buffer, raw
+const z = new Uint32Array(d.data);
+
+const near = ares.depthBuffer(320, 240, {x: 100, y: 90, width: 32, height: 16, float: true});
+const f = new Float32Array(near.data);             // 0 = near, 1 = far plane
+```
+
+If the ROM has not selected a depth image yet, the call throws.
 
 ### Audio object
 

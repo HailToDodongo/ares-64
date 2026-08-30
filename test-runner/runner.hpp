@@ -69,6 +69,18 @@ struct EmulatorRunner : ares::Platform {
   //otherwise. Returns an error message or "".
   auto screenshot(ScreenshotResult& out, bool mayAdvance) -> nall::string;
 
+  //--- depth buffer --------------------------------------------------------
+  struct DepthResult {
+    u32 width = 0, height = 0;
+    u32 address = 0;              //RDRAM address the values were read from
+    std::vector<u32> raw;         //18-bit linear Z per pixel (0..0x3ffff)
+  };
+  //The RDP only records where the depth image lives, never how large it is, so
+  //the caller states the buffer dimensions; x/y/w/h select a subsection of it.
+  auto depthBuffer(u32 bufferWidth, u32 bufferHeight, u32 x, u32 y, u32 w, u32 h,
+                   DepthResult& out) -> nall::string;
+  static constexpr u32 depthMax = 0x3ffff;  //18-bit
+
   struct AudioRecording {
     u32 frequency = 0;
     std::vector<s16> left, right;

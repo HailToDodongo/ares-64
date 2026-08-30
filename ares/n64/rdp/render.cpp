@@ -66,6 +66,8 @@ auto RDP::render() -> void {
   system.applyPendingRenderer();
   if(command.current < command.end) midList = true;
 
+  if(unlikely(trackImages)) scanImageState();
+
   #if defined(VULKAN)
   if(vulkan.enable && vulkan.render()) {
     const char *msg = vulkan.crashed();
@@ -735,6 +737,45 @@ auto RDP::setTextureImage() -> void {
 }
 
 //0x3e
+//Walk the pending list purely to note which colour/depth images it selects. The
+//renderers consume the same commands afterwards; this only reads the two
+//Set_*_Image opcodes, so the buffers can be located without a debug build.
+auto RDP::scanImageState() -> void {
+  //Canonical command lengths in 64-bit words (same table parallel-RDP and
+  //angrylion walk the list with). Deliberately not rdpCommandWordCounts above:
+  //that one is only used to annotate captured commands, lists 56 entries for 64
+  //opcodes (the rest read back as 0) and encodes the triangle sizes
+  //differently — walking with it would not advance.
+  static constexpr u8 wordCounts[64] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 4, 6,12,14,12,14,20,22,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  };
+  auto& memory = !command.source ? (Memory::Writable&)rdram.ram : (Memory::Writable&)rsp.dmem;
+  u32 address = command.current & ~7;
+  u32 end = command.end & ~7;
+  while(address + 8 <= end) {
+    u64 word0 = memory.readUnaligned<Dual>(address);
+    u32 opcode = word0 >> 56 & 0x3f;
+    if(opcode == 0x3e) {
+      //Set_Mask_Image: the depth target. Games may clear it to zero; keep the
+      //last real address so a query between lists still resolves.
+      if(u32 depth = word0 & 0x3ff'ffff) image.depthAddress = depth;
+    }
+    if(opcode == 0x3f) {
+      if(u32 color = word0 & 0x3ff'ffff) {
+        image.colorAddress = color;
+        image.colorFormat = word0 >> 53 & 7;
+        image.colorSize = word0 >> 51 & 3;
+        image.colorWidth = (word0 >> 32 & 0x3ff) + 1;
+      }
+    }
+    u32 words = wordCounts[opcode];
+    address += (words ? words : 1) * 8;  //never stall, whatever the opcode
+  }
+}
+
 auto RDP::setMaskImage() -> void {
 }
 

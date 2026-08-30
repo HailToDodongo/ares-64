@@ -62,6 +62,10 @@ auto EmulatorRunner::loadRom(const string& path) -> string {
     }
   }
 
+  //the JS API can ask for the depth buffer at any time, so let the RDP note
+  //which images the command stream selects
+  ares::Nintendo64::rdp.trackImages = true;
+
   frameCount = 0;
   logText = {};
   logLine = {};
@@ -210,6 +214,51 @@ auto EmulatorRunner::video(ares::Node::Video::Screen, const u32* data, u32 pitch
     memory::copy<u32>(lastFrame.data() + (size_t)y * width, data + y * (pitch >> 2), width);
   }
   haveFrame = true;
+}
+
+//Decompress the N64's 14-bit stored depth into linear 18-bit Z. Same encoding
+//the framebuffer viewer uses (originally from parallel-RDP's z_encode.h).
+static auto zDecompress(u16 z) -> u32 {
+  int exponent = z >> 11;
+  int mantissa = z & 0x7ff;
+  int shift = max(6 - exponent, 0);
+  int base = 0x40000 - (0x40000 >> exponent);
+  return (mantissa << shift) + base;  //0x00000..0x3ffff
+}
+
+auto EmulatorRunner::depthBuffer(u32 bufferWidth, u32 bufferHeight, u32 x, u32 y, u32 w, u32 h,
+                                 DepthResult& out) -> string {
+  if(!root) return "no ROM loaded";
+  if(!bufferWidth || !bufferHeight) return "depth buffer width and height must be non-zero";
+
+  auto& rdp = ares::Nintendo64::rdp;
+  u32 address = rdp.image.depthAddress;
+  if(!address) {
+    return rdp.trackImages
+      ? "no depth buffer has been set by the ROM yet (no Set_Mask_Image seen)"
+      : "depth buffer tracking is not enabled";
+  }
+
+  if(x >= bufferWidth || y >= bufferHeight) return "requested region starts outside the buffer";
+  if(!w || w > bufferWidth - x) w = bufferWidth - x;
+  if(!h || h > bufferHeight - y) h = bufferHeight - y;
+
+  out.width = w;
+  out.height = h;
+  out.address = address;
+  out.raw.resize((size_t)w * h);
+  for(u32 row : range(h)) {
+    u32 sourceRow = y + row;
+    for(u32 column : range(w)) {
+      //16 bits per pixel, rows packed at the buffer's full width
+      u32 offset = (sourceRow * bufferWidth + (x + column)) * 2;
+      u16 word = ares::Nintendo64::rdram.ram.read<ares::Nintendo64::Half>(
+        address + offset, ares::Nintendo64::RBusDevice::UNKNOWN);
+      //the low 2 bits hold part of dz, the upper 14 are the compressed depth
+      out.raw[(size_t)row * w + column] = zDecompress(word >> 2);
+    }
+  }
+  return {};
 }
 
 auto EmulatorRunner::startAudio(u32 rateOverride) -> string {

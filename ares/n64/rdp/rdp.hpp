@@ -90,6 +90,7 @@ struct RDP : Thread, Memory::RCP<RDP> {
   auto syncPipe() -> void;
   auto syncTile() -> void;
   auto syncFull() -> void;
+  auto scanImageState() -> void;
   auto setKeyGB() -> void;
   auto setKeyR() -> void;
   auto setConvert() -> void;
@@ -141,6 +142,15 @@ struct RDP : Thread, Memory::RCP<RDP> {
   } command;
 
   bool midList = false;
+
+  struct ImageState {
+    u32 depthAddress = 0;
+    u32 colorAddress = 0;
+    u32 colorWidth = 0;   //in pixels
+    u32 colorFormat = 0;
+    u32 colorSize = 0;
+  } image;
+  bool trackImages = false;
 
   struct Point {
     n16 i;  //integer
