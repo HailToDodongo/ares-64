@@ -3,9 +3,9 @@
   "banner": "Dragon RSP Queue",
   "cpuWaitFunctions": ["wait", "rdpq_sync", "rdpq_fence", "__rsp_check_assert"],
   "imem": {
-    "rspq_execute_command": "0x0B4",
+    "rspq_execute_command": "0x080",
     "rspq_fetch_buffer": "0x01C",
-    "rspq_load_overlay": "0x104",
+    "rspq_load_overlay": "0x0C4",
     "rspq_fetch_buffer_with_ptr": "0x024",
     "RSPQ_Loop": "0x03C"
   },
