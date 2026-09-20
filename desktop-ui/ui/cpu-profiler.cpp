@@ -4,6 +4,7 @@
 #include <n64/n64.hpp>
 
 #include <algorithm>
+#include <cfloat>
 #include <vector>
 
 namespace ares::ui {
@@ -43,6 +44,7 @@ auto DrawCpuProfiler() -> void {
   }
 
   auto& prof = ares::Nintendo64::cpu.profiler;
+  using Prof = ares::Nintendo64::CPU::Profiler;
 
   // Force capture on the first frame the window is open (default-on behaviour).
   if(!autoCaptureActive) {
@@ -61,51 +63,92 @@ auto DrawCpuProfiler() -> void {
   ImGui::SetNextItemWidth(70_px);
   ImGui::Combo("##timeUnit", &timeUnit, "us\0ms\0Cycles\0");
 
-  static int windowMode = 1;  // 0 = Continuous, 1 = Per-frame
+  static int windowMode = 1;  // 0 = Continuous, 1 = Framebuffer Swap, 2 = Function Marker
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(110_px);
-  ImGui::Combo("##window", &windowMode, "Continuous\0Per-frame\0");
+  ImGui::SetNextItemWidth(160_px);
+  ImGui::Combo("##window", &windowMode, "Continuous\0Framebuffer Swap\0Function Marker\0");
+  if(ImGui::IsItemHovered()) ImGui::SetTooltip(
+    "Framebuffer Swap: between observed VI framebuffer changes.\n"
+    "Function Marker: the last completed invocation, from entry to return.\n"
+    "Recursive calls remain inside the outer invocation.\n"
+    "Calls shows entries; a call continuing across a boundary can show zero.");
 
-  // In continuous mode, choose between accumulated totals and per-frame averages,
-  // and show how many frames have been accumulated (capped at maxFrames).
+  // Average only completed swap windows.
   static int contMode = 1;
   if(windowMode == 0) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(110_px);
-    ImGui::Combo("##contMode", &contMode, "Total\0Avg/frame\0");
+    ImGui::Combo("##contMode", &contMode, "Total\0Avg/swap\0");
 
     ImGui::SameLine();
     u64 fc = prof.frameCount;
-    bool capped = fc >= ares::Nintendo64::CPU::Profiler::maxFrames;
+    bool capped = fc >= Prof::maxFrames;
     ImGui::TextColored(capped ? ImVec4(1.0f, 0.65f, 0.3f, 1) : ImGui::GetStyle().Colors[ImGuiCol_TextDisabled],
                        "%llu/%u%s", (unsigned long long)fc,
-                       ares::Nintendo64::CPU::Profiler::maxFrames, capped ? " (full)" : "");
+                       Prof::maxFrames, capped ? " (full)" : "");
   }
 
   ImGui::SameLine();
   if(ImGui::Button("Clear")) {
-    // The emulator cothread is parked while the UI draws (same thread that
-    // already reads these maps below), so clear immediately — works whether the
-    // game is running or paused, and in either window mode.
+    // Emulation is parked while the UI draws, so clearing here is safe.
     prof.clearStats();
   }
 
-  ImGui::SameLine();
-  if(prof.symbolsLoaded) {
-    //ImGui::TextColored(ImVec4(0, 1, 0, 1), "Symbols: %u", prof.symbolCount);
-  } else {
+  if(!prof.symbolsLoaded) {
+    ImGui::SameLine();
     ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "No ELF");
   }
 
-  // Name filter — hides non-matching rows. Percentages still use the unfiltered
-  // total (computed below over every function, before filtering at render time).
-  // On its own line so it stays visible when the window is narrow.
+  // Filtering rows does not change the totals or percentages.
   static char filterBuf[64] = "";
+  float filterWidth = std::min(240.0_px, ImGui::GetContentRegionAvail().x * 0.40f);
+  ImGui::SetNextItemWidth(filterWidth);
   ImGui::InputTextWithHint("##filter", "Filter by name...", filterBuf, sizeof(filterBuf));
+  if(windowMode == 2) {
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    string preview = prof.markerAddr ? prof.labelFor(prof.markerAddr) : string{"Select function..."};
+    ImGui::SetNextWindowSizeConstraints(ImVec2(280_px, 0), ImVec2(FLT_MAX, 360_px));
+    if(ImGui::BeginCombo("##functionMarker", preview.data())) {
+      static char markerSearch[128] = "";
+      if(ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+      ImGui::SetNextItemWidth(-1);
+      ImGui::InputTextWithHint("##markerSearch", "Search functions...", markerSearch, sizeof(markerSearch));
+      std::vector<const Prof::Sym*> matches;
+      for(auto& sym : prof.syms) {
+        if(prof.resolve(sym.addr) != &sym) continue;
+        if(markerSearch[0] && !(bool)sym.name.ifind(markerSearch)) continue;
+        matches.push_back(&sym);
+      }
+      std::sort(matches.begin(), matches.end(), [](auto* a, auto* b) {
+        return a->name == b->name ? a->addr < b->addr : a->name < b->name;
+      });
+      ImGui::BeginChild("##markerFunctions", ImVec2(0, 240_px));
+      ImGuiListClipper clipper;
+      clipper.Begin((int)matches.size());
+      while(clipper.Step()) for(int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+        auto& sym = *matches[i];
+        ImGui::PushID((int)sym.addr);
+        if(ImGui::Selectable(sym.name.data(), prof.markerAddr == sym.addr)) {
+          prof.setFunctionMarker(sym.addr);
+          ImGui::CloseCurrentPopup();
+        }
+        if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n0x%08X", sym.name.data(), sym.addr);
+        ImGui::PopID();
+      }
+      if(matches.empty()) ImGui::TextDisabled(prof.symbolsLoaded ? "No matching functions." : "Load an ELF to select a function.");
+      ImGui::EndChild();
+      ImGui::EndCombo();
+    }
+    if(!prof.markerAddr) ImGui::TextDisabled("Select a function to capture its entry-to-return window.");
+    else if(!prof.markerReady) ImGui::TextDisabled("Waiting for a complete invocation...");
+    else ImGui::TextDisabled("Last completed invocation (entry to return)");
+  }
 
   ImGui::Separator();
 
-  if(!enabled && prof.stats.empty() && prof.frameStats.empty()) {
+  if(enabled) prof.flushFrames();
+  if(!enabled && prof.stats.empty() && prof.frameStats.empty() && prof.markerStats.empty()) {
     ImGui::TextUnformatted("Enable 'Capture' to profile CPU function costs.\n"
                            "Tip: load a libdragon ROM with its .elf alongside for function names.");
     ImGui::End();
@@ -113,8 +156,9 @@ auto DrawCpuProfiler() -> void {
     return;
   }
 
-  // Snapshot the active map (continuous totals or the last completed frame).
-  auto& srcMap = (windowMode == 0) ? prof.stats : prof.frameStats;
+  bool avgMode = windowMode == 0 && contMode == 1;
+  auto& srcMap = windowMode == 0 ? (avgMode ? prof.swapTotals : prof.stats)
+                               : windowMode == 1 ? prof.frameStats : prof.markerStats;
 
   struct Row { u32 addr; string name; bool isSpin; bool isExc; u64 calls; u64 incl; u64 excl; u64 wait;
                u64 bytesIn; u64 bytesOut; u64 inclBytesIn; u64 inclBytesOut;
@@ -123,7 +167,6 @@ auto DrawCpuProfiler() -> void {
                u64 dcTime; u64 inclDcTime; };           //dcache transfer time (in + out)
   std::vector<Row> rows;
   rows.reserve(srcMap.size());
-  using Prof = ares::Nintendo64::CPU::Profiler;
   u64 totalExcl = 0, spinExcl = 0, totalBytesIn = 0, totalBytesOut = 0, totalIcache = 0, totalDcIn = 0, totalDcOut = 0;
   for(auto& [addr, st] : srcMap) {
     bool isExc = prof.isExceptionAddr(addr);
@@ -147,10 +190,6 @@ auto DrawCpuProfiler() -> void {
     totalDcOut  += st.exclCacheBytes[Prof::CacheDWrite];
   }
 
-  // (rows are sorted below according to the table's clickable column headers)
-
-  
-  bool avgMode = (windowMode == 0) && (contMode == 1);
   f64 divisor = (avgMode && prof.frameCount > 0) ? (f64)prof.frameCount : 1.0;
 
   auto fmtTime = [&](f64 cyc, char* buf, size_t n) {

@@ -134,6 +134,7 @@ auto CPU::Profiler::now() -> u64 {
 }
 
 auto CPU::Profiler::loadSymbols(const string& romPath) -> bool {
+  setFunctionMarker(0);
   symbolsLoaded = false; symbolCount = 0;
   syms.clear(); symByAddr.clear();
 
@@ -182,6 +183,25 @@ auto CPU::Profiler::resolve(u32 addr) -> Sym* {
   return nullptr;
 }
 
+auto CPU::Profiler::refreshWaitFunctions() -> void {
+  if(enabled.load(std::memory_order_relaxed)) flushFrames();
+  for(auto& sym : syms) sym.isSpin = nameLooksSpin(sym.name, rsp.capture.cpuWaitPatterns);
+}
+
+auto CPU::Profiler::setFunctionMarker(u32 addr) -> void {
+  if(enabled.load(std::memory_order_relaxed)) flushFrames();
+  markerAddr = addr;
+  markerActive = false;
+  markerReady = false;
+  markerStats.clear();
+  markerAccum.clear();
+  auto reset = [](auto& frames) {
+    for(auto& f : frames) f.markerRoot = f.markerPending = false;
+  };
+  reset(callStack);
+  for(auto& s : suspended) reset(s.frames);
+}
+
 auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
   u32 pc32 = (u32)address;
 
@@ -216,6 +236,20 @@ auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
     popFrame();
   }
 
+  // Open the window on arrival, after the caller's branch delay slot.
+  if(!callStack.empty() && callStack.back().markerPending && callStack.back().funcAddr == pc32) {
+    flushFrames();
+    auto& f = callStack.back();
+    f.markerPending = false;
+    if(!markerActive) {
+      markerAccum.clear();
+      markerActive = f.markerRoot = true;
+      auto& st = markerAccum[f.funcAddr];
+      st.addr = f.funcAddr;
+      st.callCount = 1;
+    }
+  }
+
   u32 op = instruction >> 26;
   bool isJAL  = (op == 0x03);
   bool isJALR = (op == 0x00) && ((instruction & 0x3f) == 0x09);
@@ -233,7 +267,10 @@ auto CPU::Profiler::onInstruction(u64 address, u32 instruction) -> void {
     f.funcAddr = target;
     f.retAddr = pc32 + 8;  //where the callee returns to (after the delay slot)
     f.sp = sp;             //caller's $sp at the call site (see the unwind backstop above)
-    f.entryCycle = now();
+    f.entryCycle = f.segmentCycle = now();
+    if(markerAddr) {
+      if(auto sym = resolve(target)) f.markerPending = sym->addr == markerAddr;
+    }
     callStack.push_back(f);
     syncOpenFrames();
   }
@@ -384,16 +421,9 @@ auto CPU::Profiler::onCacheTouch(u64 address, u32 instruction) -> void {
   }
 }
 
-// Record the top frame's timing into the stats and propagate its inclusive time
-// and subtree-wait into its caller (which subtracts it from the caller's
-// exclusive). Returns whether the popped frame was a synthetic exception frame.
-auto CPU::Profiler::popFrame() -> bool {
-  Frame frame = callStack.back();
-  callStack.pop_back();
-  syncOpenFrames();
-  if(frame.isException && excActive) excActive--;  //handler frame closed
-  u64 nowT = now();
-  u64 incl = nowT > frame.entryCycle ? nowT - frame.entryCycle : 0;  //guard sync-boundary -1
+// Commit only the portion since the last boundary, then rebase the live call.
+auto CPU::Profiler::commitFrame(Frame& frame, Frame* parent, u64 time) -> void {
+  u64 incl = time > frame.segmentCycle ? time - frame.segmentCycle : 0;
   u64 excl = incl > frame.childCycles ? incl - frame.childCycles : 0;
   // Exception/interrupt frames are never spin/wait; only real functions can be.
   bool spin = false;
@@ -410,7 +440,7 @@ auto CPU::Profiler::popFrame() -> bool {
     auto& st = m[frame.funcAddr];
     st.addr = frame.funcAddr;
     st.isSpin = spin;
-    st.callCount++;
+    st.callCount += frame.newCall;
     st.inclCycles += incl;
     st.exclCycles += excl;
     st.waitCycles += subtreeWait;
@@ -423,8 +453,48 @@ auto CPU::Profiler::popFrame() -> bool {
       st.exclCacheBytes[k] += frame.cacheOwn[k];
     }
   };
-  if(frameCount < maxFrames) add(stats);  //freeze continuous totals at the cap
-  add(frameAccum);                         //per-frame snapshot is always live
+  bool hasData = frame.newCall || incl || inclBytesIn || inclBytesOut;
+  for(u32 k : range(CacheKinds)) hasData |= inclCache[k] != 0;
+  if(hasData) {
+    if(frameCount < maxFrames) add(stats);
+    add(frameAccum);
+    if(markerActive) add(markerAccum);
+  }
+  if(parent) {
+    parent->childCycles += incl;
+    parent->childWait += subtreeWait;
+    parent->childBytesIn += inclBytesIn;
+    parent->childBytesOut += inclBytesOut;
+    for(u32 k : range(CacheKinds)) parent->childCache[k] += inclCache[k];
+  }
+  frame.segmentCycle = time;
+  frame.newCall = false;
+  frame.childCycles = frame.childWait = 0;
+  frame.bytesInOwn = frame.bytesOutOwn = frame.childBytesIn = frame.childBytesOut = 0;
+  for(u32 k : range(CacheKinds)) frame.cacheOwn[k] = frame.childCache[k] = 0;
+}
+
+auto CPU::Profiler::flushFrames() -> void {
+  u64 time = now();
+  for(size_t i = callStack.size(); i > 0; i--) {
+    commitFrame(callStack[i - 1], i > 1 ? &callStack[i - 2] : nullptr, time);
+  }
+}
+
+auto CPU::Profiler::popFrame() -> bool {
+  if(callStack.back().markerRoot) {
+    flushFrames();
+    markerStats.swap(markerAccum);
+    markerAccum.clear();
+    markerActive = false;
+    markerReady = true;
+  }
+  u64 nowT = now();
+  commitFrame(callStack.back(), callStack.size() > 1 ? &callStack[callStack.size() - 2] : nullptr, nowT);
+  Frame frame = callStack.back();
+  callStack.pop_back();
+  syncOpenFrames();
+  if(frame.isException && excActive) excActive--;
   // Flame-chart span: this call's [entry,now) at its call-stack depth. callStack
   // was just popped, so its current size is exactly this frame's nesting depth.
   // Timestamps are now() (the CPU is primary, so now() is the wall clock the RSP
@@ -437,18 +507,12 @@ auto CPU::Profiler::popFrame() -> bool {
                               (u16)min<u32>(callStack.size(), 0xffff), frame.isException};
     timelineWrite.store(w + 1, std::memory_order_release);
   }
-  if(!callStack.empty()) {
-    callStack.back().childCycles += incl;
-    callStack.back().childWait   += subtreeWait;
-    callStack.back().childBytesIn  += inclBytesIn;
-    callStack.back().childBytesOut += inclBytesOut;
-    for(u32 k : range(CacheKinds)) callStack.back().childCache[k] += inclCache[k];
-  }
   return frame.isException;
 }
 
 // Discontinuous $sp jump (bigger than any single instruction's stack adjustment)
 auto CPU::Profiler::switchStack(u32 sp) -> void {
+  flushFrames();
   suspended.push_back({spLo, spHi, ++stackClock, std::move(callStack)});
   callStack.clear();  //callStack was moved-from; make it valid+empty
 
@@ -460,6 +524,8 @@ auto CPU::Profiler::switchStack(u32 sp) -> void {
   if(found >= 0) {
     auto& s = suspended[(u32)found];
     callStack = std::move(s.frames);
+    // Suspended threads consume no CPU cycles.
+    for(auto& f : callStack) f.segmentCycle = now();
     spLo = s.lo; spHi = s.hi;
     suspended.erase(suspended.begin() + found);
   } else {
@@ -471,6 +537,9 @@ auto CPU::Profiler::switchStack(u32 sp) -> void {
   while(suspended.size() > maxStacks) {
     u32 oldest = 0;
     for(u32 i = 1; i < suspended.size(); i++) if(suspended[i].used < suspended[oldest].used) oldest = i;
+    for(auto& f : suspended[oldest].frames) {
+      if(f.markerRoot) { markerActive = false; markerAccum.clear(); }
+    }
     suspended.erase(suspended.begin() + oldest);
   }
 }
@@ -515,7 +584,7 @@ auto CPU::Profiler::onException(u32 code) -> void {
   if(callStack.size() >= maxStackDepth) return;
   Frame f;
   f.funcAddr = exceptionEntryAddr(code);
-  f.entryCycle = now();
+  f.entryCycle = f.segmentCycle = now();
   f.isException = true;
   callStack.push_back(f);
   syncOpenFrames();
@@ -536,7 +605,30 @@ auto CPU::Profiler::onEret() -> void {
 // Publish the in-progress frame as the "last completed frame" snapshot. Called
 // on each presented framebuffer swap.
 auto CPU::Profiler::onFrame() -> void {
-  frameStats = frameAccum;
+  if(enabled.load(std::memory_order_relaxed)) {
+    flushFrames();
+    frameStats.swap(frameAccum);
+    if(frameCount < maxFrames) {
+      for(auto& [addr, frame] : frameStats) {
+        auto& total = swapTotals[addr];
+        total.addr = addr;
+        total.isSpin = frame.isSpin;
+        total.callCount += frame.callCount;
+        total.inclCycles += frame.inclCycles;
+        total.exclCycles += frame.exclCycles;
+        total.waitCycles += frame.waitCycles;
+        total.inclBytesIn += frame.inclBytesIn;
+        total.inclBytesOut += frame.inclBytesOut;
+        total.exclBytesIn += frame.exclBytesIn;
+        total.exclBytesOut += frame.exclBytesOut;
+        for(u32 k : range(CacheKinds)) {
+          total.inclCacheBytes[k] += frame.inclCacheBytes[k];
+          total.exclCacheBytes[k] += frame.exclCacheBytes[k];
+        }
+      }
+      frameCount++;
+    }
+  }
   frameAccum.clear();
 
   {
@@ -544,13 +636,15 @@ auto CPU::Profiler::onFrame() -> void {
     viMarks[w % maxViMarks] = now();
     viMarkWrite.store(w + 1, std::memory_order_release);
   }
-  //number of presented frames the continuous totals span, capped at maxFrames so
-  //the accumulation stops growing once the window is full (Clear restarts it).
-  if(frameCount < maxFrames) frameCount++;
 }
 
 auto CPU::Profiler::setEnabled(bool value) -> void {
+  if(value == enabled.load(std::memory_order_relaxed)) return;
+  if(!value) flushFrames();
+  else refreshWaitFunctions();
   enabled.store(value, std::memory_order_relaxed);
+  markerActive = false;
+  markerAccum.clear();
   callStack.clear();
   suspended.clear();
   haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
@@ -571,7 +665,10 @@ auto CPU::Profiler::setEnabled(bool value) -> void {
 // "ongoing" bars would stay pinned to the right edge forever. Symbols are keyed to
 // the ROM and reloaded separately on game load, so they survive.
 auto CPU::Profiler::power() -> void {
-  clearStats();  //stats + call stacks + the span ring
+  callStack.clear();
+  suspended.clear();
+  haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
+  clearStats();
   viMarkWrite.store(0, std::memory_order_release);
   cacheEventWrite.store(0, std::memory_order_release);
   for(auto& h : lineHistory) std::fill(h.begin(), h.end(), LineHistory{});
@@ -580,11 +677,27 @@ auto CPU::Profiler::power() -> void {
 
 auto CPU::Profiler::clearStats() -> void {
   stats.clear();
+  swapTotals.clear();
   frameStats.clear();
   frameAccum.clear();
-  callStack.clear();
-  suspended.clear();
-  haveSp = false; excActive = 0; spLo = spHi = 0; stackClock = 0;
+  markerStats.clear();
+  markerAccum.clear();
+  markerActive = false;
+  markerReady = false;
+  auto reset = [&](auto& frames) {
+    for(auto& f : frames) {
+      Frame clean;
+      clean.funcAddr = f.funcAddr;
+      clean.retAddr = f.retAddr;
+      clean.sp = f.sp;
+      clean.entryCycle = clean.segmentCycle = now();
+      clean.isException = f.isException;
+      clean.newCall = false;
+      f = clean;
+    }
+  };
+  reset(callStack);
+  for(auto& s : suspended) reset(s.frames);
   syncOpenFrames();
   frameCount = 0;
   timelineWrite.store(0, std::memory_order_release);

@@ -25,6 +25,7 @@ struct RSPCapture {
     u8  word0Reg = 25, word1Reg = 24, opcodeShift = 24;
     string commandNames[256];
     u8  commandColor[256] = {};  // flame-chart colour class (0..7)
+    std::vector<string> cpuWaitPatterns;
   };
   DLConfig dl;
   u32  f3dSigPC = ~0u;       // located signature address (for the per-hook ucode gate)
