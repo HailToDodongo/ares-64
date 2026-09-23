@@ -1384,6 +1384,10 @@ struct CPU : Thread {
       u32 retAddr = 0;      //expected $ra on return (call address + 8); 0 for exception frames
       u32 sp = 0;           //caller's $sp at the call site; used to unwind across OS thread switches
       u64 entryCycle = 0;
+      u64 segmentCycle = 0;  //start of the unaccounted portion of this call
+      bool newCall = true;
+      bool markerPending = false;
+      bool markerRoot = false;
       u64 childCycles = 0;  //inclusive time of callees that have returned
       u64 childWait = 0;    //subtree wait time of callees that have returned
       u64 bytesInOwn = 0;    //RDRAM -> CPU bytes while this frame was on top (exclusive)
@@ -1417,8 +1421,14 @@ struct CPU : Thread {
     std::atomic<bool> enabled{false};
 
     std::unordered_map<u32, FuncStat> stats;       //continuous totals
+    std::unordered_map<u32, FuncStat> swapTotals; //totals of completed captured swap windows
     std::unordered_map<u32, FuncStat> frameStats;  //last fully-completed frame
     std::unordered_map<u32, FuncStat> frameAccum;  //frame in progress
+    std::unordered_map<u32, FuncStat> markerStats; //last completed function window
+    std::unordered_map<u32, FuncStat> markerAccum;
+    u32 markerAddr = 0;
+    bool markerActive = false;
+    bool markerReady = false;
     std::vector<Frame> callStack;        //the active thread's call stack (see Suspended)
     u64 frameCount = 0;  //presented frames accumulated into stats since last clear
 
@@ -1542,6 +1552,10 @@ struct CPU : Thread {
 
     auto loadSymbols(const string& romPath) -> bool;
     auto resolve(u32 addr) -> Sym*;
+    auto refreshWaitFunctions() -> void;
+    auto setFunctionMarker(u32 addr) -> void;
+    auto commitFrame(Frame& frame, Frame* parent, u64 time) -> void;
+    auto flushFrames() -> void;
     auto onInstruction(u64 address, u32 instruction) -> void;
     //memory-bus access committed to RDRAM, attributed to the current frame.
     //toRDRAM=true is outgoing (CPU -> RDRAM), false is incoming (RDRAM -> CPU).
@@ -1572,7 +1586,7 @@ struct CPU : Thread {
     }
     auto onException(u32 code) -> void;  //exception/interrupt entry: push handler frame
     auto onEret() -> void;               //exception return: pop handler frame
-    auto popFrame() -> bool;             //record+propagate top frame; returns isException
+    auto popFrame() -> bool;             //record top frame; returns isException
     auto switchStack(u32 sp) -> void;    //park the active call stack and resume/create the one $sp belongs to
     auto onFrame() -> void;       //per framebuffer swap: publish frame snapshot
     auto setEnabled(bool value) -> void;

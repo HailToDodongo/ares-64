@@ -213,6 +213,7 @@ auto RSPCapture::loadConfigData(const string& data) -> bool {
   }
 
   configLoaded = (hookCount > 0);
+  cpu.profiler.refreshWaitFunctions();
   return configLoaded;
 }
 
@@ -224,17 +225,16 @@ static auto stringFindLast(const nall::string& s, char c) -> s32 {
   return -1;
 }
 
-// Helper: extract substring from after last '/' to the end
+// Accept both separators, including native Windows ROM paths.
 static auto stringBasename(const nall::string& s) -> nall::string {
-  s32 slash = stringFindLast(s, '/');
+  s32 slash = max(stringFindLast(s, '/'), stringFindLast(s, '\\'));
   nall::string name;
   for(s32 i = slash + 1; i < (s32)s.size(); i++) name.append(s[i]);
   return name;
 }
 
-// Helper: extract substring from start to last '/'
 static auto stringDirname(const nall::string& s) -> nall::string {
-  s32 slash = stringFindLast(s, '/');
+  s32 slash = max(stringFindLast(s, '/'), stringFindLast(s, '\\'));
   nall::string dir;
   for(s32 i = 0; i < slash; i++) dir.append(s[i]);
   return dir;
@@ -301,7 +301,7 @@ auto RSPCapture::autoDetect(const string& romPath) -> bool {
     string jsonPaths[] = {
       {stringDirname(elfPath), "/rspq-libdragon.json"},
       {Path::program(), "rspq-libdragon.json"},
-      {stringDirname(Path::program()), "rspq-libdragon.json"},
+      {stringDirname(Path::program()), "/rspq-libdragon.json"},
     };
     for(auto& jp : jsonPaths) {
       if(loadConfig(jp)) {
@@ -543,12 +543,15 @@ auto RSPCapture::loadDLConfigData(const string& data) -> bool {
       }
     }
 
-    cpuWaitPatterns.clear();
     if(j.contains("cpuWaitFunctions")) for(auto& v : j["cpuWaitFunctions"])
-      cpuWaitPatterns.push_back(string{v.get<std::string>().c_str()});
+      cfg.cpuWaitPatterns.push_back(string{v.get<std::string>().c_str()});
 
     cfg.loaded = true;
     dl = cfg;
+    if(mode == ModeF3DEX2) {
+      cpuWaitPatterns = dl.cpuWaitPatterns;
+      cpu.profiler.refreshWaitFunctions();
+    }
     return true;
   } catch(const nlohmann::json::exception& e) {
     print("RSP: loadDLConfig: JSON parse error: ", e.what(), "\n");
@@ -568,7 +571,7 @@ auto RSPCapture::detectF3DEX2() -> void {
     string paths[] = {
       {stringDirname(elfPath), "/f3dex2.json"},
       {Path::program(), "f3dex2.json"},
-      {stringDirname(Path::program()), "f3dex2.json"},
+      {stringDirname(Path::program()), "/f3dex2.json"},
     };
     for(auto& p : paths) {
       if(loadDLConfig(p)) { print("RSP: detectF3DEX2: loaded f3dex2.json from ", p, "\n"); break; }
@@ -617,6 +620,8 @@ auto RSPCapture::detectF3DEX2() -> void {
 
   banner = dl.name;
   mode = ModeF3DEX2;
+  cpuWaitPatterns = dl.cpuWaitPatterns;
+  cpu.profiler.refreshWaitFunctions();
   configLoaded = true;
   segType = SegNone;        // re-arm so the first command does not emit a stale delta
   r.recompiler.reset();     // recompile RSP blocks so the dispatch hooks are emitted
