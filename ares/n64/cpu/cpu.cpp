@@ -178,8 +178,11 @@ auto CPU::instruction() -> bool {
     auto block = recompiler.block(ipu.pc, access.paddr);
     if(block) {
       if(Thread::clock >= jitClockTarget) {
-        s64 timerDelta = (s64)scc.compare - (s64)effectiveCount();
-        if(timerDelta < 0) timerDelta = 0;
+        //Count is a free-running 33-bit counter; the Timer interrupt fires on the Count==Compare
+        //match, which is (compare - count) mod 2^33 clocks ahead. A signed subtract goes negative
+        //whenever Count has already passed Compare (common: Compare left near 0 / timer unused),
+        //which clamped the JIT budget to 0 and forced a synchronize() after every block.
+        s64 timerDelta = (s64)(((u64)scc.compare - effectiveCount()) & CountMask);
         s64 queueDelta = queue.timeToNextEvent();
         if(queueDelta < 0) queueDelta = 0;
         s64 capBudget = min<s64>(Accuracy::CPU::JitInterleaving, min(timerDelta, queueDelta));
