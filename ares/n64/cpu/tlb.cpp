@@ -70,7 +70,7 @@ auto CPU::TLB::store(u64 vaddr, const Entry& entry, bool noExceptions) -> maybe<
 auto CPU::TLB::store(u64 vaddr, bool noExceptions) -> PhysAccess {
   for(auto& entry : this->tlbCache.entry) {
     if(!entry.entry) continue;
-    if(auto match = store(vaddr, *entry.entry)) {
+    if(auto match = store(vaddr, *entry.entry, noExceptions)) {
       entry.frequency++;
       return *match;
     }
