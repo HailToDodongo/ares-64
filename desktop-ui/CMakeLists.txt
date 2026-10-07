@@ -80,6 +80,8 @@ elseif(OS_LINUX OR OS_FREEBSD OR OS_OPENBSD)
 endif()
 
 target_include_directories(desktop-ui PRIVATE ${CMAKE_SOURCE_DIR})
+# nlohmann/json (header-only) for the N64 telemetry/MCP server (program/telemetry-server.cpp)
+target_include_directories(desktop-ui PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/json)
 target_link_libraries(
   desktop-ui
   PRIVATE ares::ruby ares::ares ares::mia ares::nall ares::imgui

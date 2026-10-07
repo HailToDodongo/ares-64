@@ -4,6 +4,16 @@ auto RSP::dmaQueue(u32 clocks, Thread& thread) -> void {
 
 auto RSP::dmaStep(u32 clocks) -> void {
   if(dma.busy.any()) {
+#if ARES_DEBUG_TOOLS
+    // MCP RSP debugger: the gated interpreter advances emulated time far slower
+    // than the CPU refills the DMA queue, so dma.clock never crosses 0 and the
+    // ucode's `mfc0 SP_DMA_FULL; bne` wait spins forever. While debugging, drain
+    // queued DMAs synchronously: timing is irrelevant when single-stepping.
+    if(capture.dbgActive.load(std::memory_order_relaxed)) {
+      while(dma.busy.any()) dmaTransferStep();
+      return;
+    }
+#endif
     dma.clock += clocks;
     if(dma.clock >= 0) {
       dmaTransferStep();

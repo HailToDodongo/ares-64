@@ -84,6 +84,18 @@ struct Program : ares::Platform {
   string startSystem;
   string startSaveStateSlot;
 
+  // N64 telemetry/MCP server: TCP port to listen on (0 = disabled). Set via the
+  // --mcp / --telemetry-port CLI flag; opened in create(), closed in quit().
+  u32 telemetryPort = 0;
+
+  // Telemetry: copy of the last presented core frame, for on-demand MCP capture.
+  // Written on the emulator thread in Program::video() (only while the server is
+  // enabled); read by the telemetry server on that same thread, so no lock.
+  std::vector<u32> lastFrame;
+  u32 lastFramePitch = 0;   //bytes per row
+  u32 lastFrameWidth = 0;
+  u32 lastFrameHeight = 0;
+
   AudioCapture audioCapture;
   std::vector<ares::Node::Video::Screen> screens;
   std::vector<ares::Node::Audio::Stream> streams;

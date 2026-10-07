@@ -11,6 +11,7 @@
 #include "status.cpp"
 #include "utility.cpp"
 #include "drivers.cpp"
+#include "telemetry-server.cpp"
 
 Program program;
 thread worker;
@@ -25,6 +26,14 @@ auto Program::create() -> void {
   if(kiosk) {
     if(startFullScreen) videoFullScreenToggle();
     if(startPseudoFullScreen) videoPseudoFullScreenToggle();
+  }
+
+  // Open the N64 telemetry/MCP endpoint if requested (--mcp / --telemetry-port).
+  if(telemetryPort) {
+    // Let the RSP single-step freeze pump this server from the emulator thread
+    // while the core is stopped at a breakpoint (see RSP::dbgStopSpin).
+    ares::Nintendo64::rspDebugPump = []() { nall::N64Telemetry::server.poll(); };
+    nall::N64Telemetry::server.open(telemetryPort, true);
   }
 
   _isRunning = true;
@@ -80,6 +89,11 @@ auto Program::emulatorRunLoop(uintptr_t) -> void {
       waitForInterrupts();
       continue;
     }
+    // Pump the telemetry/MCP endpoint on this (emulator) thread, so its command
+    // handlers read core state directly. Runs before the paused/halted branches
+    // below, so debug queries keep working while the emulator is stopped.
+    if(telemetryPort) nall::N64Telemetry::server.poll();
+
     if(!emulator) {
       usleep(20 * 1000);
       continue;
@@ -269,6 +283,9 @@ auto Program::quit() -> void {
 
   _quitting = true;
   _programConditionVariable.notify_all();
+
+  // Stop the telemetry/MCP server (joins its socket threads) before tearing down.
+  if(telemetryPort) nall::N64Telemetry::server.close();
 
   // Safety net: force-quit after 3s if worker is irrevocably stuck
   thread::create([](uintptr) {

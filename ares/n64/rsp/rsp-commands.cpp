@@ -56,6 +56,65 @@ auto RSP::captureStepWait() -> void {
   cap.stepPending.store(false, std::memory_order_release);
 }
 
+// MCP debugger: per-instruction gate, called from instructionPrologue before each
+// RSP instruction executes (ipu.pc = the instruction about to run). When debug mode
+// is engaged the RSP is only allowed to advance when the client grants a step budget
+// (dbgStepsRemaining) or a free run (dbgRunToBp); otherwise it freezes in dbgStopSpin.
+// A breakpoint stops *before* executing the instruction at that PC. dbgResumeSkipBp
+// lets step/run leave a PC that already has a breakpoint on it without re-triggering.
+auto RSP::dbgStepGate() -> void {
+  auto& cap = capture;
+  if(!cap.dbgActive.load(std::memory_order_acquire)) return;
+  for(;;) {
+    if(!cap.dbgActive.load(std::memory_order_relaxed)) return;  // debug turned off: resume normally
+    u32 pc = ipu.pc & 0xFFF;
+
+    if(cap.dbgRunToBp.load(std::memory_order_relaxed)) {
+      if(cap.dbgHitBreakpoint(pc) && !cap.dbgResumeSkipBp) {
+        cap.dbgRunToBp.store(false, std::memory_order_relaxed);
+        dbgStopSpin(pc);
+        continue;  // re-evaluate the grants set while stopped
+      }
+      cap.dbgResumeSkipBp = false;  // consumed: later breakpoint hits will stop
+      cap.dbgInstrCount.fetch_add(1, std::memory_order_relaxed);
+      return;  // execute
+    }
+
+    u32 steps = cap.dbgStepsRemaining.load(std::memory_order_relaxed);
+    if(steps > 0) {
+      if(cap.dbgHitBreakpoint(pc) && !cap.dbgResumeSkipBp) {
+        cap.dbgStepsRemaining.store(0, std::memory_order_relaxed);
+        dbgStopSpin(pc);
+        continue;
+      }
+      cap.dbgResumeSkipBp = false;
+      cap.dbgStepsRemaining.store(steps - 1, std::memory_order_relaxed);
+      cap.dbgInstrCount.fetch_add(1, std::memory_order_relaxed);
+      return;  // execute this instruction; the next prologue re-enters the gate
+    }
+
+    // No execution budget: freeze until the client grants a step or a run.
+    dbgStopSpin(pc);
+  }
+}
+
+// MCP debugger: freeze the emulator thread at `pc`, pumping the MCP server so its
+// command handlers (rsp.step / rsp.run / rsp.regs / mem.*) run on this same thread
+// and observe frozen core state. Returns once the client grants a step/run or turns
+// debug mode off. The whole N64 (CPU + RSP co-threads) is stopped for the duration.
+auto RSP::dbgStopSpin(u32 pc) -> void {
+  auto& cap = capture;
+  cap.dbgCurPc.store(pc, std::memory_order_release);
+  cap.dbgStopped.store(true, std::memory_order_release);
+  while(cap.dbgActive.load(std::memory_order_acquire)
+        && !cap.dbgRunToBp.load(std::memory_order_relaxed)
+        && cap.dbgStepsRemaining.load(std::memory_order_relaxed) == 0) {
+    if(rspDebugPump) rspDebugPump();  // service the MCP server on this (emulator) thread
+    usleep(200);
+  }
+  cap.dbgStopped.store(false, std::memory_order_release);
+}
+
 // Emit the currently-open F3D segment (a command handler or a dispatch-loop stretch)
 // ending at `wall`, then mark nothing open. Shared by the dispatch hook and the halt
 // path (so the last command before a BREAK doesn't absorb the idle time until the

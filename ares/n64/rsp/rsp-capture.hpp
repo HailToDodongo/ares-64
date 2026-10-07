@@ -6,6 +6,12 @@
 // Only ever touched from the emulation thread.
 inline u64 captureSequence = 0;
 
+// Registered by the frontend (desktop-ui telemetry/MCP) so the RSP single-step
+// spin can pump the MCP command server while the emulator thread is frozen at a
+// breakpoint. A capture-less lambda converts to this function pointer. Null when
+// no frontend hook is installed (headless / GUI-only builds). See dbgStopSpin.
+inline void (*rspDebugPump)() = nullptr;
+
 struct RSPCapture {
   static constexpr u32 maxCommands = 65536;
   static constexpr u32 maxCommandWords = 16;
@@ -73,6 +79,48 @@ struct RSPCapture {
   // Set by the RSP viewer to request a manual clear. Picked up by both
   // spin-waits; clears the RSP buffer immediately while stepping.
   std::atomic<bool> requestClear{false};
+
+  // --- RSP instruction-level single-step / breakpoints (MCP debugger) ---------
+  // Unlike the command-granularity stepMode above, this halts the RSP between
+  // individual RSP instructions. It is driven and observed entirely on the
+  // emulator thread: while stopped, the step spin (RSP::dbgStopSpin) pumps the
+  // MCP server via rspDebugPump so command handlers run on this same thread and
+  // read/write frozen core state with no locking. Only dbgActive is toggled from
+  // the between-frame server poll; every other field is written by whichever
+  // handler runs inside the spin (still the emulator thread). Because the
+  // per-instruction hook lives in the interpreter (recompiled blocks skip it),
+  // enabling dbgActive forces rsp.recompiler.enabled off (see telemetry-server).
+  static constexpr u32 maxBreakpoints = 16;
+  std::atomic<bool> dbgActive{false};      // instruction-debug mode engaged
+  std::atomic<bool> dbgStopped{false};     // frozen at an instruction boundary right now
+  std::atomic<bool> dbgRunToBp{false};     // continue freely until a breakpoint PC
+  std::atomic<u32>  dbgStepsRemaining{0};  // instructions still to execute before stopping
+  std::atomic<u32>  dbgCurPc{0};           // IMEM PC we are stopped at (valid when dbgStopped)
+  std::atomic<u64>  dbgInstrCount{0};      // instructions executed since dbgActive engaged
+  bool dbgResumeSkipBp = false;            // ignore a breakpoint at the resume PC once
+  u32  dbgBreakpoints[maxBreakpoints] = {};// IMEM offsets (masked to 0xFFF)
+  u32  dbgBreakpointCount = 0;
+
+  auto dbgHitBreakpoint(u32 pc) const -> bool {
+    pc &= 0xFFF;
+    for(u32 i = 0; i < dbgBreakpointCount; i++) if((dbgBreakpoints[i] & 0xFFF) == pc) return true;
+    return false;
+  }
+  auto dbgAddBreakpoint(u32 pc) -> bool {
+    pc &= 0xFFF;
+    for(u32 i = 0; i < dbgBreakpointCount; i++) if((dbgBreakpoints[i] & 0xFFF) == pc) return true;
+    if(dbgBreakpointCount >= maxBreakpoints) return false;
+    dbgBreakpoints[dbgBreakpointCount++] = pc;
+    return true;
+  }
+  auto dbgRemoveBreakpoint(u32 pc) -> bool {
+    pc &= 0xFFF;
+    for(u32 i = 0; i < dbgBreakpointCount; i++) {
+      if((dbgBreakpoints[i] & 0xFFF) == pc) { dbgBreakpoints[i] = dbgBreakpoints[--dbgBreakpointCount]; return true; }
+    }
+    return false;
+  }
+  auto dbgClearBreakpoints() -> void { dbgBreakpointCount = 0; }
 
   // Hook addresses from JSON config (IMEM offsets)
   u32 hookAddresses[maxHookAddresses];

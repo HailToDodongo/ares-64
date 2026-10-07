@@ -577,6 +577,8 @@ struct RSP : Thread, Memory::RCP<RSP> {
   auto captureF3DFlush(u64 wall) -> void;      //emit + close the open F3D segment at `wall`
   auto captureStepWait() -> void;              //RSP single-step: render + spin until the UI advances
   auto captureHaltState() -> void;  //flame chart: emit RSP halt/break intervals
+  auto dbgStepGate() -> void;       //MCP debugger: per-instruction breakpoint/single-step gate
+  auto dbgStopSpin(u32 pc) -> void; //MCP debugger: freeze here, pumping the MCP server, until resumed
 
   //emux.cpp
   auto XDETECT(r32& rd, u32 code) -> void;

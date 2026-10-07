@@ -85,6 +85,19 @@ auto Program::video(ares::Node::Video::Screen node, const u32* data, u32 pitch, 
     captureScreenshot(data, pitch, width, height);
   }
 
+  // Telemetry: stash a packed copy of this frame so the MCP `video.screenshot`
+  // command can encode the exact displayed output on demand (even while paused).
+  if(telemetryPort) {
+    u32 stride = pitch >> 2;  //u32 per row
+    lastFrame.resize((size_t)width * height);
+    for(u32 y = 0; y < height; y++) {
+      memcpy(lastFrame.data() + (size_t)y * width, data + (size_t)y * stride, width * sizeof(u32));
+    }
+    lastFramePitch = width * sizeof(u32);
+    lastFrameWidth = width;
+    lastFrameHeight = height;
+  }
+
   if(node->width() != emulator->latch.width || node->height() != emulator->latch.height || node->rotation() != emulator->latch.rotation) {
     emulator->latch.width = node->width();
     emulator->latch.height = node->height();
@@ -242,6 +255,30 @@ auto Program::input(ares::Node::Input::Input node) -> void {
       if(auto axis = node->cast<ares::Node::Input::Axis>()) axis->setValue(0);
       if(auto trigger = node->cast<ares::Node::Input::Trigger>()) trigger->setValue(0);
       return;
+    }
+  }
+
+  // MCP controller override: when active, drive the N64 pad from telemetry state
+  // (input.* commands) instead of the host controller. Matched by Gamepad node
+  // name; unmatched nodes fall through to normal host mapping.
+  if(N64Telemetry::inputOverride.active) {
+    using namespace nall::N64Telemetry;
+    static const struct { const char* name; u32 bit; } padMap[] = {
+      {"A",Pad_A},{"B",Pad_B},{"Z",Pad_Z},{"Start",Pad_Start},
+      {"Up",Pad_Up},{"Down",Pad_Down},{"Left",Pad_Left},{"Right",Pad_Right},
+      {"C-Up",Pad_CUp},{"C-Down",Pad_CDown},{"C-Left",Pad_CLeft},{"C-Right",Pad_CRight},
+      {"L",Pad_L},{"R",Pad_R},
+    };
+    auto nm = node->name();
+    if(auto button = node->cast<ares::Node::Input::Button>()) {
+      for(auto& m : padMap) if(nm == m.name) {
+        button->setValue((inputOverride.buttons & m.bit) ? 1 : 0);
+        return;
+      }
+    }
+    if(auto axis = node->cast<ares::Node::Input::Axis>()) {
+      if(nm == "X-Axis") { axis->setValue(inputOverride.x); return; }
+      if(nm == "Y-Axis") { axis->setValue(inputOverride.y); return; }
     }
   }
 

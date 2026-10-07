@@ -140,6 +140,14 @@ auto nall::main(Arguments arguments) -> void {
   }
 #endif
 
+  // --mcp / --telemetry-port <port>: open the N64 telemetry endpoint that the MCP
+  // bridge (tools/mcp/ares_mcp.py) connects to. Default port 9123.
+  if(string portStr; arguments.take("--telemetry-port", portStr)) {
+    program.telemetryPort = (u32)portStr.natural();
+  } else if(arguments.take("--mcp")) {
+    program.telemetryPort = 9123;
+  }
+
   inputManager.create();
   Emulator::construct();
 

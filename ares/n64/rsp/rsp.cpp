@@ -144,6 +144,10 @@ auto RSP::instructionPrologue(u32 instruction) -> void {
 #if ARES_DEBUG_TOOLS
   debugger.instruction();
 
+  // MCP debugger: per-instruction breakpoint / single-step gate (interpreter path
+  // only; recompiled blocks skip the prologue, so dbgActive forces the interpreter).
+  dbgStepGate();
+
   // RSP command viewer: check if this PC is a hooked RSPQ dispatch address
   if(capture.configLoaded && capture.hasHook(ipu.pc)) {
     captureCommandHook(ipu.pc);
