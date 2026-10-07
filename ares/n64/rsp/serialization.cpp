@@ -1,4 +1,5 @@
 auto RSP::serialize(serializer& s) -> void {
+  if(threaded) threadJoin();  //save/load state must not race the worker mid-batch
   Thread::serialize(s);
   s(dmem);
   s(imem);

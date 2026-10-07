@@ -62,6 +62,14 @@ static const u8 rdpCommandWordCounts[64] = {
 };
 
 auto RDP::render() -> void {
+  //Threaded RSP: if we're inside the RSP worker (a DPC write from RSP triggered this),
+  //defer the actual render to the CPU thread so all renderer access stays single-
+  //threaded. CPU::synchronize() flushes renderPending after joining the worker.
+  if(rsp.threaded && rsp.inWorker.load(std::memory_order_relaxed)) {
+    renderPending.store(true, std::memory_order_release);
+    return;
+  }
+
   //apply a pending renderer hot-swap only at a display-list boundary
   system.applyPendingRenderer();
   if(command.current < command.end) midList = true;

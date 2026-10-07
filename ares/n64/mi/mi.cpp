@@ -19,6 +19,10 @@ auto MI::unload() -> void {
 }
 
 auto MI::raise(IRQ source) -> void {
+  if(rsp.threaded && rsp.inWorker.load(std::memory_order_relaxed)) {
+    deferredRaise |= 1u << (u32)source;
+    return;
+  }
   debugger.interrupt((u32)source);
   if(unlikely(scriptHooks.interrupt)) scriptHooks.interrupt((u32)source);
   switch(source) {
@@ -41,7 +45,21 @@ auto MI::lower(IRQ source) -> void {
   case IRQ::PI: irq.pi.line = 0; break;
   case IRQ::DP: irq.dp.line = 0; break;
   }
+  if(rsp.threaded && rsp.inWorker.load(std::memory_order_relaxed)) {
+    deferredRaise &= ~(1u << (u32)source);  //a raise earlier in this batch is cancelled
+    deferredPoll = true;
+    return;
+  }
   poll();
+}
+
+auto MI::flushDeferred() -> void {
+  auto pending = deferredRaise;
+  deferredRaise = 0;
+  if(deferredPoll) deferredPoll = false, poll();
+  for(u32 source : range(6)) {
+    if(pending & 1u << source) raise((IRQ)source);
+  }
 }
 
 auto MI::poll() -> void {

@@ -26,13 +26,73 @@ auto RSP::load(Node::Object parent) -> void {
   dmem.allocate(4_KiB);
   imem.allocate(4_KiB);
   debugger.load(node);
+  if(threaded) threadStart();  //option("RSP Threading") may have set threaded before load
 }
 
 auto RSP::unload() -> void {
+  threadStop();
   debugger.unload();
   dmem.reset();
   imem.reset();
   node.reset();
+}
+
+//== Host-thread offload =======================================================
+// The worker runs RSP::main() for one scheduler batch off the CPU thread, so RSP
+// emulation host-time overlaps the CPU's JIT block instead of serializing on one
+// core. Dispatch happens at the END of CPU::synchronize(); the CPU then executes
+// its next JIT block while the worker runs the RSP. The next synchronize() joins
+// first, so the worker is idle during every synchronize() -- the only window in
+// which shared RSP/MI/DPC state is touched by the CPU thread. CPU-side RCP register
+// accesses in between also join first. The release/acquire hand-off on workerState
+// publishes writes in both directions. RDRAM is shared without locking; the guest
+// already synchronizes CPU<->RSP through the SP interrupt / status registers.
+
+auto RSP::threadStart() -> void {
+  if(workerThread.joinable()) return;
+  workerQuit.store(false, std::memory_order_relaxed);
+  workerState.store(0, std::memory_order_relaxed);
+  workerThread = std::thread([this] {
+    for(;;) {
+      while(workerState.load(std::memory_order_acquire) == 0) {
+        if(workerQuit.load(std::memory_order_relaxed)) return;
+        spinloop();
+      }
+      inWorker.store(true, std::memory_order_relaxed);
+      main();  //run one scheduler batch off the CPU thread
+      inWorker.store(false, std::memory_order_relaxed);
+      workerState.store(0, std::memory_order_release);  //publishes worker writes to threadJoin()
+    }
+  });
+}
+
+auto RSP::threadStop() -> void {
+  if(!workerThread.joinable()) return;
+  threadJoin();  //drain any in-flight batch
+  workerQuit.store(true, std::memory_order_relaxed);
+  workerThread.join();
+  threaded = false;
+}
+
+auto RSP::threadDispatch() -> void {
+  //release: the CPU's writes before this (rsp.clock, etc.) become visible to the worker
+  //when it acquire-loads workerState == 1.
+  workerState.store(1, std::memory_order_release);
+}
+
+auto RSP::threadJoin() -> void {
+  while(workerState.load(std::memory_order_acquire) == 1) spinloop();
+}
+
+auto RSP::setThreaded(bool value) -> void {
+  if(value == threaded) return;
+  if(value) {
+    threadStart();
+    threaded = true;
+  } else {
+    threaded = false;  //stop dispatching first (same thread as synchronize)
+    threadStop();      //join + terminate the worker so it stops spinning a core
+  }
 }
 
 auto RSP::main() -> void {
@@ -179,6 +239,7 @@ auto RSP::instructionEpilogue(u32 clocks) -> s32 {
 }
 
 auto RSP::power(bool reset) -> void {
+  if(threaded) threadJoin();  //never reset RSP state while the worker is mid-batch
   Thread::reset();
   dmem.fill();
   imem.fill();

@@ -21,6 +21,7 @@
 #include <vector>
 #include <unordered_map>
 #include <atomic>
+#include <thread>
 #if __has_include(<cxxabi.h>)
   #include <cxxabi.h>  //GCC/Clang C++ name demangling for the CPU profiler
   #define ARES_HAS_CXA_DEMANGLE 1

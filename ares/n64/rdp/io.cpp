@@ -1,4 +1,7 @@
 auto RDP::readWord(u32 address, Thread& thread) -> u32 {
+  //Threaded RSP: CPU-origin DPC access must join the worker (which writes DPC from RSP
+  //context) first. Worker-origin access (thread==&rsp) proceeds — it owns the window.
+  if(rsp.threaded && &thread == &cpu) rsp.threadJoin();
   address = (address & 0x1f) >> 2;
   n32 data;
 
@@ -66,6 +69,7 @@ auto RDP::readWord(u32 address, Thread& thread) -> u32 {
 }
 
 auto RDP::writeWord(u32 address, u32 data_, Thread& thread) -> void {
+  if(rsp.threaded && &thread == &cpu) rsp.threadJoin();
   address = (address & 0x1f) >> 2;
   n32 data = data_;
 

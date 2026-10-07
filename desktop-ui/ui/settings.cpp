@@ -152,6 +152,8 @@ static void DrawOptionsPanel() {
 
   if(ImGui::CollapsingHeader("Nintendo 64 Settings")) {
     ImGui::Checkbox("4MB Expansion Pak", &settings.nintendo64.expansionPak);
+    ImGui::Checkbox("Threaded RSP", &settings.nintendo64.rspThreading);
+    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Run RSP emulation on a separate host thread. Applies on next game load.");
 
     const char* pakSizes[] = {"32KiB (Default)", "128KiB (Datel 1Meg)", "512KiB (Datel 4Meg)", "1984KiB (Maximum)"};
     int pakIdx = 0;

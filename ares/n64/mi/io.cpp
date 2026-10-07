@@ -1,4 +1,7 @@
 auto MI::readWord(u32 address, Thread& thread) -> u32 {
+  //Threaded RSP: the worker mutates irq.* (mi.raise/lower) during its batch. Join so the
+  //CPU never reads/RMW-races the irq bitfield while the worker owns it.
+  if(rsp.threaded && &thread == &cpu) rsp.threadJoin();
   address = (address & 0xf) >> 2;
   n32 data;
 
@@ -43,6 +46,9 @@ auto MI::readWord(u32 address, Thread& thread) -> u32 {
 }
 
 auto MI::writeWord(u32 address, u32 data_, Thread& thread) -> void {
+  //Threaded RSP: writes here RMW the shared irq bitfield (mask bits, DP lower) and call
+  //poll(); join first so the worker's concurrent irq.raise() cannot be lost/torn.
+  if(rsp.threaded && &thread == &cpu) rsp.threadJoin();
   address = (address & 0xf) >> 2;
   n32 data = data_;
 

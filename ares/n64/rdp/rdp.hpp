@@ -76,6 +76,10 @@ struct RDP : Thread, Memory::RCP<RDP> {
 
   //render.cpp
   auto render() -> void;
+  //Threaded RSP: when the RSP worker triggers a render (DPC write from RSP context),
+  //the renderers must not be touched off the CPU thread. Defer: set this and let
+  //CPU::synchronize() run the actual render() after joining the worker.
+  std::atomic<bool> renderPending{false};
   auto noOperation() -> void;
   auto invalidOperation() -> void;
   auto unshadedTriangle() -> void;

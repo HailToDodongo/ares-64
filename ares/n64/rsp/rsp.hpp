@@ -125,6 +125,23 @@ struct RSP : Thread, Memory::RCP<RSP> {
 
   auto power(bool reset) -> void;
 
+  //rsp.cpp -- host-thread offload. Runs main() on a worker OS thread so RSP emulation
+  //host-time overlaps the CPU's JIT batch instead of serializing on one core.
+  //Opt-in via the "RSP Threading" option; off = unchanged inline behavior.
+  auto threadStart() -> void;     //spawn the worker (idle until dispatched)
+  auto threadStop() -> void;      //join + terminate the worker
+  auto threadDispatch() -> void;  //kick worker to run one batch (rsp.clock already set)
+  auto threadJoin() -> void;      //block until worker idle; publishes its writes
+  auto setThreaded(bool) -> void; //runtime toggle (starts worker / drains as needed)
+
+  bool threaded = false;              //CPU-thread-owned; only changed via setThreaded
+  std::atomic<bool> inWorker{false};  //true while the worker executes a batch
+  std::thread workerThread;
+  //Spin hand-off (not a condvar): ares synchronizes hundreds of times per frame, and an
+  //OS wakeup per batch would dwarf the RSP work. workerState: 0 = idle, 1 = batch running.
+  std::atomic<u32>  workerState{0};
+  std::atomic<bool> workerQuit{false};
+
   struct OpInfo {
     enum : u32 {
       Load      = 1 << 0,

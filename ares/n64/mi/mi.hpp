@@ -23,6 +23,12 @@ struct MI : Memory::RCP<MI> {
   auto raise(IRQ) -> void;
   auto lower(IRQ) -> void;
   auto poll() -> void;
+  //Threaded RSP: raise() called from the RSP worker is recorded here (bit = IRQ index)
+  //and replayed on the CPU thread by flushDeferred() after the worker is joined, so
+  //debugger/script hooks and poll() (which touches CPU state) never run off-thread.
+  u32 deferredRaise = 0;
+  bool deferredPoll = false;
+  auto flushDeferred() -> void;
 
   //bitmask (by IRQ index) of RCP sub-sources currently asserting an interrupt;
   //used by the CPU profiler to label the active interrupt source.

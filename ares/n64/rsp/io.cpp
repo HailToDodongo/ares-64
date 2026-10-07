@@ -1,4 +1,8 @@
 auto RSP::readWord(u32 address, Thread& thread) -> u32 {
+  //Threaded RSP: this is the RCP-bus interface used by the CPU thread to reach SP
+  //regs / DMEM / IMEM. Join the worker first so its writes are visible and it is not
+  //mutating the same state concurrently. (!inWorker guard avoids self-join.)
+  if(threaded && !inWorker.load(std::memory_order_relaxed)) threadJoin();
   if(address <= 0x0403'ffff) {
     if(address & 0x1000) return imem.read<Word>(address);
     else                 return dmem.read<Word>(address);
@@ -70,6 +74,7 @@ auto RSP::ioRead(u32 address, Thread &thread) -> u32 {
 }
 
 auto RSP::writeWord(u32 address, u32 data, Thread& thread) -> void {
+  if(threaded && !inWorker.load(std::memory_order_relaxed)) threadJoin();
   if(address <= 0x0403'ffff) {
     if(address & 0x1000) return recompiler.invalidate(address & 0xfff), imem.write<Word>(address, data);
     else                 return dmem.write<Word>(address, data);

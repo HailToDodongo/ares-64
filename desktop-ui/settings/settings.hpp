@@ -161,6 +161,7 @@ struct Settings : Markup::Node {
     bool supersampling = false;
     bool disableVideoInterfaceProcessing = false;
     bool weaveDeinterlacing = true;
+    bool rspThreading = false;
   } nintendo64;
 
   struct GameBoyAdvance {

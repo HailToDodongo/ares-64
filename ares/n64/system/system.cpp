@@ -51,6 +51,9 @@ auto option(string name, string value) -> bool {
     if(value == "angrylion" || value == "none") vulkan.enable = false;
     #endif
   }
+  //Threaded RSP: run RSP emulation on a worker OS thread so its host-time overlaps the
+  //CPU's JIT batch. Off = unchanged inline emulation.
+  if(name == "RSP Threading") rsp.setThreaded(value.boolean());
   if(name == "Homebrew Mode") system.homebrewMode = value.boolean();
   if(name == "Deterministic Entropy") system.deterministicEntropy = value.boolean();
   if(name == "Recompiler") {
@@ -115,6 +118,9 @@ auto System::run() -> void {
     _rendererNeedsLoad = false;
   }
   cpu.main();
+  //Threaded RSP: leave the frame with the worker idle so the frontend (debug views,
+  //save states, renderer swaps) never observes RSP/MI/DPC state mid-batch.
+  if(rsp.threaded) rsp.threadJoin();
 }
 
 auto System::currentRenderer() -> Renderer {

@@ -102,6 +102,15 @@ auto CPU::synchronize() -> void {
   countClock = 0;
   jitClockTarget = 0;
 
+  if(rsp.threaded) {
+    //worker ran the previous RSP batch off-thread. Join first: this is the memory
+    //barrier that publishes the worker's writes and guarantees it is idle for the
+    //rest of synchronize(), the only window the CPU thread touches RSP/MI/DPC state.
+    rsp.threadJoin();
+    if(rdp.renderPending.exchange(false, std::memory_order_acquire)) rdp.render();
+    mi.flushDeferred();  //replay IRQs the worker raised (hooks + poll() run here)
+  }
+
    vi.clock -= clocks;
    ai.clock -= clocks;
   rsp.clock -= clocks;
@@ -109,7 +118,7 @@ auto CPU::synchronize() -> void {
   pif.clock -= clocks;
   vi.main();
   ai.main();
-  rsp.main();
+  if(!rsp.threaded) rsp.main();
   rdp.main();
   pif.main();
 
@@ -134,6 +143,10 @@ auto CPU::synchronize() -> void {
   });
 
   stepCount((clocks - counted) >> 1);
+
+  //kick the RSP batch onto the worker LAST, so only the CPU's next JIT block runs
+  //concurrently with it (all RSP/DPC/MI access in that block is guarded by threadJoin()).
+  if(rsp.threaded) rsp.threadDispatch();
 }
 
 auto CPU::setInterruptPending(u32 bit, bool value) -> void {
