@@ -32,5 +32,4 @@ private:
   void* _device = nullptr;
   void* _stream = nullptr;
   u32 _bufferSize = 0;
-  double _bitsPerSample = 0;
 };

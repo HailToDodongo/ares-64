@@ -21,7 +21,7 @@ auto Audio::clear() -> void {
 
 auto Audio::level() -> f64 {
   if(!_ready) return 0.0;
-  return SDL_GetAudioStreamAvailable(static_cast<SDL_AudioStream*>(_stream)) / ((f64)_bufferSize);
+  return max(0, SDL_GetAudioStreamQueued(static_cast<SDL_AudioStream*>(_stream))) / ((f64)_bufferSize);
 }
 
 auto Audio::output(const f64 samples[]) -> void {
@@ -30,14 +30,15 @@ auto Audio::output(const f64 samples[]) -> void {
   auto* stream = static_cast<SDL_AudioStream*>(_stream);
 
   if(blocking && frequency > 0) {
-    auto bytesRemaining = SDL_GetAudioStreamAvailable(stream);
+    // Measure the input queue: Available() reports converted device-format
+    // bytes, which may have a different sample rate and channel count.
+    auto bytesRemaining = SDL_GetAudioStreamQueued(stream);
     while(bytesRemaining > _bufferSize) {
       auto bytesToWait = bytesRemaining - _bufferSize;
-      auto bytesPerSample = _bitsPerSample / 8.0;
-      auto samplesRemaining = bytesToWait / bytesPerSample;
-      auto secondsRemaining = samplesRemaining / frequency;
+      auto bytesPerFrame = channels * sizeof(f32);
+      auto secondsRemaining = bytesToWait / (double)(bytesPerFrame * frequency);
       usleep(secondsRemaining * 1000000);
-      bytesRemaining = SDL_GetAudioStreamAvailable(stream);
+      bytesRemaining = SDL_GetAudioStreamQueued(stream);
     }
   }
 
@@ -91,8 +92,9 @@ auto Audio::tryInitWithDriver(const char* driver) -> bool {
   channels = spec.channels;
   int bufferFrameSize;
   SDL_GetAudioDeviceFormat(device, &spec, &bufferFrameSize);
-  _bitsPerSample = SDL_AUDIO_BITSIZE(spec.format);
-  _bufferSize = bufferFrameSize * channels * 4;
+  // bufferFrameSize is in device-rate frames. Convert its duration to bytes
+  // in our F32 input format, matching SDL_GetAudioStreamQueued().
+  _bufferSize = (u32)((u64)bufferFrameSize * frequency / spec.freq) * channels * sizeof(f32);
 
   _ready = true;
   clear();
